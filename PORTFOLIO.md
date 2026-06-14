@@ -1,5 +1,7 @@
 # LeadFlow AI — Case Study
 
+> [Українська версія](./PORTFOLIO.uk.md)
+
 **Stack:** TypeScript (Node 20, ESM, strict, `noUncheckedIndexedAccess`) · Anthropic SDK (tool-use + prompt caching) · Groq via OpenAI SDK · zod · googleapis · Resend · native fetch · custom `pLimit`.
 **Surface:** CLI. **No n8n. No Zapier. No "AI wrapper."**
 **Repo:** `morgunglyeb-arch/leadflow-ai`

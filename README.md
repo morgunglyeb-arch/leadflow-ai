@@ -1,5 +1,7 @@
 # LeadFlow AI
 
+> [Українська версія](./README.uk.md)
+
 > Agentic TypeScript pipeline that **enriches B2B leads from their websites** and writes **AI-personalized cold-outreach copy** — opener, ice-breaker, subject line, and an honest fit score. CSV / Google Sheets in, CSV / Sheets / Resend out. Anthropic or Groq. **No n8n, no Zapier — just code.**
 
 ```
