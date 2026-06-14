@@ -1,0 +1,8 @@
+Kestrel Analytics
+Pricing intelligence for B2B SaaS.
+
+We scrape, parse and normalize public pricing pages for 12,000+ SaaS products and surface changes — new tiers, packaging shifts, deprecations — via a dashboard and API.
+
+Customers are Series B-D SaaS companies doing competitive intel and packaging research. Pricing starts at $1,500/mo (Standard) or $4,000/mo (Enterprise with API access). We raised a Series A last year and are hiring a senior data engineer.
+
+Blog and customer case studies are at /blog. Integrations with Slack, Notion, and Salesforce are live; HubSpot and Linear are in beta.

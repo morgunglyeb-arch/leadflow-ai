@@ -1,0 +1,12 @@
+Northwind Logistics
+Smarter last-mile delivery for mid-market retailers.
+
+We move 4M+ parcels a year across 14 regional hubs in the US Midwest. Our route-planning platform connects directly to Shopify and BigCommerce stores so SMB ecommerce brands can offer same-day in 30+ cities without negotiating with carriers themselves.
+
+What we do
+- Route optimization across owned drivers + 3PL partners
+- Real-time delivery tracking for shoppers
+- Carrier-neutral pricing built into checkout
+- Returns pickup on the same route
+
+For brands shipping 500-5,000 orders a week, we typically cut last-mile cost by 18-24% and lift on-time rate to 96%+. We're hiring dispatchers and senior backend engineers — careers page is open.

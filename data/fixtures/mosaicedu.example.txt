@@ -1,0 +1,6 @@
+Mosaic Education
+Curriculum platform for K-8 schools.
+
+Mosaic gives elementary and middle school teachers a single platform for lesson plans, standards-aligned assessments, and student progress dashboards. We're in 1,400 schools across 11 US states, sold annually per-student.
+
+We integrate with Clever and ClassLink for rostering. Our content team writes original ELA and math units; STEM is partnered with a third-party provider. Hiring: account executives (Midwest), curriculum writers, and a senior engineer for our parent app.

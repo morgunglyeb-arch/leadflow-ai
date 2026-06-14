@@ -1,0 +1,264 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { AppConfig } from "./config.js";
+import type { Enrichment } from "./types.js";
+import { loadCachedEnrichment, saveCachedEnrichment } from "./cache.js";
+
+const MAX_TEXT_CHARS = 4000;
+
+const SIGNAL_RULES: Array<{ key: string; pattern: RegExp }> = [
+  { key: "pricing", pattern: /\b(pricing|plans|subscription)\b/i },
+  { key: "careers", pattern: /\b(careers|hiring|we'?re hiring|join (our|the) team)\b/i },
+  { key: "blog", pattern: /\b(blog|articles|insights|newsroom)\b/i },
+  { key: "ecommerce", pattern: /\b(shop|cart|checkout|add to (cart|bag))\b/i },
+  { key: "b2b", pattern: /\b(enterprise|b2b|for (teams|businesses|companies))\b/i },
+  { key: "saas", pattern: /\b(saas|platform|dashboard|api|integrations?)\b/i },
+  { key: "ai", pattern: /\b(ai|artificial intelligence|machine learning|llm|gpt|agentic)\b/i },
+  { key: "agency", pattern: /\b(agency|consultancy|consulting|case stud(y|ies))\b/i },
+  { key: "ecommerce_platform", pattern: /\b(shopify|woocommerce|magento|bigcommerce)\b/i },
+  { key: "fintech", pattern: /\b(payments?|invoice|accounting|fintech|payroll)\b/i },
+  { key: "marketplace", pattern: /\b(marketplace|sellers?|vendors?|two-sided)\b/i },
+  { key: "logistics", pattern: /\b(logistics|shipping|fulfilment|warehouse|3pl)\b/i },
+  { key: "healthcare", pattern: /\b(clinic|patients?|healthcare|telehealth|ehr)\b/i },
+  { key: "education", pattern: /\b(students?|courses?|edtech|learning|curriculum)\b/i },
+  { key: "series", pattern: /\bseries [a-d]\b/i },
+];
+
+export function detectSignals(text: string): string[] {
+  const hits = new Set<string>();
+  for (const { key, pattern } of SIGNAL_RULES) {
+    if (pattern.test(text)) hits.add(key);
+  }
+  return [...hits];
+}
+
+function extractTag(html: string, tag: "title"): string | undefined {
+  const m = html.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+  return m?.[1]?.replace(/\s+/g, " ").trim() || undefined;
+}
+
+function extractMetaDescription(html: string): string | undefined {
+  const m =
+    html.match(
+      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/i,
+    ) ??
+    html.match(
+      /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/i,
+    ) ??
+    html.match(
+      /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["'][^>]*>/i,
+    );
+  return m?.[1]?.trim() || undefined;
+}
+
+function extractHeadings(html: string): string[] {
+  const out: string[] = [];
+  const re = /<h([12])[^>]*>([\s\S]*?)<\/h\1>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const txt = stripTags(m[2] ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (txt) out.push(txt);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+
+function stripTags(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[^>]+>/g, " ");
+}
+
+export function htmlToText(html: string): string {
+  return stripTags(html)
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+interface ParsedSite {
+  title?: string;
+  description?: string;
+  summary_text: string;
+  signals: string[];
+}
+
+function parseSiteHtml(html: string): ParsedSite {
+  const title = extractTag(html, "title");
+  const description = extractMetaDescription(html);
+  const headings = extractHeadings(html);
+  const bodyText = htmlToText(html);
+
+  const composed = [
+    title ? `TITLE: ${title}` : "",
+    description ? `DESCRIPTION: ${description}` : "",
+    headings.length > 0 ? `HEADINGS: ${headings.join(" | ")}` : "",
+    `BODY: ${bodyText}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const summary_text = composed.slice(0, MAX_TEXT_CHARS);
+  const signals = detectSignals(`${title ?? ""} ${description ?? ""} ${bodyText}`);
+  return { title, description, summary_text, signals };
+}
+
+function parsePlainFixture(text: string): ParsedSite {
+  const cleaned = text.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_CHARS);
+  const signals = detectSignals(text);
+  const firstLine = text.split("\n").map((l) => l.trim()).find(Boolean);
+  return {
+    title: firstLine,
+    description: undefined,
+    summary_text: cleaned,
+    signals,
+  };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  cfg: AppConfig,
+): Promise<{ html: string; finalUrl: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "user-agent": cfg.ENRICH_USER_AGENT,
+        accept: "text/html,application/xhtml+xml",
+      },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const ctype = res.headers.get("content-type") ?? "";
+    if (!ctype.includes("html") && !ctype.includes("xml") && ctype !== "") {
+      throw new Error(`non-HTML content-type: ${ctype}`);
+    }
+    const html = await res.text();
+    return { html, finalUrl: res.url };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite> {
+  const candidates = [`https://${domain}`, `https://${domain}/about`];
+  let firstError: Error | undefined;
+  const collected: ParsedSite[] = [];
+  for (const url of candidates) {
+    try {
+      const { html } = await fetchWithTimeout(url, cfg);
+      collected.push(parseSiteHtml(html));
+    } catch (err) {
+      if (!firstError) firstError = err as Error;
+    }
+  }
+  if (collected.length === 0) {
+    throw firstError ?? new Error("fetch failed");
+  }
+  return mergeParsed(collected);
+}
+
+function mergeParsed(parts: ParsedSite[]): ParsedSite {
+  const title = parts.find((p) => p.title)?.title;
+  const description = parts.find((p) => p.description)?.description;
+  const summary_text = parts
+    .map((p) => p.summary_text)
+    .join("\n---\n")
+    .slice(0, MAX_TEXT_CHARS);
+  const signals = [...new Set(parts.flatMap((p) => p.signals))];
+  return { title, description, summary_text, signals };
+}
+
+async function loadMockFixture(domain: string): Promise<ParsedSite | null> {
+  const path = join("data/fixtures", `${domain}.txt`);
+  try {
+    const text = await readFile(path, "utf8");
+    return parsePlainFixture(text);
+  } catch {
+    return null;
+  }
+}
+
+export interface EnrichOptions {
+  mock: boolean;
+  force: boolean;
+}
+
+export async function enrichLead(
+  domain: string,
+  cfg: AppConfig,
+  opts: EnrichOptions,
+): Promise<Enrichment> {
+  const now = new Date().toISOString();
+
+  if (!opts.force) {
+    const cached = await loadCachedEnrichment(cfg.ENRICH_CACHE_DIR, domain);
+    if (cached) return { ...cached, source: "cache" };
+  }
+
+  if (opts.mock) {
+    const fixture = await loadMockFixture(domain);
+    if (fixture) {
+      const enrichment: Enrichment = {
+        domain,
+        title: fixture.title,
+        description: fixture.description,
+        summary_text: fixture.summary_text,
+        signals: fixture.signals,
+        ok: true,
+        source: "mock",
+        fetched_at: now,
+      };
+      await saveCachedEnrichment(cfg.ENRICH_CACHE_DIR, enrichment);
+      return enrichment;
+    }
+    const enrichment: Enrichment = {
+      domain,
+      summary_text: "",
+      signals: [],
+      ok: false,
+      source: "failed",
+      fetched_at: now,
+      error: `no fixture found for ${domain} (looked in data/fixtures/${domain}.txt)`,
+    };
+    return enrichment;
+  }
+
+  try {
+    const parsed = await fetchSiteLive(domain, cfg);
+    const enrichment: Enrichment = {
+      domain,
+      title: parsed.title,
+      description: parsed.description,
+      summary_text: parsed.summary_text,
+      signals: parsed.signals,
+      ok: true,
+      source: "live",
+      fetched_at: now,
+    };
+    await saveCachedEnrichment(cfg.ENRICH_CACHE_DIR, enrichment);
+    return enrichment;
+  } catch (err) {
+    return {
+      domain,
+      summary_text: "",
+      signals: [],
+      ok: false,
+      source: "failed",
+      fetched_at: now,
+      error: (err as Error).message,
+    };
+  }
+}

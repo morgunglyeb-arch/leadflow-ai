@@ -1,0 +1,6 @@
+Cobalt Mining Co.
+Industrial cobalt extraction and refinement.
+
+Operations in two regions, with three active mine sites and one refinery. Customers are battery cell manufacturers and specialty alloy producers. We sell on long-term offtake contracts, not spot.
+
+Internal IT runs SAP and Maximo for asset management. We do not publish pricing, do not run a blog, and the careers page lists field-engineering roles only.
