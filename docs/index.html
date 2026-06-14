@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LeadFlow AI — agentic lead enrichment + cold-outreach personalization</title>
+<meta name="description" content="TypeScript pipeline that enriches B2B leads from their websites and writes AI-personalized cold-outreach copy. Anthropic + Groq, zod-validated, anti-hallucination by design. No n8n.">
+<meta property="og:title" content="LeadFlow AI">
+<meta property="og:description" content="Agentic TypeScript pipeline · enriches B2B leads, writes AI-personalized cold outreach · Anthropic + Groq · No n8n.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://morgunglyeb-arch.github.io/leadflow-ai/">
+<style>
+  :root {
+    --bg:#0a0e17; --panel:#0f1623; --panel-2:#151e2e; --border:#1f2a3d;
+    --muted:#94a3b8; --text:#e5e7eb; --white:#ffffff;
+    --accent:#60a5fa; --accent-2:#a78bfa; --green:#34d399; --amber:#fbbf24; --red:#f87171;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin:0; padding:0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, Roboto, sans-serif;
+    background: var(--bg); color: var(--text); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 0.9em;
+         background: var(--panel-2); padding: 2px 6px; border-radius: 4px; color:#cbd5e1; }
+  pre { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+        background: #050810; border: 1px solid var(--border); border-radius: 10px;
+        padding: 18px 20px; overflow-x: auto; line-height: 1.5; color: #cbd5e1; }
+  pre code { background: transparent; padding: 0; color: inherit; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+
+  /* nav */
+  nav {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10,14,23,0.85); backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between;
+              max-width: 1100px; margin: 0 auto; padding: 14px 24px; }
+  nav .logo { font-weight: 700; font-size: 15px; color: var(--white); display:flex; align-items:center; gap:10px; }
+  nav .logo .dot { width:9px; height:9px; border-radius:50%; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  nav .links { display: flex; gap: 22px; font-size: 14px; }
+  nav .links a { color: var(--muted); }
+  nav .links a:hover { color: var(--white); text-decoration: none; }
+  nav .lang { display: flex; gap: 4px; align-items: center; }
+  nav .lang button {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer;
+    font-weight: 600; letter-spacing: 0.04em;
+  }
+  nav .lang button.active { background: var(--panel-2); color: var(--white); border-color: #2d3a52; }
+
+  /* hero */
+  .hero { padding: 80px 0 60px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse 70% 50% at 50% 0%, rgba(96,165,250,0.12), transparent 60%);
+    pointer-events: none;
+  }
+  .hero .container { position: relative; }
+  .hero .eyebrow { display: inline-flex; align-items: center; gap: 8px;
+    color: var(--muted); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    border: 1px solid var(--border); padding: 6px 14px; border-radius: 999px;
+    margin-bottom: 24px; background: rgba(15,22,35,0.6); }
+  .hero .eyebrow .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+  .hero h1 { font-size: clamp(36px, 6vw, 56px); font-weight: 700; line-height: 1.08;
+             margin: 0 0 18px; letter-spacing: -0.02em;
+             background: linear-gradient(180deg, #fff 0%, #cbd5e1 100%);
+             -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero .lede { font-size: 19px; color: var(--muted); max-width: 720px; margin: 0 0 36px; }
+  .hero .lede strong { color: var(--white); font-weight: 600; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px;
+         border-radius: 10px; font-weight: 600; font-size: 14px;
+         border: 1px solid transparent; cursor: pointer; transition: transform 0.1s; }
+  .btn:hover { text-decoration: none; transform: translateY(-1px); }
+  .btn-primary { background: var(--accent); color: #0a0e17; }
+  .btn-secondary { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-secondary:hover { border-color: #2d3a52; background: var(--panel); }
+
+  /* pill row */
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; margin: 40px 0 0; }
+  .pill { font-size: 11px; font-weight: 600; text-transform: uppercase;
+          letter-spacing: 0.08em; padding: 6px 12px; border-radius: 999px;
+          background: var(--panel); color: var(--muted); border: 1px solid var(--border); }
+  .pill.green { color: var(--green); border-color: rgba(52,211,153,0.3); }
+  .pill.amber { color: var(--amber); border-color: rgba(251,191,36,0.3); }
+
+  /* sections */
+  section { padding: 64px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 28px; font-weight: 700; margin: 0 0 12px; color: var(--white);
+               letter-spacing: -0.01em; }
+  section h2 + p { color: var(--muted); font-size: 16px; margin: 0 0 36px; max-width: 720px; }
+
+  /* feature grid */
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+  .feature { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px 24px; }
+  .feature .icon { width: 36px; height: 36px; border-radius: 9px;
+                    background: linear-gradient(135deg, rgba(96,165,250,0.2), rgba(167,139,250,0.2));
+                    display: flex; align-items: center; justify-content: center;
+                    color: var(--accent); margin-bottom: 14px; font-size: 18px; font-weight: 700; }
+  .feature h3 { margin: 0 0 6px; font-size: 15px; color: var(--white); font-weight: 600; }
+  .feature p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+  /* demo card */
+  .demo-card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 24px 26px; }
+  .demo-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; margin-bottom: 18px; }
+  .demo-head h3 { margin: 0 0 4px; font-size: 17px; color: var(--white); font-weight: 600; }
+  .demo-head .meta { color: var(--muted); font-size: 13px; }
+  .demo-head .meta code { font-size: 12px; }
+  .fit { width:64px; min-height:64px; border-radius:12px; color:#fff;
+         display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;
+         background: #166534; }
+  .fit .fit-n { font-size:26px; font-weight:700; line-height:1; }
+  .fit .fit-l { font-size:10px; text-transform:uppercase; letter-spacing:0.08em; opacity:0.85; margin-top:2px; }
+  .badges { display:flex; gap:6px; margin: 10px 0 16px; flex-wrap:wrap; }
+  .badge { font-size:10px; font-weight:600; padding:3px 8px; border-radius:10px;
+           color:#fff; text-transform:uppercase; letter-spacing:0.05em; }
+  .email-preview { border-top: 1px dashed var(--border); padding-top: 16px; }
+  .email-row { display:grid; grid-template-columns: 110px 1fr; gap:14px; padding:8px 0;
+               border-bottom: 1px dashed #182235; font-size: 14px; }
+  .email-row:last-child { border-bottom: none; }
+  .email-row label { color: var(--muted); font-size:10px; text-transform: uppercase;
+                     letter-spacing:0.08em; font-weight:600; padding-top:2px; }
+  .email-row .subject { font-weight:600; color: var(--white); }
+  .email-row .reason { color: var(--muted); font-style: italic; font-size: 13px; }
+  .sigs { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .sig { background: var(--panel-2); color: var(--muted); font-size: 10px; padding: 2px 8px;
+         border-radius: 8px; font-family: "SF Mono", Menlo, monospace; }
+
+  /* how it works */
+  .pipeline { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+              gap: 12px; margin-top: 8px; }
+  .step { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
+  .step .n { display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center;
+             border-radius: 50%; background: var(--panel-2); color: var(--accent);
+             font-weight: 700; font-size: 12px; margin-bottom: 10px; }
+  .step h4 { margin: 0 0 6px; font-size: 14px; color: var(--white); font-weight: 600; }
+  .step p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+  /* tech logos / stack */
+  .stack { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .stack-item { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+                padding: 14px 16px; font-size: 13px; color: var(--text); display: flex;
+                align-items: center; justify-content: space-between; gap: 12px; }
+  .stack-item .role { color: var(--muted); font-size: 11px; }
+
+  /* footer */
+  footer { border-top: 1px solid var(--border); padding: 36px 0; margin-top: 40px; }
+  footer .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+  footer .row a { color: var(--text); }
+
+  /* lang visibility */
+  [data-lang="uk"] { display: none; }
+  body.lang-uk [data-lang="en"] { display: none; }
+  body.lang-uk [data-lang="uk"] { display: initial; }
+  body.lang-uk h1[data-lang="uk"], body.lang-uk h2[data-lang="uk"], body.lang-uk h3[data-lang="uk"], body.lang-uk h4[data-lang="uk"], body.lang-uk p[data-lang="uk"], body.lang-uk div[data-lang="uk"] { display: block; }
+
+  /* responsive */
+  @media (max-width: 640px) {
+    nav .links { display: none; }
+    .hero { padding: 60px 0 40px; }
+    section { padding: 48px 0; }
+    .email-row { grid-template-columns: 1fr; gap: 4px; }
+    .demo-head { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<nav>
+  <div class="wrap">
+    <div class="logo"><span class="dot"></span> LeadFlow AI</div>
+    <div class="links">
+      <a href="#features" data-lang="en">Features</a><a href="#features" data-lang="uk">Можливості</a>
+      <a href="#demo" data-lang="en">Demo</a><a href="#demo" data-lang="uk">Демо</a>
+      <a href="#how" data-lang="en">How it works</a><a href="#how" data-lang="uk">Як працює</a>
+      <a href="#stack" data-lang="en">Stack</a><a href="#stack" data-lang="uk">Стек</a>
+      <a href="https://github.com/morgunglyeb-arch/leadflow-ai">GitHub</a>
+    </div>
+    <div class="lang">
+      <button id="lang-en" class="active" onclick="setLang('en')">EN</button>
+      <button id="lang-uk" onclick="setLang('uk')">UK</button>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="container">
+    <div class="eyebrow"><span class="pulse"></span><span data-lang="en">Open source · MIT</span><span data-lang="uk">Open source · MIT</span></div>
+
+    <h1 data-lang="en">Cold outreach that doesn't<br>make things up.</h1>
+    <h1 data-lang="uk">Холодний аутріч,<br>який нічого не вигадує.</h1>
+
+    <p class="lede" data-lang="en">
+      <strong>LeadFlow AI</strong> is an agentic TypeScript pipeline that enriches B2B leads from their websites and writes personalized cold-outreach copy — opener, ice-breaker, subject line, and an honest fit score. <strong>Anti-hallucination by construction</strong>, not by promise.
+    </p>
+    <p class="lede" data-lang="uk">
+      <strong>LeadFlow AI</strong> — це агентний TypeScript-пайплайн, що збагачує B2B-ліди з їхніх сайтів і пише персоналізовані тексти холодного аутрічу — opener, ice-breaker, тему листа та чесну оцінку fit. <strong>Анти-галюцинації за конструкцією</strong>, а не за обіцянкою.
+    </p>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/morgunglyeb-arch/leadflow-ai">
+        <span data-lang="en">View on GitHub →</span><span data-lang="uk">Дивитись на GitHub →</span>
+      </a>
+      <a class="btn btn-secondary" href="#demo">
+        <span data-lang="en">See it in action</span><span data-lang="uk">Подивитись приклад</span>
+      </a>
+    </div>
+
+    <div class="pills">
+      <span class="pill">TypeScript · Node 20 ESM</span>
+      <span class="pill">Anthropic + Groq</span>
+      <span class="pill">zod validated</span>
+      <span class="pill green">Anti-hallucination</span>
+      <span class="pill amber">No n8n · code-first</span>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="container">
+    <h2 data-lang="en">Built like production, not a demo</h2>
+    <h2 data-lang="uk">Зроблено як продакшен, а не демо</h2>
+    <p data-lang="en">Six design choices that separate this from a 20-line "wrap a LLM" script.</p>
+    <p data-lang="uk">Шість дизайн-рішень, що відрізняють це від 20-рядкового "wrap a LLM" скрипта.</p>
+
+    <div class="features">
+      <div class="feature">
+        <div class="icon">⊘</div>
+        <h3 data-lang="en">Anti-hallucination by construction</h3>
+        <h3 data-lang="uk">Анти-галюцинації за конструкцією</h3>
+        <p data-lang="en">The LLM only sees text that the code actually scraped. System prompt forbids invented facts. Thin context → fit_score ≤ 2 automatically.</p>
+        <p data-lang="uk">LLM бачить лише текст, який код реально витягнув. System prompt забороняє вигадані факти. Тонкий контекст → fit_score ≤ 2 автоматично.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">{ }</div>
+        <h3 data-lang="en">One zod schema, two providers</h3>
+        <h3 data-lang="uk">Одна zod-схема, два провайдери</h3>
+        <p data-lang="en">Anthropic tool-use (with prompt caching) and Groq json_object both converge on the same zod validator. Switch with one env var.</p>
+        <p data-lang="uk">Anthropic tool-use (з prompt-кешем) і Groq json_object сходяться на тому самому zod-валідаторі. Перемикання через одну env-змінну.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">⟲</div>
+        <h3 data-lang="en">Resilient batch processing</h3>
+        <h3 data-lang="uk">Стійка обробка батчу</h3>
+        <p data-lang="en">Bad fetch · LLM rate-limit · malformed JSON — none of them drop the batch. The lead gets a fallback template, the run continues.</p>
+        <p data-lang="uk">Битий fetch · rate-limit LLM · поламаний JSON — жодне з цього не вбиває батч. Лід отримує fallback-шаблон, прогін триває.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">⤓</div>
+        <h3 data-lang="en">Idempotent &amp; cached</h3>
+        <h3 data-lang="uk">Ідемпотентність &amp; кеш</h3>
+        <p data-lang="en">Per-domain JSON cache means the second run touches no network. Already-processed leads are skipped without --force.</p>
+        <p data-lang="uk">Per-domain JSON-кеш — повторний прогін не лізе в мережу. Вже оброблені ліди скіпаються без --force.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">⇄</div>
+        <h3 data-lang="en">Polite concurrency</h3>
+        <h3 data-lang="uk">Ввічлива конкурентність</h3>
+        <p data-lang="en">Tiny custom pLimit (no dependency) so you don't blast a site or melt the LLM rate-limit. Configurable.</p>
+        <p data-lang="uk">Маленький власний pLimit (без залежностей), щоб не задовбати сайт і не вийти за rate-limit LLM. Конфігурується.</p>
+      </div>
+
+      <div class="feature">
+        <div class="icon">▶</div>
+        <h3 data-lang="en">Offline demo mode</h3>
+        <h3 data-lang="uk">Офлайн демо-режим</h3>
+        <p data-lang="en">--mock reads data/fixtures/&lt;domain&gt;.txt instead of fetching. CI runs deterministically, screenshots reproduce, no secrets required.</p>
+        <p data-lang="uk">--mock читає data/fixtures/&lt;domain&gt;.txt замість fetch'у. CI прогоняється детерміновано, скріншоти відтворюються, секрети не потрібні.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="container">
+    <h2 data-lang="en">Sample output</h2>
+    <h2 data-lang="uk">Приклад виводу</h2>
+    <p data-lang="en">One real lead, processed via Groq (<code>openai/gpt-oss-120b</code>) on a fixture. Every fact in the opener and icebreaker is grounded in the site text — no invented numbers.</p>
+    <p data-lang="uk">Один реальний лід, оброблений через Groq (<code>openai/gpt-oss-120b</code>) на фікстурі. Кожен факт в opener і icebreaker — з тексту сайту, без вигаданих цифр.</p>
+
+    <div class="demo-card">
+      <div class="demo-head">
+        <div>
+          <h3>Northwind Logistics</h3>
+          <div class="meta"><code>northwindlogistics.example</code> · Marcus Hale · VP Operations</div>
+        </div>
+        <div class="fit">
+          <div class="fit-n">4</div>
+          <div class="fit-l">fit / 5</div>
+        </div>
+      </div>
+
+      <div class="badges">
+        <span class="badge" style="background:#7c3aed">GROQ</span>
+        <span class="badge" style="background:#334155">MOCK</span>
+        <span class="badge" style="background:#166534">ENRICHED ✓</span>
+      </div>
+
+      <div class="email-preview">
+        <div class="email-row"><label>subject</label><div class="subject">AI workflows for Northwind's delivery ops</div></div>
+        <div class="email-row"><label>opener</label><div>Your route-planning platform that plugs directly into Shopify and BigCommerce is a clear win for SMB ecommerce brands.</div></div>
+        <div class="email-row"><label>icebreaker</label><div>Cutting last-mile costs by up to 24% for brands shipping 500-5,000 orders weekly is impressive.</div></div>
+        <div class="email-row"><label>why fit 4</label><div class="reason">Northwind runs a B2B SaaS logistics solution handling 500-5k weekly orders, fitting our AI automation for ecommerce ops.</div></div>
+      </div>
+
+      <div class="sigs">
+        <span class="sig">pricing</span>
+        <span class="sig">careers</span>
+        <span class="sig">ecommerce</span>
+        <span class="sig">saas</span>
+        <span class="sig">ecommerce_platform</span>
+        <span class="sig">logistics</span>
+      </div>
+    </div>
+
+    <p style="margin-top: 24px; color: var(--muted); font-size: 13px;" data-lang="en">
+      Run on your own list with: <code>npm run leads -- --input=your_leads.csv</code> · render this view with <code>npm run view</code>.
+    </p>
+    <p style="margin-top: 24px; color: var(--muted); font-size: 13px;" data-lang="uk">
+      Запустити на своєму списку: <code>npm run leads -- --input=your_leads.csv</code> · згенерити такий перегляд: <code>npm run view</code>.
+    </p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="container">
+    <h2 data-lang="en">How it works</h2>
+    <h2 data-lang="uk">Як працює</h2>
+    <p data-lang="en">Deterministic data collection, one constrained LLM call, single zod schema, fallback that the model can't bypass.</p>
+    <p data-lang="uk">Детермінований збір даних, один обмежений LLM-виклик, єдина zod-схема, fallback, який модель не може обійти.</p>
+
+    <div class="pipeline">
+      <div class="step">
+        <div class="n">1</div>
+        <h4 data-lang="en">Fetch leads</h4><h4 data-lang="uk">Завантажити ліди</h4>
+        <p data-lang="en">CSV or Google Sheets, behind one LeadsSource interface.</p>
+        <p data-lang="uk">CSV або Google Sheets за одним LeadsSource-інтерфейсом.</p>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h4 data-lang="en">Enrich (fetch site)</h4><h4 data-lang="uk">Збагатити (тягнемо сайт)</h4>
+        <p data-lang="en">Timeout · UA · content-type guard. Title, meta, H1/H2, body to ~4000 chars + signal detection.</p>
+        <p data-lang="uk">Timeout · UA · перевірка content-type. Title, meta, H1/H2, тіло до ~4000 символів + сигнали.</p>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h4 data-lang="en">LLM personalize</h4><h4 data-lang="uk">LLM персоналізує</h4>
+        <p data-lang="en">One structured call. Claude tool_choice or Groq json_object. Cache_control on system prompt.</p>
+        <p data-lang="uk">Один структурований виклик. Claude tool_choice або Groq json_object. Cache_control на system prompt.</p>
+      </div>
+      <div class="step">
+        <div class="n">4</div>
+        <h4 data-lang="en">Validate (zod)</h4><h4 data-lang="uk">Валідація (zod)</h4>
+        <p data-lang="en">Any deviation from schema → fallback template. Batch never drops.</p>
+        <p data-lang="uk">Будь-яке відхилення від схеми → fallback. Батч не падає.</p>
+      </div>
+      <div class="step">
+        <div class="n">5</div>
+        <h4 data-lang="en">Write output</h4><h4 data-lang="uk">Запис виводу</h4>
+        <p data-lang="en">CSV with BOM (Excel/Numbers-safe), optional Sheets append, optional Resend smoke-test email.</p>
+        <p data-lang="uk">CSV з BOM (для Excel/Numbers), опційно Sheets append, опційно тестовий лист через Resend.</p>
+      </div>
+    </div>
+
+    <div style="margin-top: 32px;">
+<pre><code data-lang="en"># offline demo on fixtures
+npm install
+npm run gen:demo
+npm run leads -- --mock --dry
+
+# real list, real LLM
+cp .env.example .env   # set ANTHROPIC_API_KEY or GROQ_API_KEY
+npm run leads -- --input=data/leads.csv
+npm run view           # → data/out/leads_enriched.html</code><code data-lang="uk"># офлайн демо на фікстурах
+npm install
+npm run gen:demo
+npm run leads -- --mock --dry
+
+# реальний список, реальний LLM
+cp .env.example .env   # встав ANTHROPIC_API_KEY або GROQ_API_KEY
+npm run leads -- --input=data/leads.csv
+npm run view           # → data/out/leads_enriched.html</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="container">
+    <h2 data-lang="en">Stack</h2>
+    <h2 data-lang="uk">Стек</h2>
+    <p data-lang="en">Conservative, typed, production-shaped. Nothing trendy for its own sake.</p>
+    <p data-lang="uk">Консервативний, типізований, у формі продакшену. Нічого модного заради моди.</p>
+
+    <div class="stack">
+      <div class="stack-item"><span>TypeScript 5.6</span><span class="role">strict · ESM</span></div>
+      <div class="stack-item"><span>Node.js 20+</span><span class="role">runtime</span></div>
+      <div class="stack-item"><span>Anthropic SDK</span><span class="role">tool-use + caching</span></div>
+      <div class="stack-item"><span>Groq (OpenAI SDK)</span><span class="role">json_object</span></div>
+      <div class="stack-item"><span>zod</span><span class="role">env + LLM validation</span></div>
+      <div class="stack-item"><span>googleapis</span><span class="role">Sheets I/O</span></div>
+      <div class="stack-item"><span>Resend</span><span class="role">test email</span></div>
+      <div class="stack-item"><span>native fetch</span><span class="role">scraping</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="contact">
+  <div class="container" style="text-align: center;">
+    <h2 data-lang="en">Need this for your team?</h2>
+    <h2 data-lang="uk">Потрібно щось таке для команди?</h2>
+    <p style="margin: 0 auto 28px;" data-lang="en">
+      I build production agentic workflows in TypeScript — lead enrichment, daily reporting, customer triage. No n8n, no opaque black boxes. Open-source by default.
+    </p>
+    <p style="margin: 0 auto 28px;" data-lang="uk">
+      Будую продакшн agentic-воркфлоу на TypeScript — збагачення лідів, щоденні звіти, тріаж клієнтів. Без n8n, без чорних скриньок. За замовч. open-source.
+    </p>
+    <div class="cta-row" style="justify-content: center;">
+      <a class="btn btn-primary" href="mailto:morgunglyeb@gmail.com">
+        <span data-lang="en">morgunglyeb@gmail.com</span><span data-lang="uk">morgunglyeb@gmail.com</span>
+      </a>
+      <a class="btn btn-secondary" href="https://github.com/morgunglyeb-arch">GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="row">
+      <div>© 2026 Glyeb Morgun · MIT License</div>
+      <div>
+        <a href="https://github.com/morgunglyeb-arch/leadflow-ai">Repo</a> ·
+        <a href="https://github.com/morgunglyeb-arch/leadflow-ai/blob/main/README.md">README</a> ·
+        <a href="https://github.com/morgunglyeb-arch/leadflow-ai/blob/main/PORTFOLIO.md">Case study</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  function setLang(lang) {
+    document.body.classList.toggle("lang-uk", lang === "uk");
+    document.getElementById("lang-en").classList.toggle("active", lang === "en");
+    document.getElementById("lang-uk").classList.toggle("active", lang === "uk");
+    try { localStorage.setItem("leadflow-lang", lang); } catch (e) {}
+  }
+  (function() {
+    try {
+      const saved = localStorage.getItem("leadflow-lang");
+      if (saved === "uk") setLang("uk");
+    } catch (e) {}
+  })();
+</script>
+</body>
+</html>
