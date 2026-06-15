@@ -82,7 +82,8 @@ export function renderDigestHtml(rows: OutputRow[], cfg: AppConfig): string {
   const strong = rows.filter((r) => (r.fit_score ?? 0) >= 4).length;
   const sorted = [...rows].sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
 
-  return `<!doctype html><html><body style="margin:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LeadFlow — лиды на ${today}</title></head>
+<body style="margin:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:24px 0;"><tr><td align="center">
 <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:14px;padding:28px 32px;max-width:640px;">
   <tr><td>
