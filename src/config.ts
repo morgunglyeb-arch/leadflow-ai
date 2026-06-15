@@ -43,7 +43,9 @@ const schema = z.object({
   SEARCH_PROVIDER: z.enum(["serper"]).default("serper"),
   SERPER_API_KEY: z.string().optional(),
 
-  // Google Places (maps) discoverer
+  // Maps discoverer backend: "serper" (Serper /places, no Google key needed)
+  // or "google" (Places API New — needs GOOGLE_PLACES_API_KEY + the API enabled)
+  MAPS_PROVIDER: z.enum(["serper", "google"]).default("serper"),
   GOOGLE_PLACES_API_KEY: z.string().optional(),
 
   // Vibe Prospecting export directory (populated by the agent via the MCP)
@@ -116,9 +118,12 @@ export function assertDiscoveryReady(cfg: AppConfig, mock: boolean): void {
   if (cfg.DISCOVERY_SOURCE === "search" && !cfg.SERPER_API_KEY) {
     throw new Error("DISCOVERY_SOURCE=search but SERPER_API_KEY is not set (or run with --mock).");
   }
-  if (cfg.DISCOVERY_SOURCE === "maps" && !cfg.GOOGLE_PLACES_API_KEY) {
-    throw new Error(
-      "DISCOVERY_SOURCE=maps but GOOGLE_PLACES_API_KEY is not set (or run with --mock).",
-    );
+  if (cfg.DISCOVERY_SOURCE === "maps") {
+    if (cfg.MAPS_PROVIDER === "serper" && !cfg.SERPER_API_KEY) {
+      throw new Error("DISCOVERY_SOURCE=maps MAPS_PROVIDER=serper but SERPER_API_KEY is not set.");
+    }
+    if (cfg.MAPS_PROVIDER === "google" && !cfg.GOOGLE_PLACES_API_KEY) {
+      throw new Error("DISCOVERY_SOURCE=maps MAPS_PROVIDER=google but GOOGLE_PLACES_API_KEY is not set.");
+    }
   }
 }

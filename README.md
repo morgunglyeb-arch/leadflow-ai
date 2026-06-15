@@ -75,8 +75,8 @@ npm run prospect -- --limit=20 --min-fit=3
 
 | Source | What it does | Needs |
 |---|---|---|
-| `search` | Runs your ICP queries through Serper (Google), extracts company domains from results | `SERPER_API_KEY` |
-| `maps` | Google Places text search → local SMBs with website, phone, rating, review count | `GOOGLE_PLACES_API_KEY` |
+| `search` | Runs your ICP queries through Serper (Google), extracts company domains from results (listicles/publishers filtered out) | `SERPER_API_KEY` |
+| `maps` | Local SMBs with name, website, rating, reviews. **`MAPS_PROVIDER=serper`** (default) uses Serper `/places` + resolves each site — only `SERPER_API_KEY` needed. **`MAPS_PROVIDER=google`** uses Places API (New) | `SERPER_API_KEY` or `GOOGLE_PLACES_API_KEY` |
 | `vibe` | Reads `vibe_*.json` exports the agent pulls from the Vibe Prospecting MCP (150M companies / 800M contacts with emails) | a Vibe session |
 
 All three sit behind one `LeadDiscoverer` interface, so adding Apollo/Clearbit later is a new file, not a rewrite.

@@ -36,6 +36,19 @@ export function buildDiscoverer(cfg: AppConfig): LeadDiscoverer {
   }
 }
 
+/** Strip emoji / GMB spam decorations and collapse whitespace in a name. */
+export function sanitizeCompany(name: string): string {
+  return name
+    .replace(
+      /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}]/gu,
+      "",
+    )
+    .replace(/[|•·–—]+\s*$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
 /** Drop leads with no domain and collapse duplicates by normalized domain. */
 export function dedupeLeads(leads: DiscoveredLead[]): DiscoveredLead[] {
   const seen = new Set<string>();
@@ -45,7 +58,8 @@ export function dedupeLeads(leads: DiscoveredLead[]): DiscoveredLead[] {
     if (!domain) continue;
     if (seen.has(domain)) continue;
     seen.add(domain);
-    out.push({ ...lead, domain });
+    const company = sanitizeCompany(lead.company) || domain;
+    out.push({ ...lead, domain, company });
   }
   return out;
 }
@@ -65,11 +79,13 @@ export async function discoverLeads(
   const discoverer = buildDiscoverer(cfg);
 
   const maxLeads = opts.maxLeads || icp.max_leads || cfg.MAX_LEADS;
+  // Spread the budget across queries so one niche doesn't eat the whole run.
+  const perQuery = Math.max(2, Math.ceil(maxLeads / queries.length));
   const all: DiscoveredLead[] = [];
 
   for (const q of queries) {
     if (all.length >= maxLeads) break;
-    const remaining = maxLeads - all.length;
+    const remaining = Math.min(perQuery, maxLeads - all.length);
     try {
       const found = await discoverer.discover(q, cfg, { ...opts, maxLeads: remaining });
       all.push(...found);

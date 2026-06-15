@@ -5,6 +5,7 @@ import type { ExpandedQuery } from "./icp.js";
 import { loadDiscoveryFixture } from "./mock.js";
 import { normalizeDomain } from "../sources/index.js";
 
+// --- Google Places (New) ----------------------------------------------------
 interface PlaceV1 {
   displayName?: { text?: string };
   websiteUri?: string;
@@ -16,7 +17,6 @@ interface PlaceV1 {
 interface PlacesV1Response {
   places?: PlaceV1[];
 }
-
 const FIELD_MASK = [
   "places.displayName",
   "places.websiteUri",
@@ -25,6 +25,52 @@ const FIELD_MASK = [
   "places.userRatingCount",
   "places.formattedAddress",
 ].join(",");
+
+// --- Serper /places ---------------------------------------------------------
+interface SerperPlace {
+  title?: string;
+  address?: string;
+  phoneNumber?: string;
+  website?: string;
+  rating?: number;
+  ratingCount?: number;
+}
+interface SerperPlacesResponse {
+  places?: SerperPlace[];
+}
+interface SerperOrganic {
+  link?: string;
+}
+interface SerperSearchResponse {
+  organic?: SerperOrganic[];
+}
+
+// Domains that aren't a business's own site (directories / aggregators).
+const NON_SITE = [
+  "google.",
+  "facebook.",
+  "instagram.",
+  "linkedin.",
+  "yelp.",
+  "tripadvisor.",
+  "nhs.uk",
+  "yell.com",
+  "trustpilot.",
+  "booking.com",
+  "doctolib.",
+  "treatwell.",
+  "checkatrade.",
+  "trustatrader.",
+  "bark.com",
+  "thomsonlocal.",
+  "wikipedia.",
+  "youtube.",
+  "tiktok.",
+  "maps.",
+];
+function isNonSite(domain: string): boolean {
+  return NON_SITE.some((b) => domain.includes(b));
+}
 
 export class MapsDiscoverer implements LeadDiscoverer {
   readonly source = "maps" as const;
@@ -38,10 +84,18 @@ export class MapsDiscoverer implements LeadDiscoverer {
       const leads = await loadDiscoveryFixture(query, this.source);
       return leads.slice(0, opts.maxLeads);
     }
-    if (!cfg.GOOGLE_PLACES_API_KEY) {
-      throw new Error("GOOGLE_PLACES_API_KEY not set");
+    if (cfg.MAPS_PROVIDER === "google") {
+      return this.viaGoogle(query, cfg, opts);
     }
+    return this.viaSerper(query, cfg, opts);
+  }
 
+  private async viaGoogle(
+    query: ExpandedQuery,
+    cfg: AppConfig,
+    opts: DiscoverOptions,
+  ): Promise<DiscoveredLead[]> {
+    if (!cfg.GOOGLE_PLACES_API_KEY) throw new Error("GOOGLE_PLACES_API_KEY not set");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
     let json: PlacesV1Response;
@@ -65,7 +119,7 @@ export class MapsDiscoverer implements LeadDiscoverer {
     const seen = new Set<string>();
     const out: DiscoveredLead[] = [];
     for (const p of json.places ?? []) {
-      if (!p.websiteUri) continue; // can't enrich without a site
+      if (!p.websiteUri) continue;
       const domain = normalizeDomain(p.websiteUri);
       if (!domain || seen.has(domain)) continue;
       seen.add(domain);
@@ -83,5 +137,82 @@ export class MapsDiscoverer implements LeadDiscoverer {
       if (out.length >= opts.maxLeads) break;
     }
     return out;
+  }
+
+  private async viaSerper(
+    query: ExpandedQuery,
+    cfg: AppConfig,
+    opts: DiscoverOptions,
+  ): Promise<DiscoveredLead[]> {
+    if (!cfg.SERPER_API_KEY) throw new Error("SERPER_API_KEY not set");
+    const places = await serperPlaces(query.full, cfg);
+
+    const seen = new Set<string>();
+    const out: DiscoveredLead[] = [];
+    for (const p of places) {
+      if (out.length >= opts.maxLeads) break;
+      if (!p.title) continue;
+      // Serper /places omits the website — resolve it with one search.
+      const domain = p.website
+        ? normalizeDomain(p.website)
+        : await resolveDomain(`${p.title} ${p.address ?? ""}`, cfg);
+      if (!domain || isNonSite(domain) || seen.has(domain)) continue;
+      seen.add(domain);
+      const lead: DiscoveredLead = {
+        company: p.title,
+        domain,
+        discovery_source: this.source,
+        discovery_query: query.full,
+      };
+      if (p.phoneNumber) lead.phone = p.phoneNumber;
+      if (typeof p.rating === "number") lead.rating = p.rating;
+      if (typeof p.ratingCount === "number") lead.reviews = p.ratingCount;
+      if (p.address) lead.location = p.address;
+      out.push(lead);
+    }
+    return out;
+  }
+}
+
+async function serperPlaces(q: string, cfg: AppConfig): Promise<SerperPlace[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+  try {
+    const res = await fetch("https://google.serper.dev/places", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "X-API-KEY": cfg.SERPER_API_KEY!, "content-type": "application/json" },
+      body: JSON.stringify({ q, num: 20 }),
+    });
+    if (!res.ok) throw new Error(`serper places HTTP ${res.status}`);
+    const json = (await res.json()) as SerperPlacesResponse;
+    return json.places ?? [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveDomain(q: string, cfg: AppConfig): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+  try {
+    const res = await fetch("https://google.serper.dev/search", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "X-API-KEY": cfg.SERPER_API_KEY!, "content-type": "application/json" },
+      body: JSON.stringify({ q, num: 5 }),
+    });
+    if (!res.ok) return undefined;
+    const json = (await res.json()) as SerperSearchResponse;
+    for (const item of json.organic ?? []) {
+      if (!item.link) continue;
+      const domain = normalizeDomain(item.link);
+      if (domain && !isNonSite(domain)) return domain;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 }

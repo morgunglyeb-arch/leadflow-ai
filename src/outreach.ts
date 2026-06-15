@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { AppConfig } from "./config.js";
 import type { OutputRow } from "./types.js";
@@ -125,6 +125,13 @@ export interface DraftsResult {
 
 export async function writeDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<DraftsResult> {
   await mkdir(cfg.DRAFTS_DIR, { recursive: true });
+  // The queue mirrors this run — clear stale .md drafts from previous runs.
+  try {
+    const stale = (await readdir(cfg.DRAFTS_DIR)).filter((f) => f.endsWith(".md"));
+    await Promise.all(stale.map((f) => rm(join(cfg.DRAFTS_DIR, f), { force: true })));
+  } catch {
+    /* dir was empty/new */
+  }
   for (const row of rows) {
     const draft = assembleDraft(row, cfg);
     const path = join(cfg.DRAFTS_DIR, `${domainSlug(row.domain)}.md`);
