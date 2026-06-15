@@ -44,6 +44,19 @@ const schema = z.object({
   ICP_CONFIG_PATH: z.string().default("config/icp.json"),
   MAX_LEADS: z.coerce.number().int().positive().default(50),
 
+  // Qualification: only keep leads worth selling automation to.
+  REQUIRE_EMAIL: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  REQUIRE_AUTOMATION: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  // Discover up to MAX_LEADS * OVERFETCH candidates to fill the quota after
+  // dropping leads with no email / no automation gap.
+  OVERFETCH: z.coerce.number().min(1).max(10).default(4),
+
   // Web search discoverer (Serper by default; provider-agnostic shape)
   SEARCH_PROVIDER: z.enum(["serper"]).default("serper"),
   SERPER_API_KEY: z.string().optional(),

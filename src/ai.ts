@@ -29,9 +29,9 @@ Hard rules:
 - Reference at most one specific detail per message — what they do, who they sell to, or a clear signal from the page. Do not stack multiple claims.
 - Tone: natural, peer-to-peer, confident, no flattery clichés. Banned phrases: "I hope this finds you well", "I came across your", "love what you're doing", "huge fan", "saw you guys are crushing it".
 
-LANGUAGE:
+LANGUAGE (strict):
 - Write opener, icebreaker, subject, process, automation, est_benefit and reason in ${outName} (this is the language of the email to the prospect).
-- Write "brief" in ${digName}. The brief is for OUR sales operator (NOT the prospect): 2-4 sentences covering (a) what the company does, (b) the specific manual problem you spotted, (c) what exactly we'd automate, (d) why the fit score. Plain and practical.
+- Write "brief" ONLY in ${digName}. Never write the brief in ${outName}. The brief is for OUR sales operator (NOT the prospect): 2-4 sentences covering (a) what the company does, (b) the specific manual problem you spotted, (c) what exactly we'd automate, (d) why the fit score. Plain and practical. If ${digName} is Russian, the entire brief must be in Russian Cyrillic.
 
 Fields:
 - opener: 1-2 sentences, first line of a cold email. No greeting line, no "Hi NAME,".

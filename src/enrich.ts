@@ -205,21 +205,27 @@ async function fetchWithTimeout(
 }
 
 async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite> {
-  // homepage + about + contact pages (contact pages are where emails live)
+  // homepage for context + the pages where emails actually live. Privacy pages
+  // almost always carry a contact email (GDPR), so they boost the hit-rate.
   const candidates = [
     `https://${domain}`,
     `https://${domain}/about`,
     `https://${domain}/contact`,
     `https://${domain}/contact-us`,
+    `https://${domain}/privacy`,
+    `https://${domain}/privacy-policy`,
   ];
-  let firstError: Error | undefined;
+  // Fetch in parallel; tolerate per-page failures.
+  const results = await Promise.allSettled(
+    candidates.map((url) => fetchWithTimeout(url, cfg)),
+  );
   const collected: ParsedSite[] = [];
-  for (const url of candidates) {
-    try {
-      const { html } = await fetchWithTimeout(url, cfg);
-      collected.push(parseSiteHtml(html, domain));
-    } catch (err) {
-      if (!firstError) firstError = err as Error;
+  let firstError: Error | undefined;
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      collected.push(parseSiteHtml(r.value.html, domain));
+    } else if (!firstError) {
+      firstError = r.reason as Error;
     }
   }
   if (collected.length === 0) {

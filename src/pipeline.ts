@@ -10,7 +10,33 @@ import {
   writeCsv,
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
-import type { DiscoveredLead, OutputRow } from "./types.js";
+import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
+
+/** A row for a lead we dropped before pitching (no email / disqualified). */
+function buildSkippedRow(
+  lead: DiscoveredLead,
+  enrichment: Enrichment,
+  reason: string,
+): OutputRow {
+  return {
+    company: lead.company,
+    domain: lead.domain,
+    discovery_source: lead.discovery_source,
+    ...(lead.discovery_query !== undefined ? { discovery_query: lead.discovery_query } : {}),
+    ...(lead.name !== undefined ? { name: lead.name } : {}),
+    ...(lead.phone !== undefined ? { phone: lead.phone } : {}),
+    ...(lead.rating !== undefined ? { rating: lead.rating } : {}),
+    ...(lead.reviews !== undefined ? { reviews: lead.reviews } : {}),
+    ...(lead.location !== undefined ? { location: lead.location } : {}),
+    enriched: enrichment.ok,
+    enrichment_source: enrichment.source,
+    signals: enrichment.signals.join("|"),
+    ai_provider: "fallback",
+    status: "skipped",
+    email_source: "none",
+    reason,
+  };
+}
 
 export interface ProcessOptions {
   mock: boolean;
@@ -19,6 +45,9 @@ export interface ProcessOptions {
   llmReady: boolean;
   icpNote?: string;
   label: string; // log prefix, e.g. "leadflow" or "prospect"
+  // If set, leads with no discoverable email are marked 'skipped' and the
+  // (expensive) LLM pitch is NOT called for them.
+  requireEmail?: boolean;
 }
 
 /**
@@ -40,6 +69,18 @@ export async function processLeads(
           mock: opts.mock,
           force: opts.force,
         });
+
+        const email = lead.email ?? enrichment.emails[0];
+
+        // Email gate: no email + requireEmail → skip the LLM entirely.
+        if (opts.requireEmail && !email) {
+          done++;
+          console.log(
+            `[${opts.label}] (${done}/${leads.length}) ${lead.company.padEnd(28).slice(0, 28)} ` +
+              `skipped — no email found`,
+          );
+          return buildSkippedRow(lead, enrichment, "no-email");
+        }
 
         let personalized;
         let provider: "anthropic" | "groq" | "openai" | "fallback";
