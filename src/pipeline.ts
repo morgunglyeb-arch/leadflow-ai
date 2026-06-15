@@ -10,6 +10,7 @@ import {
   writeCsv,
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
+import { fetchReviewDigest } from "./discover/reviews.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
 
 /** A row for a lead we dropped before pitching (no email / disqualified). */
@@ -88,7 +89,11 @@ export async function processLeads(
           personalized = fallbackPersonalization(lead, enrichment, cfg.DIGEST_LANG);
           provider = "fallback";
         } else {
-          const r = await personalize(cfg, lead, enrichment, opts.icpNote);
+          // Mine real Google reviews (pain points, what customers value) for
+          // hand-researched personalization — only for qualified, live leads.
+          const reviews =
+            !opts.mock && lead.cid ? await fetchReviewDigest(lead.cid, cfg) : undefined;
+          const r = await personalize(cfg, lead, enrichment, opts.icpNote, reviews);
           personalized = r.personalized;
           provider = r.provider;
         }

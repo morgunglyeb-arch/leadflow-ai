@@ -16,6 +16,7 @@ export interface DiscoveredLead extends Lead {
   rating?: number;
   reviews?: number;
   location?: string;
+  cid?: string; // Google place id (maps) — used to pull reviews
 }
 
 export interface Enrichment {

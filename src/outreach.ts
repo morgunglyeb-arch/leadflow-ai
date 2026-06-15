@@ -9,9 +9,18 @@ export interface EmailDraft {
   body: string;
 }
 
-function firstName(name?: string): string {
-  if (!name) return "there";
-  return name.trim().split(/\s+/)[0] ?? "there";
+/**
+ * Greeting addresses the BUSINESS, not a person — the recipient often isn't the
+ * named contact, so a wrong first name hurts. We use a tidy short company name.
+ */
+function greeting(company: string): string {
+  const short = company
+    .split(/[-–—|,:]/)[0]
+    ?.replace(/\b(ltd|limited|llp|inc|llc)\b\.?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!short || short.length < 2) return "Hello,";
+  return `Hi ${short} team,`;
 }
 
 function capitalize(s: string): string {
@@ -31,7 +40,7 @@ function stripTrailingPunct(s: string): string {
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const subject = row.subject ?? `quick idea for ${row.company}`;
   const lines: string[] = [];
-  lines.push(`Hi ${firstName(row.name)},`);
+  lines.push(greeting(row.company));
   lines.push("");
   if (row.opener) lines.push(row.opener);
 

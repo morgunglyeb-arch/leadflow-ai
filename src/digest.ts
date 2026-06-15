@@ -67,8 +67,9 @@ ${draftBody}</div>
 }
 
 function buildDraftPreview(row: OutputRow): string {
-  // Mirror the assembled draft body (without re-importing outreach to avoid coupling).
-  const greet = row.name ? `Hi ${esc(row.name.split(/\s+/)[0])},` : "Hi there,";
+  // Mirror the assembled draft body (greeting addresses the business, not a person).
+  const short = (row.company.split(/[-–—|,:]/)[0] ?? "").trim();
+  const greet = short.length >= 2 ? `Hi ${esc(short)} team,` : "Hello,";
   const parts: string[] = [greet, "", esc(row.opener ?? "")];
   if (row.process && row.process.toLowerCase() !== "unclear from site" && row.automation) {
     parts.push("", `${esc(row.process)}. ${esc(row.automation)}`);

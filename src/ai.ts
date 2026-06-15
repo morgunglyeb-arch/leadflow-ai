@@ -35,6 +35,7 @@ GROUNDING (no hallucination):
 - The DETECTED SIGNALS show how they contact customers (e.g. whatsapp, instagram, phone_booking, contact_form, online_booking, live_chat). Use them to name the EXACT current situation.
 - State the problem as a FACT from the evidence — NO hedging words ("likely", "probably", "maybe", "скорее всего"). E.g. if signals show phone_booking and no online_booking: "you take bookings by phone and reply to enquiries by hand". If signals show instagram + whatsapp: "you handle enquiries through Instagram and WhatsApp manually".
 - If you genuinely cannot see a concrete gap, set process to "unclear from site" (it will be filtered out) — do NOT guess.
+- Don't pitch what they ALREADY have. If signals show online_booking AND live_chat, they've automated booking/chat — find a DIFFERENT gap (missed-call text-back, review collection, no-show reminders, follow-ups, reactivation of past customers). If everything obvious is already automated, lower the fit_score.
 
 WRITING FOR A NON-TECHNICAL OWNER (critical):
 - The owner does NOT know what "automation", "AI agent", "workflow" or "integration" means. Write so a busy shop/clinic owner instantly gets it.
@@ -94,6 +95,7 @@ interface AiInput {
   lead: DiscoveredLead;
   enrichment: Enrichment;
   icpNote?: string;
+  reviewsText?: string;
   outreachLang: string;
   digestLang: string;
 }
@@ -124,6 +126,9 @@ function buildUserMessage(input: AiInput): string {
     `COMPANY CONTEXT (from ${lead.domain}, use ONLY this):`,
     context,
     "",
+    input.reviewsText
+      ? `REAL GOOGLE REVIEWS (use to spot what customers value and any pain like slow replies / hard to book; reference something specific and TRUE, never quote a made-up review):\n${input.reviewsText}\n`
+      : null,
     `DETECTED SIGNALS (how they contact customers / book): ${signals}`,
     "",
     `Now: pick the ONE most valuable thing they have NOT automated (use the signals to name the exact channel), state the problem as fact (no hedging), and write the email in plain owner-language with NO jargon.`,
@@ -275,6 +280,7 @@ export async function personalize(
   lead: DiscoveredLead,
   enrichment: Enrichment,
   icpNote?: string,
+  reviewsText?: string,
 ): Promise<PersonalizationResult> {
   const input: AiInput = {
     ourOffer: cfg.OUR_OFFER,
@@ -283,6 +289,7 @@ export async function personalize(
     outreachLang: cfg.OUTREACH_LANG,
     digestLang: cfg.DIGEST_LANG,
     ...(icpNote ? { icpNote } : {}),
+    ...(reviewsText ? { reviewsText } : {}),
   };
   try {
     if (cfg.LLM_PROVIDER === "groq") {

@@ -34,6 +34,7 @@ interface SerperPlace {
   website?: string;
   rating?: number;
   ratingCount?: number;
+  cid?: string;
 }
 interface SerperPlacesResponse {
   places?: SerperPlace[];
@@ -170,6 +171,7 @@ export class MapsDiscoverer implements LeadDiscoverer {
       if (typeof p.rating === "number") lead.rating = p.rating;
       if (typeof p.ratingCount === "number") lead.reviews = p.ratingCount;
       if (p.address) lead.location = p.address;
+      if (p.cid) lead.cid = p.cid;
       out.push(lead);
     }
     return out;
