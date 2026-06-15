@@ -40,6 +40,7 @@ interface SerperPlacesResponse {
 }
 interface SerperOrganic {
   link?: string;
+  title?: string;
 }
 interface SerperSearchResponse {
   organic?: SerperOrganic[];
@@ -152,10 +153,11 @@ export class MapsDiscoverer implements LeadDiscoverer {
     for (const p of places) {
       if (out.length >= opts.maxLeads) break;
       if (!p.title) continue;
-      // Serper /places omits the website — resolve it with one search.
+      // Serper /places omits the website — resolve it with one search, and
+      // verify the result actually belongs to THIS business (not a competitor).
       const domain = p.website
         ? normalizeDomain(p.website)
-        : await resolveDomain(`${p.title} ${p.address ?? ""}`, cfg);
+        : await resolveDomain(p.title, p.address ?? "", cfg);
       if (!domain || isNonSite(domain) || seen.has(domain)) continue;
       seen.add(domain);
       const lead: DiscoveredLead = {
@@ -192,7 +194,29 @@ async function serperPlaces(q: string, cfg: AppConfig): Promise<SerperPlace[]> {
   }
 }
 
-async function resolveDomain(q: string, cfg: AppConfig): Promise<string | undefined> {
+function nameTokens(name: string): string[] {
+  const stop = new Set([
+    "the", "and", "ltd", "limited", "clinic", "centre", "center", "company",
+    "services", "london", "uk", "co", "group", "practice", "studio",
+  ]);
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 4 && !stop.has(w));
+}
+
+/**
+ * Resolve a business's own website from its name + address, and VERIFY the
+ * match so we don't attach a competitor's domain. A domain is accepted only if
+ * a distinctive word from the name appears in the domain root or the result's
+ * title — otherwise we'd rather drop the lead (we over-fetch to compensate).
+ */
+async function resolveDomain(
+  title: string,
+  address: string,
+  cfg: AppConfig,
+): Promise<string | undefined> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
   try {
@@ -200,14 +224,22 @@ async function resolveDomain(q: string, cfg: AppConfig): Promise<string | undefi
       method: "POST",
       signal: controller.signal,
       headers: { "X-API-KEY": cfg.SERPER_API_KEY!, "content-type": "application/json" },
-      body: JSON.stringify({ q, num: 5 }),
+      body: JSON.stringify({ q: `${title} ${address}`, num: 5 }),
     });
     if (!res.ok) return undefined;
     const json = (await res.json()) as SerperSearchResponse;
+    const tokens = nameTokens(title);
+
     for (const item of json.organic ?? []) {
       if (!item.link) continue;
       const domain = normalizeDomain(item.link);
-      if (domain && !isNonSite(domain)) return domain;
+      if (!domain || isNonSite(domain)) continue;
+      const root = domain.split(".")[0] ?? "";
+      const resultTitle = (item.title ?? "").toLowerCase();
+      // accept if a distinctive name word is in the domain, or >=2 in the title
+      const inDomain = tokens.some((t) => root.includes(t));
+      const inTitle = tokens.filter((t) => resultTitle.includes(t)).length >= 2;
+      if (tokens.length === 0 || inDomain || inTitle) return domain;
     }
     return undefined;
   } catch {

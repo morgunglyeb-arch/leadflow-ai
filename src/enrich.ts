@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { AppConfig } from "./config.js";
 import type { Enrichment } from "./types.js";
 import { loadCachedEnrichment, saveCachedEnrichment } from "./cache.js";
+import { normalizeDomain } from "./sources/index.js";
 
 const MAX_TEXT_CHARS = 4000;
 
@@ -233,45 +234,96 @@ async function fetchWithTimeout(
   }
 }
 
-async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite> {
-  // homepage for context + the pages where emails actually live. Privacy pages
-  // almost always carry a contact email (GDPR), so they boost the hit-rate.
-  const candidates = [
-    `https://${domain}`,
-    `https://${domain}/about`,
-    `https://${domain}/contact`,
-    `https://${domain}/contact-us`,
-    `https://${domain}/privacy`,
-    `https://${domain}/privacy-policy`,
-  ];
-  // Fetch in parallel; tolerate per-page failures.
-  const results = await Promise.allSettled(
-    candidates.map((url) => fetchWithTimeout(url, cfg)),
-  );
-  const collected: ParsedSite[] = [];
-  let firstError: Error | undefined;
-  for (const r of results) {
-    if (r.status === "fulfilled") {
-      collected.push(parseSiteHtml(r.value.html, domain));
-    } else if (!firstError) {
-      firstError = r.reason as Error;
+// Internal pages worth reading, by priority — services/pricing/booking reveal
+// what they sell and how they take bookings; contact/privacy carry emails.
+const LINK_KEYWORDS: Array<{ re: RegExp; score: number }> = [
+  { re: /(services|treatments|what-we-do|procedures)/i, score: 5 },
+  { re: /(prices?|pricing|fees?|cost)/i, score: 5 },
+  { re: /(book|booking|appointment|appointments|consultation)/i, score: 5 },
+  { re: /(contact|contact-us|get-in-touch)/i, score: 4 },
+  { re: /(about|about-us|team|our-team|staff|practice)/i, score: 3 },
+  { re: /(reviews?|testimonials?)/i, score: 3 },
+  { re: /(faqs?|faq)/i, score: 2 },
+  { re: /(privacy|privacy-policy)/i, score: 2 },
+];
+
+/** Pull same-site internal links from the homepage, ranked by relevance. */
+function extractInternalLinks(html: string, domain: string): string[] {
+  const root = domain.replace(/^www\./, "");
+  const scored = new Map<string, number>();
+  const re = /<a\b[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    let href = (m[1] ?? "").trim();
+    const anchor = stripTags(m[2] ?? "");
+    if (!href || href.startsWith("mailto:") || href.startsWith("tel:")) continue;
+
+    // normalize to an absolute https URL on the same domain
+    let url: string;
+    if (href.startsWith("http")) {
+      const d = normalizeDomain(href);
+      if (d !== root && !d.endsWith(`.${root}`)) continue;
+      url = href.replace(/^http:/, "https:");
+    } else {
+      if (!href.startsWith("/")) href = `/${href}`;
+      url = `https://${domain}${href}`;
     }
+    url = url.split("?")[0]!.replace(/\/$/, "");
+    if (url === `https://${domain}`) continue;
+
+    const hay = `${href} ${anchor}`;
+    let score = 0;
+    for (const { re: kre, score: s } of LINK_KEYWORDS) if (kre.test(hay)) score = Math.max(score, s);
+    if (score === 0) continue;
+    scored.set(url, Math.max(scored.get(url) ?? 0, score));
   }
-  if (collected.length === 0) {
-    throw firstError ?? new Error("fetch failed");
+  return [...scored.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([u]) => u)
+    .slice(0, 6);
+}
+
+const MAX_PAGES = 7;
+
+async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite> {
+  // 1) homepage first — it tells us which internal pages actually exist.
+  const home = await fetchWithTimeout(`https://${domain}`, cfg);
+  const collected: ParsedSite[] = [parseSiteHtml(home.html, domain)];
+
+  // 2) follow the homepage's real high-value links (services, pricing, book,
+  //    contact, reviews…), plus a privacy guess for email coverage.
+  const links = extractInternalLinks(home.html, domain);
+  if (!links.some((u) => /privacy/i.test(u))) links.push(`https://${domain}/privacy-policy`);
+  const toFetch = links.slice(0, MAX_PAGES - 1);
+
+  const results = await Promise.allSettled(toFetch.map((url) => fetchWithTimeout(url, cfg)));
+  for (const r of results) {
+    if (r.status === "fulfilled") collected.push(parseSiteHtml(r.value.html, domain));
   }
   return mergeParsed(collected, domain);
 }
 
+const MERGED_TEXT_CHARS = 6500;
+const PER_PAGE_CHARS = 1600;
+
 function mergeParsed(parts: ParsedSite[], domain: string): ParsedSite {
   const title = parts.find((p) => p.title)?.title;
   const description = parts.find((p) => p.description)?.description;
-  const summary_text = parts
-    .map((p) => p.summary_text)
-    .join("\n---\n")
-    .slice(0, MAX_TEXT_CHARS);
+  // Give every crawled page a slice (homepage gets more), so services/pricing/
+  // booking pages actually reach the model instead of being truncated away.
+  let budget = MERGED_TEXT_CHARS;
+  const chunks: string[] = [];
+  parts.forEach((p, i) => {
+    if (budget <= 0) return;
+    const cap = i === 0 ? PER_PAGE_CHARS * 2 : PER_PAGE_CHARS;
+    const slice = p.summary_text.slice(0, Math.min(cap, budget));
+    if (slice.trim()) {
+      chunks.push(slice);
+      budget -= slice.length;
+    }
+  });
+  const summary_text = chunks.join("\n---\n");
   const signals = [...new Set(parts.flatMap((p) => p.signals))];
-  // re-rank the union of emails against the domain
   const allEmails = [...new Set(parts.flatMap((p) => p.emails))];
   const emails = rerankEmails(allEmails, domain);
   return { title, description, summary_text, signals, emails };

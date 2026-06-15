@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
-import type { Enrichment, Lead, Personalized } from "./types.js";
+import type { DiscoveredLead, Enrichment, Lead, Personalized } from "./types.js";
 
 export const PersonalizedSchema = z.object({
   opener: z.string().min(5).max(400),
@@ -91,7 +91,7 @@ const TOOL_SCHEMA = {
 
 interface AiInput {
   ourOffer: string;
-  lead: Lead;
+  lead: DiscoveredLead;
   enrichment: Enrichment;
   icpNote?: string;
   outreachLang: string;
@@ -115,6 +115,11 @@ function buildUserMessage(input: AiInput): string {
     `- domain: ${lead.domain}`,
     lead.name ? `- name: ${lead.name}` : null,
     lead.role ? `- role: ${lead.role}` : null,
+    lead.location ? `- location: ${lead.location}` : null,
+    lead.phone ? `- public phone: ${lead.phone}` : null,
+    lead.rating !== undefined
+      ? `- google rating: ${lead.rating}${lead.reviews !== undefined ? ` from ${lead.reviews} reviews` : ""} (high review counts = busy = missed enquiries cost more; you MAY reference this naturally)`
+      : null,
     "",
     `COMPANY CONTEXT (from ${lead.domain}, use ONLY this):`,
     context,
@@ -267,7 +272,7 @@ export interface PersonalizationResult {
 
 export async function personalize(
   cfg: AppConfig,
-  lead: Lead,
+  lead: DiscoveredLead,
   enrichment: Enrichment,
   icpNote?: string,
 ): Promise<PersonalizationResult> {
