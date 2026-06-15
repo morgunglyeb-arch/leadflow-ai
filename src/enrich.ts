@@ -24,10 +24,36 @@ const SIGNAL_RULES: Array<{ key: string; pattern: RegExp }> = [
   { key: "series", pattern: /\bseries [a-d]\b/i },
 ];
 
+// Channel rules run on RAW HTML — they look for links/attributes (href, tel:,
+// social, booking widgets) that get stripped out of the visible body text.
+// These tell us WHERE the business talks to customers and HOW they book.
+const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
+  { key: "whatsapp", pattern: /(wa\.me|api\.whatsapp|whatsapp)/i },
+  { key: "instagram", pattern: /instagram\.com/i },
+  { key: "telegram", pattern: /(t\.me\/|telegram\.me|telegram)/i },
+  { key: "messenger", pattern: /(m\.me\/|messenger\.com|facebook messenger)/i },
+  { key: "phone_booking", pattern: /(tel:|call (us|to book|now)|book by phone|phone to book)/i },
+  {
+    key: "online_booking",
+    pattern:
+      /(calendly|acuityscheduling|setmore|simplybook|cliniko|dentally|zenoti|fresha|treatwell|book[- ]?online|online[- ]?booking|booking widget)/i,
+  },
+  { key: "contact_form", pattern: /(<form|contact[- ]?form|enquiry form|request a callback|get a quote)/i },
+  { key: "live_chat", pattern: /(intercom|tawk\.to|livechatinc|drift\.com|crisp\.chat|zendesk)/i },
+];
+
 export function detectSignals(text: string): string[] {
   const hits = new Set<string>();
   for (const { key, pattern } of SIGNAL_RULES) {
     if (pattern.test(text)) hits.add(key);
+  }
+  return [...hits];
+}
+
+export function detectChannels(html: string): string[] {
+  const hits = new Set<string>();
+  for (const { key, pattern } of CHANNEL_RULES) {
+    if (pattern.test(html)) hits.add(key);
   }
   return [...hits];
 }
@@ -158,14 +184,17 @@ function parseSiteHtml(html: string, domain: string): ParsedSite {
     .join("\n");
 
   const summary_text = composed.slice(0, MAX_TEXT_CHARS);
-  const signals = detectSignals(`${title ?? ""} ${description ?? ""} ${bodyText}`);
+  const signals = [
+    ...detectSignals(`${title ?? ""} ${description ?? ""} ${bodyText}`),
+    ...detectChannels(html),
+  ];
   const emails = extractEmails(html, domain);
   return { title, description, summary_text, signals, emails };
 }
 
 function parsePlainFixture(text: string): ParsedSite {
   const cleaned = text.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_CHARS);
-  const signals = detectSignals(text);
+  const signals = [...detectSignals(text), ...detectChannels(text)];
   const firstLine = text.split("\n").map((l) => l.trim()).find(Boolean);
   const emails = extractEmails(text, "");
   return {

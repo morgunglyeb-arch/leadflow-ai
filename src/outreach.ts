@@ -35,19 +35,13 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   lines.push("");
   if (row.opener) lines.push(row.opener);
 
-  const hasProcess = Boolean(
-    row.process && row.process.trim().toLowerCase() !== "unclear from site",
-  );
-  if (hasProcess && row.automation) {
+  // The opener already states the problem; this is the plain offer + payoff.
+  if (row.automation) {
     lines.push("");
-    lines.push(`${capitalize(stripTrailingPunct(row.process!))}.`);
     lines.push(
       `${capitalize(stripTrailingPunct(row.automation))}` +
         (row.est_benefit ? ` — ${stripTrailingPunct(row.est_benefit)}.` : "."),
     );
-  } else if (row.automation) {
-    lines.push("");
-    lines.push(`${capitalize(stripTrailingPunct(row.automation))}.`);
   }
 
   lines.push("");
