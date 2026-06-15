@@ -63,6 +63,14 @@ async function main(): Promise<void> {
       const opener = get("opener");
       const icebreaker = get("icebreaker");
       const reason = get("reason");
+      const process = get("process");
+      const automation = get("automation");
+      const estBenefit = get("est_benefit");
+      const discoverySource = get("discovery_source");
+      const discoveryQuery = get("discovery_query");
+      const status = get("status") || "draft";
+      const phone = get("phone");
+      const location = get("location");
       const fit = Number.parseInt(get("fit_score"), 10) || 0;
       const signals = get("signals").split("|").filter(Boolean);
 
@@ -77,6 +85,18 @@ async function main(): Promise<void> {
         return `<span class="badge" style="background:${bg}">${esc(label)}</span>`;
       })();
       const srcBadge = `<span class="badge" style="background:#334155">${esc(enrichmentSource)}</span>`;
+      const discoveryBadge = discoverySource
+        ? `<span class="badge" style="background:#1d4ed8">via ${esc(discoverySource)}</span>`
+        : "";
+      const statusBadge = (() => {
+        const map: Record<string, string> = {
+          draft: "#854d0e",
+          approved: "#166534",
+          sent: "#15803d",
+          skipped: "#7f1d1d",
+        };
+        return `<span class="badge" style="background:${map[status] ?? "#475569"}">${esc(status)}</span>`;
+      })();
       const enrichedBadge = enriched
         ? `<span class="badge" style="background:#166534">enriched ✓</span>`
         : `<span class="badge" style="background:#7f1d1d">not enriched ✗</span>`;
@@ -84,6 +104,16 @@ async function main(): Promise<void> {
       const signalsHtml = signals
         .map((s) => `<span class="sig">${esc(s)}</span>`)
         .join("");
+
+      const hasPitch = process && process.toLowerCase() !== "unclear from site" && automation;
+      const pitchHtml = hasPitch
+        ? `<div class="pitch">
+    <div class="pitch-label">automation pitch</div>
+    <div class="pitch-row"><span class="k">manual process</span><span class="v">${esc(process)}</span></div>
+    <div class="pitch-row"><span class="k">we'd automate</span><span class="v">${esc(automation)}</span></div>
+    ${estBenefit ? `<div class="pitch-row"><span class="k">benefit</span><span class="v">${esc(estBenefit)}</span></div>` : ""}
+  </div>`
+        : "";
 
       return `
 <article class="card">
@@ -95,7 +125,9 @@ async function main(): Promise<void> {
         ${name ? `· <span>${esc(name)}</span>` : ""}
         ${role ? `· <span class="role">${esc(role)}</span>` : ""}
       </div>
-      ${email ? `<div class="email">${esc(email)}</div>` : ""}
+      ${email ? `<div class="email">${esc(email)}${phone ? ` · ${esc(phone)}` : ""}</div>` : ""}
+      ${location ? `<div class="email">${esc(location)}</div>` : ""}
+      ${discoveryQuery ? `<div class="email">found via: "${esc(discoveryQuery)}"</div>` : ""}
     </div>
     <div class="fit" style="background:${fitColor}">
       <div class="fit-n">${fit || "?"}</div>
@@ -104,10 +136,14 @@ async function main(): Promise<void> {
   </header>
 
   <div class="badges">
+    ${statusBadge}
     ${providerBadge}
     ${srcBadge}
+    ${discoveryBadge}
     ${enrichedBadge}
   </div>
+
+  ${pitchHtml}
 
   <div class="email-preview">
     <div class="row"><label>subject</label><div class="subject">${esc(subject)}</div></div>
@@ -184,6 +220,12 @@ async function main(): Promise<void> {
   .badges { display:flex; gap:6px; margin:14px 0 0; flex-wrap:wrap; }
   .badge { font-size:10px; font-weight:600; padding:3px 8px; border-radius:10px;
            color:#fff; text-transform:uppercase; letter-spacing:0.05em; }
+
+  .pitch { margin-top:16px; background:#0c1626; border:1px solid #1d3a5f; border-radius:10px; padding:14px 16px; }
+  .pitch-label { font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:#60a5fa; font-weight:700; margin-bottom:8px; }
+  .pitch-row { display:grid; grid-template-columns:120px 1fr; gap:12px; padding:4px 0; font-size:13px; }
+  .pitch-row .k { color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; padding-top:2px; }
+  .pitch-row .v { color:#e5e7eb; }
 
   .email-preview { margin-top:18px; border-top:1px dashed var(--border); padding-top:16px; }
   .row { display:grid; grid-template-columns: 110px 1fr; gap:14px; padding:8px 0;

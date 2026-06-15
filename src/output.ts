@@ -5,20 +5,30 @@ import type { AppConfig } from "./config.js";
 import type { OutputRow } from "./types.js";
 
 const CSV_COLUMNS: Array<keyof OutputRow> = [
+  "status",
   "company",
   "domain",
   "name",
   "role",
   "linkedin",
   "email",
+  "phone",
+  "location",
+  "rating",
+  "reviews",
+  "discovery_source",
+  "discovery_query",
   "enriched",
   "enrichment_source",
   "signals",
   "ai_provider",
+  "fit_score",
   "subject",
   "opener",
   "icebreaker",
-  "fit_score",
+  "process",
+  "automation",
+  "est_benefit",
   "reason",
 ];
 

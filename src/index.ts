@@ -30,12 +30,13 @@ function printHelp(): void {
   console.log(`LeadFlow AI — agentic lead enrichment + cold-outreach personalization
 
 Usage:
-  npm run leads -- [flags]
+  npm run leads -- [flags]        # enrich + personalize an existing CSV/Sheet
+  npm run prospect -- [flags]     # discover NEW leads, then enrich + pitch + draft
 
 Flags:
-  --dry                Print rows, don't write CSV / Sheets / send email
-  --mock               Use fixtures in data/fixtures/<domain>.txt (no network)
-  --input=PATH         Use a different leads CSV than LEADS_CSV_PATH
+  --dry                Print rows, don't write CSV / drafts / Sheets / send email
+  --mock               Use fixtures (no network) — sites and discovery results
+  --input=PATH         (leads) Use a different leads CSV than LEADS_CSV_PATH
   --limit=N            Process only the first N leads
   --concurrency=N      Override CONCURRENCY (default 5)
   --force              Ignore cache + idempotency (reprocess everything)
@@ -44,8 +45,8 @@ Flags:
 
 Examples:
   npm run leads -- --mock --dry              # offline demo on fixtures
-  npm run leads -- --input=data/leads.csv    # real list, write CSV
-  npm run leads -- --limit=10                # first 10 leads
+  npm run leads -- --input=data/leads.csv    # real list, write CSV + drafts
+  npm run prospect -- --mock --dry           # offline discovery → pitch demo
 `);
 }
 

@@ -30,6 +30,7 @@
   "license": "MIT",
   "scripts": {
     "leads": "tsx src/index.ts",
+    "prospect": "tsx src/cli-prospect.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "gen:demo": "tsx scripts/gen-demo.ts",

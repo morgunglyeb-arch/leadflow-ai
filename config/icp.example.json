@@ -1,0 +1,30 @@
+{
+  "location": "",
+  "note": "We sell agentic AI automation to SMBs. Prioritize businesses with visible manual ops (bookings, support, returns, client reporting).",
+  "max_leads": 25,
+  "segments": [
+    {
+      "market": "ecommerce",
+      "queries": [
+        "shopify skincare brands",
+        "dtc coffee subscription brands",
+        "ecommerce logistics platforms"
+      ]
+    },
+    {
+      "market": "local_smb",
+      "queries": [
+        "physiotherapy and health clinics",
+        "boutique hotels"
+      ]
+    },
+    {
+      "market": "agency",
+      "queries": [
+        "boutique branding agencies",
+        "bookkeeping firms for startups",
+        "corporate law for startups"
+      ]
+    }
+  ]
+}

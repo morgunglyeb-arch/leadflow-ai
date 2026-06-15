@@ -205,6 +205,48 @@ No careers page. No blog. Limited public information is by design.`,
   },
 ];
 
+// --- Discovery demo: map ICP queries → existing fixture domains -------------
+// Lets `npm run prospect -- --mock` run the full discover→enrich→pitch flow
+// offline by reusing the same site fixtures above.
+interface DemoSegment {
+  market: "ecommerce" | "local_smb" | "agency";
+  queries: Array<{ query: string; domains: string[] }>;
+}
+
+const DISCOVERY: DemoSegment[] = [
+  {
+    market: "ecommerce",
+    queries: [
+      { query: "shopify skincare brands", domains: ["glimmerbeauty.example"] },
+      { query: "dtc coffee subscription brands", domains: ["brightwatercoffee.example"] },
+      { query: "ecommerce logistics platforms", domains: ["northwindlogistics.example"] },
+    ],
+  },
+  {
+    market: "local_smb",
+    queries: [
+      { query: "physiotherapy and health clinics", domains: ["lumenhealth.example"] },
+      { query: "boutique hotels", domains: ["harborlighthotels.example"] },
+    ],
+  },
+  {
+    market: "agency",
+    queries: [
+      { query: "boutique branding agencies", domains: ["vellumstudio.example"] },
+      { query: "bookkeeping firms for startups", domains: ["quillbookkeeping.example"] },
+      { query: "corporate law for startups", domains: ["arborlegal.example"] },
+    ],
+  },
+];
+
+function querySlug(full: string): string {
+  return full.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
+}
+
+function leadByDomain(domain: string): DemoLead | undefined {
+  return LEADS.find((l) => l.domain === domain);
+}
+
 async function main(): Promise<void> {
   const csvPath = "data/leads.csv";
   const fixtureDir = "data/fixtures";
@@ -226,6 +268,41 @@ async function main(): Promise<void> {
     await writeFile(path, lead.fixture.trim() + "\n", "utf8");
   }
   console.log(`Wrote ${LEADS.length} fixtures → ${fixtureDir}/`);
+
+  // ICP config (real + example)
+  const icp = {
+    location: "",
+    note: "We sell agentic AI automation to SMBs. Prioritize businesses with visible manual ops (bookings, support, returns, client reporting).",
+    max_leads: 25,
+    segments: DISCOVERY.map((s) => ({ market: s.market, queries: s.queries.map((q) => q.query) })),
+  };
+  await mkdir("config", { recursive: true });
+  await writeFile("config/icp.json", JSON.stringify(icp, null, 2) + "\n", "utf8");
+  await writeFile("config/icp.example.json", JSON.stringify(icp, null, 2) + "\n", "utf8");
+  console.log("Wrote config/icp.json + config/icp.example.json");
+
+  // Discovery fixtures keyed by query slug
+  const discDir = join(fixtureDir, "discovery");
+  await mkdir(discDir, { recursive: true });
+  let discCount = 0;
+  for (const seg of DISCOVERY) {
+    for (const q of seg.queries) {
+      const candidates = q.domains.map((domain) => {
+        const lead = leadByDomain(domain);
+        const emailLocal = lead ? lead.name.toLowerCase().replace(/[^a-z]/g, ".") : "hello";
+        return {
+          company: lead?.company ?? domain,
+          domain,
+          name: lead?.name,
+          role: lead?.role,
+          email: `${emailLocal}@${domain}`,
+        };
+      });
+      await writeFile(join(discDir, `${querySlug(q.query)}.json`), JSON.stringify(candidates, null, 2) + "\n", "utf8");
+      discCount += candidates.length;
+    }
+  }
+  console.log(`Wrote ${discCount} discovery candidates → ${discDir}/`);
 }
 
 function csvField(s: string): string {

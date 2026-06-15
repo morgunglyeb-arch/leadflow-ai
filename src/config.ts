@@ -21,6 +21,22 @@ const schema = z.object({
   GOOGLE_SHEETS_READ_RANGE: z.string().default("leads!A1:F"),
   GOOGLE_SHEETS_WRITE_RANGE: z.string().default("leads_out!A1"),
 
+  // --- Discovery (prospecting) ---------------------------------------------
+  // Which discoverer to use when sourcing new leads. "csv" reuses LEADS_SOURCE.
+  DISCOVERY_SOURCE: z.enum(["search", "maps", "vibe", "seed", "csv"]).default("search"),
+  ICP_CONFIG_PATH: z.string().default("config/icp.json"),
+  MAX_LEADS: z.coerce.number().int().positive().default(25),
+
+  // Web search discoverer (Serper by default; provider-agnostic shape)
+  SEARCH_PROVIDER: z.enum(["serper"]).default("serper"),
+  SERPER_API_KEY: z.string().optional(),
+
+  // Google Places (maps) discoverer
+  GOOGLE_PLACES_API_KEY: z.string().optional(),
+
+  // Vibe Prospecting export directory (populated by the agent via the MCP)
+  VIBE_EXPORT_DIR: z.string().default("data/discovered"),
+
   ENRICH_TIMEOUT_MS: z.coerce.number().int().positive().default(8000),
   ENRICH_USER_AGENT: z
     .string()
@@ -29,10 +45,21 @@ const schema = z.object({
   CONCURRENCY: z.coerce.number().int().positive().default(5),
 
   OUTPUT_CSV_PATH: z.string().default("data/out/leads_enriched.csv"),
+  DRAFTS_DIR: z.string().default("data/out/drafts"),
+  DRAFTS_CSV_PATH: z.string().default("data/out/drafts.csv"),
   SHEETS_OUTPUT_ENABLED: z
     .string()
     .default("false")
     .transform((s) => s.toLowerCase() === "true"),
+
+  // Sender identity used when assembling draft emails
+  SENDER_NAME: z.string().default("Glyeb"),
+  SENDER_SIGNATURE: z
+    .string()
+    .default("Glyeb · AI automation for SMBs · github.com/morgunglyeb-arch"),
+  CALL_TO_ACTION: z
+    .string()
+    .default("Worth a quick 15-min call to see if it's a fit?"),
 
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
@@ -67,4 +94,16 @@ export function sheetsOutputReady(cfg: AppConfig): boolean {
   return Boolean(
     cfg.SHEETS_OUTPUT_ENABLED && cfg.GOOGLE_SHEETS_ID && cfg.GOOGLE_SERVICE_ACCOUNT_JSON,
   );
+}
+
+export function assertDiscoveryReady(cfg: AppConfig, mock: boolean): void {
+  if (mock) return; // fixtures used; no network credentials needed
+  if (cfg.DISCOVERY_SOURCE === "search" && !cfg.SERPER_API_KEY) {
+    throw new Error("DISCOVERY_SOURCE=search but SERPER_API_KEY is not set (or run with --mock).");
+  }
+  if (cfg.DISCOVERY_SOURCE === "maps" && !cfg.GOOGLE_PLACES_API_KEY) {
+    throw new Error(
+      "DISCOVERY_SOURCE=maps but GOOGLE_PLACES_API_KEY is not set (or run with --mock).",
+    );
+  }
 }

@@ -7,6 +7,17 @@ export interface Lead {
   email?: string;
 }
 
+export type DiscoverySource = "search" | "maps" | "vibe" | "seed" | "csv";
+
+export interface DiscoveredLead extends Lead {
+  discovery_source: DiscoverySource;
+  discovery_query?: string;
+  phone?: string;
+  rating?: number;
+  reviews?: number;
+  location?: string;
+}
+
 export interface Enrichment {
   domain: string;
   title?: string;
@@ -19,17 +30,29 @@ export interface Enrichment {
   error?: string;
 }
 
+/**
+ * The single LLM output per lead. Beyond the cold-email copy it carries an
+ * automation pitch: a concrete manual process spotted in the company context
+ * and how we'd automate it. All of it must be grounded in the enrichment text.
+ */
 export interface Personalized {
   opener: string;
   icebreaker: string;
   subject: string;
   fit_score: number;
   reason: string;
+  // automation pitch
+  process: string; // the manual/repetitive process spotted (or "unclear")
+  automation: string; // what we'd automate it with
+  est_benefit: string; // qualitative benefit, no invented numbers
 }
 
-export type OutputRow = Lead & {
+export type LeadStatus = "draft" | "approved" | "sent" | "skipped";
+
+export type OutputRow = DiscoveredLead & {
   enriched: boolean;
   enrichment_source: Enrichment["source"];
   signals: string;
   ai_provider: "anthropic" | "groq" | "fallback";
+  status: LeadStatus;
 } & Partial<Personalized>;

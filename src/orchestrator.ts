@@ -1,17 +1,9 @@
 import type { AppConfig } from "./config.js";
-import { assertLLMReady, sheetsOutputReady, emailTestReady } from "./config.js";
+import { assertLLMReady } from "./config.js";
 import { fetchLeads } from "./sources/index.js";
-import { enrichLead } from "./enrich.js";
-import { personalize, fallbackPersonalization } from "./ai.js";
-import { pLimit } from "./pLimit.js";
-import {
-  appendToSheets,
-  loadExistingKeys,
-  overwriteCsv,
-  sendTestEmail,
-  writeCsv,
-} from "./output.js";
-import type { Lead, OutputRow } from "./types.js";
+import { loadExistingKeys } from "./output.js";
+import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
+import type { DiscoveredLead, Lead, OutputRow } from "./types.js";
 
 export interface RunFlags {
   dry: boolean;
@@ -23,12 +15,8 @@ export interface RunFlags {
   concurrency?: number;
 }
 
-interface KeyedLead extends Lead {
-  _key: string;
-}
-
-function leadKey(lead: Lead): string {
-  return (lead.email ?? lead.domain).toLowerCase();
+function asDiscovered(lead: Lead): DiscoveredLead {
+  return { ...lead, discovery_source: "csv" };
 }
 
 export async function runEnrichment(cfg: AppConfig, flags: RunFlags): Promise<OutputRow[]> {
@@ -49,7 +37,7 @@ export async function runEnrichment(cfg: AppConfig, flags: RunFlags): Promise<Ou
   const allLeads = await fetchLeads(cfg, flags.input);
   console.log(`[leadflow] fetched ${allLeads.length} leads`);
 
-  let leads: KeyedLead[] = allLeads.map((l) => ({ ...l, _key: leadKey(l) }));
+  let leads: DiscoveredLead[] = allLeads.map(asDiscovered);
 
   if (!flags.force && !flags.dry) {
     const existing = await loadExistingKeys(cfg.OUTPUT_CSV_PATH);
@@ -75,55 +63,13 @@ export async function runEnrichment(cfg: AppConfig, flags: RunFlags): Promise<Ou
     return [];
   }
 
-  const limit = pLimit(concurrency);
-  let done = 0;
-  const rows = await Promise.all(
-    leads.map((lead) =>
-      limit(async () => {
-        const enrichment = await enrichLead(lead.domain, cfg, {
-          mock: flags.mock,
-          force: flags.force,
-        });
-
-        let personalized;
-        let provider: "anthropic" | "groq" | "fallback";
-        if (!llmReady) {
-          personalized = fallbackPersonalization(lead, enrichment);
-          provider = "fallback";
-        } else {
-          const r = await personalize(cfg, lead, enrichment);
-          personalized = r.personalized;
-          provider = r.provider;
-        }
-
-        const row: OutputRow = {
-          company: lead.company,
-          domain: lead.domain,
-          ...(lead.name !== undefined ? { name: lead.name } : {}),
-          ...(lead.role !== undefined ? { role: lead.role } : {}),
-          ...(lead.linkedin !== undefined ? { linkedin: lead.linkedin } : {}),
-          ...(lead.email !== undefined ? { email: lead.email } : {}),
-          enriched: enrichment.ok,
-          enrichment_source: enrichment.source,
-          signals: enrichment.signals.join("|"),
-          ai_provider: provider,
-          opener: personalized.opener,
-          icebreaker: personalized.icebreaker,
-          subject: personalized.subject,
-          fit_score: personalized.fit_score,
-          reason: personalized.reason,
-        };
-        done++;
-        const fit = personalized.fit_score;
-        console.log(
-          `[leadflow] (${done}/${leads.length}) ${lead.company.padEnd(28).slice(0, 28)} ` +
-            `enriched=${enrichment.ok ? "✓" : "✗"} src=${enrichment.source} ` +
-            `ai=${provider} fit=${fit}`,
-        );
-        return row;
-      }),
-    ),
-  );
+  const rows = await processLeads(cfg, leads, {
+    mock: flags.mock,
+    force: flags.force,
+    concurrency,
+    llmReady,
+    label: "leadflow",
+  });
 
   if (flags.dry) {
     console.log("\n--- DRY RUN OUTPUT ---\n");
@@ -132,51 +78,12 @@ export async function runEnrichment(cfg: AppConfig, flags: RunFlags): Promise<Ou
     return rows;
   }
 
-  if (flags.force) {
-    await overwriteCsv(cfg.OUTPUT_CSV_PATH, rows);
-    console.log(`[leadflow] wrote ${rows.length} rows → ${cfg.OUTPUT_CSV_PATH} (overwritten)`);
-  } else {
-    await writeCsv(cfg.OUTPUT_CSV_PATH, rows);
-    console.log(`[leadflow] appended ${rows.length} rows → ${cfg.OUTPUT_CSV_PATH}`);
-  }
-
-  if (sheetsOutputReady(cfg)) {
-    try {
-      await appendToSheets(cfg, rows);
-      console.log(`[leadflow] appended ${rows.length} rows to Google Sheets`);
-    } catch (err) {
-      console.error(`[leadflow] sheets append failed: ${(err as Error).message}`);
-    }
-  }
-
-  if (flags.sendTest) {
-    if (!emailTestReady(cfg)) {
-      console.warn(
-        "[leadflow] --send-test requested but RESEND_API_KEY / EMAIL_FROM / EMAIL_TEST_TO not all set — skipping",
-      );
-    } else {
-      const first = rows[0];
-      if (first) {
-        const result = await sendTestEmail(cfg, first);
-        if (result.ok) console.log(`[leadflow] test email sent (id=${result.id})`);
-        else console.error(`[leadflow] test email FAILED: ${result.error}`);
-      }
-    }
-  }
+  await finalizeOutput(cfg, rows, {
+    force: flags.force,
+    sendTest: flags.sendTest,
+    label: "leadflow",
+    writeDraftsQueue: true,
+  });
 
   return rows;
-}
-
-function printTable(rows: OutputRow[]): void {
-  for (const r of rows) {
-    console.log(
-      `\n· ${r.company} (${r.domain})  fit=${r.fit_score ?? "-"}  ` +
-        `[${r.ai_provider}/${r.enrichment_source}]`,
-    );
-    if (r.subject) console.log(`  subject:    ${r.subject}`);
-    if (r.opener) console.log(`  opener:     ${r.opener}`);
-    if (r.icebreaker) console.log(`  icebreaker: ${r.icebreaker}`);
-    if (r.reason) console.log(`  reason:     ${r.reason}`);
-    if (r.signals) console.log(`  signals:    ${r.signals}`);
-  }
 }

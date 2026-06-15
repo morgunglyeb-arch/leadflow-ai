@@ -2,14 +2,22 @@
 
 > [Українська версія](./README.uk.md)
 
-> Agentic TypeScript pipeline that **enriches B2B leads from their websites** and writes **AI-personalized cold-outreach copy** — opener, ice-breaker, subject line, and an honest fit score. CSV / Google Sheets in, CSV / Sheets / Resend out. Anthropic or Groq. **No n8n, no Zapier — just code.**
+> Agentic TypeScript pipeline that **finds B2B prospects, studies them, and writes a personalized automation pitch** — opener, ice-breaker, subject, the specific manual process to automate, and an honest fit score. Discovery (search / maps / vibe) → enrich → pitch → review-ready draft. Anthropic or Groq. **No n8n, no Zapier — just code.**
+
+Two entry points:
 
 ```
- leads.csv  ──►  enrich (fetch site)  ──►  LLM (structured)  ──►  validate  ──►  CSV / Sheets / Email
-                       │                         │
-                       ▼                         ▼
-                  data/cache/             zod schema + tool-use
-                  (per-domain JSON)       (Claude tool_choice, Groq response_format)
+npm run prospect   discover ──► enrich ──► LLM pitch ──► draft queue   (find NEW leads + pitch)
+                   search/maps/vibe   fetch site   process+automation   for your review
+npm run leads      (your CSV)  ──► enrich ──► LLM pitch ──► CSV + drafts (enrich an existing list)
+```
+
+```
+ ICP (config) ─► DISCOVER ─► enrich (fetch site) ─► LLM (structured) ─► validate ─► CSV + draft emails
+                 search          │                       │
+                 maps            ▼                       ▼
+                 vibe       data/cache/           zod schema + tool-use
+                            (per-domain JSON)     (Claude tool_choice, Groq response_format)
 ```
 
 It's the "Clay / SDR lite" pattern, built as a clean, typed pipeline:
@@ -43,6 +51,72 @@ cp .env.example .env                   # set ANTHROPIC_API_KEY + OUR_OFFER
 npm run leads -- --input=data/leads.csv
 # → data/out/leads_enriched.csv
 ```
+
+---
+
+## Prospecting mode — find leads, study them, pitch automation
+
+`npm run prospect` is the full agent: it discovers brand-new prospects from your ICP, enriches each from its site, identifies a **specific manual process** they likely run, proposes how you'd automate it, and queues a **ready-to-review draft email** per lead — no auto-send.
+
+```bash
+npm run gen:demo                       # writes config/icp.json + discovery fixtures
+npm run prospect -- --mock --dry       # offline: discover → enrich → pitch, prints table
+
+# live:
+cp .env.example .env                   # set GROQ_API_KEY (or ANTHROPIC) + SERPER_API_KEY
+#   edit config/icp.json — your location, segments and search queries
+npm run prospect -- --limit=20 --min-fit=3
+#   → data/out/leads_enriched.csv  (the data)
+#   → data/out/drafts/<domain>.md  (one review-ready email per lead)
+#   → data/out/drafts.csv          (the queue, with a status column)
+```
+
+### Discovery sources (`DISCOVERY_SOURCE`)
+
+| Source | What it does | Needs |
+|---|---|---|
+| `search` | Runs your ICP queries through Serper (Google), extracts company domains from results | `SERPER_API_KEY` |
+| `maps` | Google Places text search → local SMBs with website, phone, rating, review count | `GOOGLE_PLACES_API_KEY` |
+| `vibe` | Reads `vibe_*.json` exports the agent pulls from the Vibe Prospecting MCP (150M companies / 800M contacts with emails) | a Vibe session |
+
+All three sit behind one `LeadDiscoverer` interface, so adding Apollo/Clearbit later is a new file, not a rewrite.
+
+### ICP config (`config/icp.json`)
+
+```json
+{
+  "location": "Austin, TX",
+  "note": "We sell agentic AI automation to SMBs. Prioritize visible manual ops.",
+  "max_leads": 25,
+  "segments": [
+    { "market": "local_smb", "queries": ["dental clinics", "physiotherapy clinics"] },
+    { "market": "ecommerce", "queries": ["shopify skincare brands"] },
+    { "market": "agency",    "queries": ["bookkeeping firms for startups"] }
+  ]
+}
+```
+
+### A generated draft (real output, grounded in the company's own site text)
+
+```
+Subject: automating your monthly close workflow
+
+Hi Jonas,
+
+Running monthly close for 80 SaaS startups creates a lot of repetitive work.
+
+Likely manual aggregation of client financial data and preparation of monthly
+GAAP-friendly reports.
+We'd build an agentic TypeScript workflow that pulls transaction data from each
+client's accounting system, reconciles accruals, and auto-generates ready-to-share
+reports in Mosaic or Causal — fewer manual data-entry errors and faster delivery.
+
+Worth a quick 15-min call to see if it's a fit?
+
+— Glyeb · AI automation for SMBs · github.com/morgunglyeb-arch
+```
+
+Every fact (80 SaaS startups, Mosaic/Causal, accruals) comes from the site context — the model is forbidden to invent. Thin context → `process: "unclear from site"` and `fit_score ≤ 2`.
 
 ---
 
@@ -186,29 +260,42 @@ Full template: [`.env.example`](.env.example).
 
 ```
 src/
-  index.ts          CLI — flag parsing + entrypoint
+  index.ts          CLI for `npm run leads` (enrich an existing CSV/Sheet)
+  cli-prospect.ts   CLI for `npm run prospect` (discover NEW leads + pitch)
   config.ts         zod env validation
-  types.ts          Lead, Enrichment, Personalized, OutputRow
-  orchestrator.ts   runEnrichment — the pipeline
-  sources/
-    index.ts        LeadsSource interface + factory + domain normalizer
-    csv.ts          CSV parser (quote-tolerant)
-    sheets.ts       Google Sheets reader (JWT service account)
+  types.ts          Lead, DiscoveredLead, Enrichment, Personalized, OutputRow
+  orchestrator.ts   runEnrichment — CSV-in path
+  prospect.ts       runProspecting — discover-in path
+  pipeline.ts       shared core: processLeads (enrich→pitch) + finalizeOutput
+  discover/
+    index.ts        LeadDiscoverer interface + factory + dedupe + loop
+    search.ts       Serper (Google) web-search discoverer
+    maps.ts         Google Places (local SMB) discoverer
+    vibe.ts         Vibe Prospecting MCP-export reader
+    icp.ts          ICP config (zod) → expanded search queries
+    mock.ts         offline discovery fixtures loader
+  sources/          CSV + Google Sheets readers (LeadsSource interface)
   enrich.ts         fetchSite, HTML → text, signal rules, fixture loader
   ai.ts             Claude tool-use + Groq json_object + zod + fallback
+                    (opener/subject + automation pitch in ONE schema)
+  outreach.ts       assemble draft emails + write the review queue
   cache.ts          per-domain JSON cache
   pLimit.ts         tiny concurrency limiter
-  output.ts         CSV writer, Sheets append, Resend test email
+  output.ts         CSV writer (BOM), Sheets append, Resend test email
+config/
+  icp.example.json  committed ICP template (icp.json is yours, gitignored)
 scripts/
-  gen-demo.ts       seeded demo leads + matching fixtures
+  gen-demo.ts       seeded leads + site fixtures + ICP + discovery fixtures
+  view-csv.ts       render the output CSV as a dark card-style HTML preview
 data/
-  leads.csv         demo input (generated)
-  fixtures/         offline site texts keyed by domain
+  fixtures/         offline site texts + discovery/ search-result fixtures
   cache/            per-domain enrichment cache (gitignored)
-  out/              enriched CSV output (gitignored)
+  discovered/       vibe_*.json exports (gitignored)
+  out/              enriched CSV + drafts/ queue (gitignored)
 ```
 
-Each step is a typed function, the orchestrator is one screen, and provider differences live behind one schema.
+Each step is a typed function, both orchestrators are one screen each over a
+shared `pipeline.ts`, and provider differences live behind one schema.
 
 ---
 
