@@ -2,11 +2,23 @@ import "dotenv/config";
 import { z } from "zod";
 
 const schema = z.object({
-  LLM_PROVIDER: z.enum(["anthropic", "groq"]).default("anthropic"),
+  // "anthropic" | "groq" | "openai" (any OpenAI-compatible endpoint:
+  // Gemini, Cerebras, OpenRouter, Together, GitHub Models, OpenAI itself…)
+  LLM_PROVIDER: z.enum(["anthropic", "groq", "openai"]).default("anthropic"),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   GROQ_API_KEY: z.string().optional(),
   GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
+
+  // Generic OpenAI-compatible provider (used when LLM_PROVIDER=openai)
+  OPENAI_API_KEY: z.string().optional(),
+  OPENAI_BASE_URL: z
+    .string()
+    .default("https://generativelanguage.googleapis.com/v1beta/openai/"),
+  OPENAI_MODEL: z.string().default("gemini-2.0-flash"),
+
+  // Retry transient 429s (rate limits) before giving up to fallback
+  LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 
   OUR_OFFER: z
     .string()
@@ -83,6 +95,9 @@ export function assertLLMReady(cfg: AppConfig): void {
   }
   if (cfg.LLM_PROVIDER === "groq" && !cfg.GROQ_API_KEY) {
     throw new Error("LLM_PROVIDER=groq but GROQ_API_KEY is not set.");
+  }
+  if (cfg.LLM_PROVIDER === "openai" && !cfg.OPENAI_API_KEY) {
+    throw new Error("LLM_PROVIDER=openai but OPENAI_API_KEY is not set.");
   }
 }
 

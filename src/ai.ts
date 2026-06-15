@@ -142,39 +142,77 @@ async function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personaliz
   return PersonalizedSchema.parse(toolUse.input);
 }
 
-async function callGroq(cfg: AppConfig, input: AiInput): Promise<Personalized> {
-  const client = new OpenAI({
-    apiKey: cfg.GROQ_API_KEY,
-    baseURL: "https://api.groq.com/openai/v1",
-  });
-  const res = await client.chat.completions.create({
-    model: cfg.GROQ_MODEL,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "user",
-        content:
-          `${buildUserMessage(input)}\n\n` +
-          "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
-          "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
-          "process (string), automation (string), est_benefit (string).",
-      },
-    ],
-  });
-  const text = res.choices[0]?.message?.content ?? "";
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`Groq response was not valid JSON: ${(err as Error).message}`);
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/** Parse "try again in 8.65s" from a rate-limit message; fallback to backoff. */
+function retryDelayMs(err: unknown, attempt: number): number {
+  const msg = err instanceof Error ? err.message : String(err);
+  const m = msg.match(/try again in ([\d.]+)\s*s/i);
+  if (m && m[1]) return Math.ceil(Number.parseFloat(m[1]) * 1000) + 250;
+  return Math.min(8000, 600 * 2 ** attempt); // 0.6s, 1.2s, 2.4s…
+}
+
+function isRateLimit(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  return e?.status === 429 || /\b429\b|rate limit/i.test(e?.message ?? "");
+}
+
+/**
+ * One call against any OpenAI-compatible endpoint (Groq, Gemini, Cerebras,
+ * OpenRouter, OpenAI…). Retries transient 429s, honoring the provider's
+ * "try again in Xs" hint when present.
+ */
+async function callOpenAICompatible(
+  cfg: AppConfig,
+  input: AiInput,
+  opts: { apiKey?: string; baseURL: string; model: string },
+): Promise<Personalized> {
+  const client = new OpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
+  const messages = [
+    { role: "system" as const, content: SYSTEM_PROMPT },
+    {
+      role: "user" as const,
+      content:
+        `${buildUserMessage(input)}\n\n` +
+        "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
+        "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
+        "process (string), automation (string), est_benefit (string).",
+    },
+  ];
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= cfg.LLM_MAX_RETRIES; attempt++) {
+    try {
+      const res = await client.chat.completions.create({
+        model: opts.model,
+        response_format: { type: "json_object" },
+        messages,
+      });
+      const text = res.choices[0]?.message?.content ?? "";
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch (err) {
+        throw new Error(`response was not valid JSON: ${(err as Error).message}`);
+      }
+      return PersonalizedSchema.parse(parsed);
+    } catch (err) {
+      lastErr = err;
+      if (isRateLimit(err) && attempt < cfg.LLM_MAX_RETRIES) {
+        const delay = retryDelayMs(err, attempt);
+        console.warn(`[ai] rate-limited, retrying in ${(delay / 1000).toFixed(1)}s…`);
+        await sleep(delay);
+        continue;
+      }
+      throw err;
+    }
   }
-  return PersonalizedSchema.parse(parsed);
+  throw lastErr;
 }
 
 export interface PersonalizationResult {
   personalized: Personalized;
-  provider: "anthropic" | "groq" | "fallback";
+  provider: "anthropic" | "groq" | "openai" | "fallback";
 }
 
 export async function personalize(
@@ -191,7 +229,20 @@ export async function personalize(
   };
   try {
     if (cfg.LLM_PROVIDER === "groq") {
-      return { personalized: await callGroq(cfg, input), provider: "groq" };
+      const personalized = await callOpenAICompatible(cfg, input, {
+        apiKey: cfg.GROQ_API_KEY,
+        baseURL: "https://api.groq.com/openai/v1",
+        model: cfg.GROQ_MODEL,
+      });
+      return { personalized, provider: "groq" };
+    }
+    if (cfg.LLM_PROVIDER === "openai") {
+      const personalized = await callOpenAICompatible(cfg, input, {
+        apiKey: cfg.OPENAI_API_KEY,
+        baseURL: cfg.OPENAI_BASE_URL,
+        model: cfg.OPENAI_MODEL,
+      });
+      return { personalized, provider: "openai" };
     }
     return { personalized: await callAnthropic(cfg, input), provider: "anthropic" };
   } catch (err) {

@@ -53,6 +53,6 @@ export type OutputRow = DiscoveredLead & {
   enriched: boolean;
   enrichment_source: Enrichment["source"];
   signals: string;
-  ai_provider: "anthropic" | "groq" | "fallback";
+  ai_provider: "anthropic" | "groq" | "openai" | "fallback";
   status: LeadStatus;
 } & Partial<Personalized>;

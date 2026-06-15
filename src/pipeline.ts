@@ -42,7 +42,7 @@ export async function processLeads(
         });
 
         let personalized;
-        let provider: "anthropic" | "groq" | "fallback";
+        let provider: "anthropic" | "groq" | "openai" | "fallback";
         if (!opts.llmReady) {
           personalized = fallbackPersonalization(lead, enrichment);
           provider = "fallback";

@@ -14,7 +14,8 @@ interface SerperResponse {
   organic?: SerperOrganic[];
 }
 
-// Domains that are never a prospect's own site.
+// Domains that are never a prospect's own site (social, directories,
+// marketplaces, review/listicle publishers, platform/aggregator sites).
 const BLOCKLIST = [
   "google.",
   "facebook.",
@@ -23,22 +24,63 @@ const BLOCKLIST = [
   "twitter.",
   "x.com",
   "youtube.",
+  "tiktok.",
+  "pinterest.",
   "yelp.",
   "tripadvisor.",
   "wikipedia.",
   "amazon.",
   "ebay.",
+  "etsy.",
   "reddit.",
   "medium.",
+  "quora.",
   "crunchbase.",
   "glassdoor.",
   "indeed.",
   "yellowpages.",
   "maps.",
+  // platforms / aggregators / listicle publishers
+  "shopify.com",
+  "builtwith.",
+  "store-leads.",
+  "g2.",
+  "capterra.",
+  "producthunt.",
+  "trustpilot.",
+  "sitebuilderreport.",
+  "webinopoly.",
+  "bonappetit.",
+  "commerce-ui.",
+  "forbes.",
+  "businessinsider.",
+  "techcrunch.",
+  "hubspot.",
+  "wordpress.",
+  "wix.",
+  "squarespace.",
 ];
 
 function isBlocked(domain: string): boolean {
   return BLOCKLIST.some((b) => domain.includes(b));
+}
+
+// Roundup/listicle titles are articles ABOUT companies, not a prospect.
+const LISTICLE_PATTERNS: RegExp[] = [
+  /\b(top|best)\s+\d+/i,
+  /\b\d+\s+(best|top|great|popular|leading)\b/i,
+  /\blist(s|icle)?\b/i,
+  /\bexamples?\b/i,
+  /\b(brands|stores|websites|companies|shops)\s+(to|you|that|of|for)\b/i,
+  /\b(ultimate|complete)\s+guide\b/i,
+  /\bvs\.?\b/i,
+  /\bhow to\b/i,
+  /\breview(s|ed)?\b/i,
+];
+
+function looksLikeListicle(title: string | undefined): boolean {
+  if (!title) return false;
+  return LISTICLE_PATTERNS.some((re) => re.test(title));
 }
 
 function companyFromTitle(title: string | undefined, domain: string): string {
@@ -93,6 +135,7 @@ export class SearchDiscoverer implements LeadDiscoverer {
       if (!item.link) continue;
       const domain = normalizeDomain(item.link);
       if (!domain || isBlocked(domain) || seen.has(domain)) continue;
+      if (looksLikeListicle(item.title)) continue; // skip roundup articles
       seen.add(domain);
       out.push({
         company: companyFromTitle(item.title, domain),
