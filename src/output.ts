@@ -32,6 +32,8 @@ const CSV_COLUMNS: Array<keyof OutputRow> = [
   "automation",
   "est_benefit",
   "reason",
+  "followup_1",
+  "followup_2",
 ];
 
 function csvEscape(v: unknown): string {

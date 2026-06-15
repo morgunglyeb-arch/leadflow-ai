@@ -63,7 +63,24 @@ function leadCard(row: OutputRow, i: number): string {
 <b style="color:#93c5fd;">Subject:</b> ${esc(row.subject)}
 
 ${draftBody}</div>
+  ${followupBlock(row)}
 </td></tr>`;
+}
+
+function followupBlock(row: OutputRow): string {
+  const items = [
+    { f: row.followup_1, d: 3 },
+    { f: row.followup_2, d: 7 },
+  ].filter((x) => x.f);
+  if (items.length === 0) return "";
+  const rows = items
+    .map(
+      (x, i) =>
+        `<div style="margin-top:6px;"><b style="color:#64748b;">Follow-up ${i + 1}</b> <span style="color:#94a3b8;">(через ~${x.d} дн., если нет ответа)</span><br>${esc(x.f)}</div>`,
+    )
+    .join("");
+  return `<details style="margin-top:8px;"><summary style="cursor:pointer;color:#2563eb;font-size:12px;">+ серия follow-up (2 письма)</summary>
+  <div style="font-size:12px;color:#334155;padding:8px 10px;background:#f8fafc;border-radius:8px;margin-top:6px;">${rows}</div></details>`;
 }
 
 function buildDraftPreview(row: OutputRow): string {
@@ -71,8 +88,9 @@ function buildDraftPreview(row: OutputRow): string {
   const short = (row.company.split(/[-–—|,:]/)[0] ?? "").trim();
   const greet = short.length >= 2 ? `Hi ${esc(short)} team,` : "Hello,";
   const parts: string[] = [greet, "", esc(row.opener ?? "")];
-  if (row.process && row.process.toLowerCase() !== "unclear from site" && row.automation) {
-    parts.push("", `${esc(row.process)}. ${esc(row.automation)}`);
+  if (row.automation) {
+    const a = row.automation.trim().replace(/[.!;,\s]+$/, "");
+    parts.push("", esc(a.charAt(0).toUpperCase() + a.slice(1) + "."));
   }
   return parts.join("\n");
 }
@@ -81,7 +99,7 @@ export function renderDigestHtml(rows: OutputRow[], cfg: AppConfig): string {
   const today = new Date().toISOString().slice(0, 10);
   const withEmail = rows.filter((r) => r.email).length;
   const strong = rows.filter((r) => (r.fit_score ?? 0) >= 4).length;
-  const sorted = [...rows].sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
+  const sorted = rows; // already ROI-ranked by the orchestrator
 
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>LeadFlow — лиды на ${today}</title></head>
 <body style="margin:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -107,7 +125,7 @@ export function renderDigestHtml(rows: OutputRow[], cfg: AppConfig): string {
 }
 
 export function renderDigestText(rows: OutputRow[]): string {
-  const sorted = [...rows].sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0));
+  const sorted = rows; // already ROI-ranked
   return sorted
     .map((r, i) => {
       const lines = [

@@ -23,6 +23,9 @@ const SIGNAL_RULES: Array<{ key: string; pattern: RegExp }> = [
   { key: "healthcare", pattern: /\b(clinic|patients?|healthcare|telehealth|ehr)\b/i },
   { key: "education", pattern: /\b(students?|courses?|edtech|learning|curriculum)\b/i },
   { key: "series", pattern: /\bseries [a-d]\b/i },
+  // buy-signals: motivated to fix ops
+  { key: "hiring_reception", pattern: /\b(receptionist|front desk|front of house|reception team|call handler)\b/i },
+  { key: "expanding", pattern: /\b(we'?re expanding|now open|new (branch|clinic|location)|grand opening|opening soon)\b/i },
 ];
 
 // Channel rules run on RAW HTML — they look for links/attributes (href, tel:,
@@ -41,6 +44,12 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   },
   { key: "contact_form", pattern: /(<form|contact[- ]?form|enquiry form|request a callback|get a quote)/i },
   { key: "live_chat", pattern: /(intercom|tawk\.to|livechatinc|drift\.com|crisp\.chat|zendesk)/i },
+  // they PAY for leads (ad pixels) → missed-enquiry follow-up has obvious ROI
+  { key: "runs_google_ads", pattern: /(googleadservices|gtag\/js|aw-\d{6,}|gclid)/i },
+  { key: "runs_meta_ads", pattern: /(connect\.facebook\.net|fbq\(|facebook pixel|fbevents\.js)/i },
+  // targeting de-prioritizers: DIY site (no budget) / chain (procurement)
+  { key: "diy_site", pattern: /(wix\.com|wixsite|squarespace|weebly|godaddy|\.wordpress\.com)/i },
+  { key: "multi_location", pattern: /(our locations|our clinics|our branches|find your nearest|locations across|nationwide|branches across)/i },
 ];
 
 export function detectSignals(text: string): string[] {

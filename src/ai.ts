@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import type { DiscoveredLead, Enrichment, Lead, Personalized } from "./types.js";
+import { matchVertical, verticalFacts } from "./vertical.js";
 
 export const PersonalizedSchema = z.object({
   opener: z.string().min(5).max(400),
@@ -14,6 +15,8 @@ export const PersonalizedSchema = z.object({
   automation: z.string().min(3).max(280),
   est_benefit: z.string().min(3).max(240),
   brief: z.string().min(3).max(700),
+  followup_1: z.string().min(5).max(500),
+  followup_2: z.string().min(5).max(500),
 });
 
 const LANG_NAME: Record<string, string> = { en: "English", uk: "Ukrainian", ru: "Russian" };
@@ -32,17 +35,38 @@ What we can build (pick the ONE best fit for THIS business from the site evidenc
 
 GROUNDING (no hallucination):
 - Use ONLY the company context + DETECTED SIGNALS provided. Never invent facts, numbers, tools, or channels that aren't evidenced.
-- The DETECTED SIGNALS show how they contact customers (e.g. whatsapp, instagram, phone_booking, contact_form, online_booking, live_chat). Use them to name the EXACT current situation.
-- State the problem as a FACT from the evidence — NO hedging words ("likely", "probably", "maybe", "скорее всего"). E.g. if signals show phone_booking and no online_booking: "you take bookings by phone and reply to enquiries by hand". If signals show instagram + whatsapp: "you handle enquiries through Instagram and WhatsApp manually".
+- State the problem as a FACT from the evidence — NO hedging words ("likely", "probably", "maybe", "скорее всего").
 - If you genuinely cannot see a concrete gap, set process to "unclear from site" (it will be filtered out) — do NOT guess.
-- Don't pitch what they ALREADY have. If signals show online_booking AND live_chat, they've automated booking/chat — find a DIFFERENT gap (missed-call text-back, review collection, no-show reminders, follow-ups, reactivation of past customers). If everything obvious is already automated, lower the fit_score.
+- Don't pitch what they ALREADY have. If they already have online booking and a chatbot, find a DIFFERENT gap (missed-call text-back, review collection, no-show reminders, follow-ups, reactivation of past customers). If everything obvious is already automated, lower the fit_score.
+
+CHANNEL REALISM (very important — pitch only what pays off for THEM):
+- A social link (instagram, telegram, facebook in the footer) usually means a MARKETING presence, NOT that customers book or enquire there. Do NOT assume people book via Instagram/Telegram. Only pitch automating a social channel if there's REAL evidence customers use it to enquire/book — e.g. "DM us to book", a WhatsApp click-to-chat button, or an industry where DM-booking is genuinely normal (beauty, aesthetics, barbers, salons, nails, tattoo, restaurants).
+- Match the pitch to how customers in THAT industry actually contact the business:
+  • Dental / medical / physio / opticians / vets / legal / accountants / trades (plumbers, electricians, roofers, HVAC): customers book by PHONE and via the website (form or online booking). The money channel is the phone. The highest-value, realistic gap is almost always missed / after-hours phone calls and slow replies to web enquiries → pitch missed-call text-back and instant web-enquiry replies, NOT an Instagram booking bot.
+  • Beauty / aesthetics / salons / barbers / restaurants: Instagram & WhatsApp DMs ARE often a real booking channel → a social-DM assistant can fit.
+  • Ecommerce: website chat, email, returns/order questions.
+- The problem must be one that costs them REAL money and where the fix clearly pays for itself. If the only "gap" is a channel their customers don't actually use to book, that's a weak pitch — pick the phone/web enquiry gap instead, or lower the fit_score.
+- whatsapp signal = a real click-to-chat channel (people do message businesses on WhatsApp). instagram/telegram signals alone = treat as marketing unless evidence says otherwise.
+
+ECONOMICS (make it obviously worth their money):
+- Frame the gap as lost MONEY, not lost convenience, using the INDUSTRY FACTS ticket size. E.g. for a dental implant clinic: "with implant cases worth thousands, even one missed enquiry a week is serious money walking to a competitor." For a plumber: "every missed emergency call is a £100–£500 job gone to the next number."
+- Use the ticket size qualitatively ("cases worth thousands", "jobs worth hundreds") — do NOT invent precise totals, percentages, or hours saved. The point: one or two recovered customers pays for the whole thing.
 
 WRITING FOR A NON-TECHNICAL OWNER (critical):
 - The owner does NOT know what "automation", "AI agent", "workflow" or "integration" means. Write so a busy shop/clinic owner instantly gets it.
-- BANNED words in opener/subject/automation/est_benefit: agentic, workflow, pipeline, LLM, GPT, API, integration, "AI-driven", TypeScript, "solution", "leverage", "streamline", "synergy".
+- BANNED words in opener/subject/automation/est_benefit/followups: agentic, workflow, pipeline, LLM, GPT, API, integration, "AI-driven", TypeScript, "solution", "leverage", "streamline", "synergy".
 - Describe what it DOES in concrete terms, e.g. "a helper that answers every WhatsApp message and books the slot for you, even after hours" — not "an AI workflow".
 - Lead with the pain and the result (missed calls = lost customers; never miss a booking again), not the technology. No flattery clichés, no "I hope this finds you well", "I came across your".
 - The email must make sense and feel worth a reply on its own — it should sell itself.
+
+KEEP IT SHORT (deliverability + reply rate):
+- The FIRST email (opener + the offer line) must read in under ~80 words total. Short sentences. One idea. Cold emails that are short get more replies and land in the inbox.
+- If COMPLAINT reviews are provided, that real customer pain is your STRONGEST angle — name it (e.g. "a few reviewers mention struggling to get through by phone") without exaggerating or inventing.
+
+FOLLOW-UPS (sent later only if they don't reply):
+- followup_1: a 2-sentence nudge for ~3 days later. A DIFFERENT angle than the first email (e.g. a concrete proof offer: "happy to record a 2-minute video showing it working on your site") or a sharp one-line question. Not a repeat.
+- followup_2: a 1-2 sentence polite break-up for ~4 days after that ("I'll assume the timing isn't right — happy to leave the door open"). Low-pressure, classy.
+- Both in ${outName}, plain language, no greeting line (the app adds it), no signature.
 
 LANGUAGE (strict):
 - Write opener, icebreaker, subject, process, automation, est_benefit and reason in ${outName} (the prospect reads this).
@@ -58,6 +82,7 @@ Fields:
 - automation: one plain sentence — exactly what we'd build for them, in their channel, in owner-language. No jargon.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
+- followup_1, followup_2: see FOLLOW-UPS above.
 
 Output via the emit_personalization tool only.`;
 }
@@ -75,6 +100,8 @@ const TOOL_SCHEMA = {
     automation: { type: "string", maxLength: 280 },
     est_benefit: { type: "string", maxLength: 240 },
     brief: { type: "string", maxLength: 700 },
+    followup_1: { type: "string", maxLength: 500 },
+    followup_2: { type: "string", maxLength: 500 },
   },
   required: [
     "opener",
@@ -86,6 +113,8 @@ const TOOL_SCHEMA = {
     "automation",
     "est_benefit",
     "brief",
+    "followup_1",
+    "followup_2",
   ],
   additionalProperties: false,
 };
@@ -96,6 +125,7 @@ interface AiInput {
   enrichment: Enrichment;
   icpNote?: string;
   reviewsText?: string;
+  verticalFacts?: string;
   outreachLang: string;
   digestLang: string;
 }
@@ -123,6 +153,7 @@ function buildUserMessage(input: AiInput): string {
       ? `- google rating: ${lead.rating}${lead.reviews !== undefined ? ` from ${lead.reviews} reviews` : ""} (high review counts = busy = missed enquiries cost more; you MAY reference this naturally)`
       : null,
     "",
+    input.verticalFacts ? `${input.verticalFacts}\n` : null,
     `COMPANY CONTEXT (from ${lead.domain}, use ONLY this):`,
     context,
     "",
@@ -170,21 +201,21 @@ export function fallbackPersonalization(
       "A short discovery call to map which repetitive ops could move to an agentic workflow.",
     est_benefit: "Less manual back-office work once the right process is identified.",
     brief,
+    followup_1: `Just floating this back to the top of your inbox — happy to show a quick example of what we'd set up for ${lead.company}.`,
+    followup_2: `I'll assume the timing isn't right for now — happy to leave the door open if things change.`,
   };
 }
 
-async function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personalized> {
+async function callAnthropicRaw(
+  cfg: AppConfig,
+  system: string,
+  userContent: string,
+): Promise<Personalized> {
   const client = new Anthropic({ apiKey: cfg.ANTHROPIC_API_KEY });
   const res = await client.messages.create({
     model: cfg.ANTHROPIC_MODEL,
-    max_tokens: 1200,
-    system: [
-      {
-        type: "text",
-        text: buildSystemPrompt(input.outreachLang, input.digestLang),
-        cache_control: { type: "ephemeral" },
-      },
-    ],
+    max_tokens: 1400,
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
     tools: [
       {
         name: TOOL_NAME,
@@ -193,13 +224,21 @@ async function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personaliz
       },
     ],
     tool_choice: { type: "tool", name: TOOL_NAME },
-    messages: [{ role: "user", content: buildUserMessage(input) }],
+    messages: [{ role: "user", content: userContent }],
   });
   const toolUse = res.content.find((b) => b.type === "tool_use");
   if (!toolUse || toolUse.type !== "tool_use") {
     throw new Error("Anthropic response did not contain tool_use block.");
   }
   return PersonalizedSchema.parse(toolUse.input);
+}
+
+function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personalized> {
+  return callAnthropicRaw(
+    cfg,
+    buildSystemPrompt(input.outreachLang, input.digestLang),
+    buildUserMessage(input),
+  );
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -222,22 +261,22 @@ function isRateLimit(err: unknown): boolean {
  * OpenRouter, OpenAI…). Retries transient 429s, honoring the provider's
  * "try again in Xs" hint when present.
  */
-async function callOpenAICompatible(
+const JSON_KEYS_HINT =
+  "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
+  "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
+  "process (string), automation (string), est_benefit (string), brief (string), " +
+  "followup_1 (string), followup_2 (string).";
+
+async function callOpenAIRaw(
   cfg: AppConfig,
-  input: AiInput,
+  system: string,
+  userContent: string,
   opts: { apiKey?: string; baseURL: string; model: string },
 ): Promise<Personalized> {
   const client = new OpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
   const messages = [
-    { role: "system" as const, content: buildSystemPrompt(input.outreachLang, input.digestLang) },
-    {
-      role: "user" as const,
-      content:
-        `${buildUserMessage(input)}\n\n` +
-        "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
-        "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
-        "process (string), automation (string), est_benefit (string), brief (string).",
-    },
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: userContent },
   ];
 
   let lastErr: unknown;
@@ -270,6 +309,54 @@ async function callOpenAICompatible(
   throw lastErr;
 }
 
+function callOpenAICompatible(
+  cfg: AppConfig,
+  input: AiInput,
+  opts: { apiKey?: string; baseURL: string; model: string },
+): Promise<Personalized> {
+  const system = buildSystemPrompt(input.outreachLang, input.digestLang);
+  const userContent = `${buildUserMessage(input)}\n\n${JSON_KEYS_HINT}`;
+  return callOpenAIRaw(cfg, system, userContent, opts);
+}
+
+function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
+  if (cfg.LLM_PROVIDER === "groq") {
+    return callOpenAIRaw(cfg, system, `${userContent}\n\n${JSON_KEYS_HINT}`, {
+      apiKey: cfg.GROQ_API_KEY,
+      baseURL: "https://api.groq.com/openai/v1",
+      model: cfg.GROQ_MODEL,
+    });
+  }
+  if (cfg.LLM_PROVIDER === "openai") {
+    return callOpenAIRaw(cfg, system, `${userContent}\n\n${JSON_KEYS_HINT}`, {
+      apiKey: cfg.OPENAI_API_KEY,
+      baseURL: cfg.OPENAI_BASE_URL,
+      model: cfg.OPENAI_MODEL,
+    });
+  }
+  return callAnthropicRaw(cfg, system, userContent);
+}
+
+const CRITIQUE_RUBRIC = `You are a strict reviewer of a cold email a colleague drafted. Improve it ONLY where it fails a check; otherwise keep it essentially as-is. Checks:
+1. CHANNEL FIT: does the pitch match how this industry actually books (see INDUSTRY FACTS)? If it pitches a channel customers don't book through (e.g. an Instagram booking bot for a dentist), REWRITE it to the real money channel (usually phone/web for clinics, trades, legal).
+2. MONEY: is the cost framed in real money using the ticket size (qualitatively)? If not, add it.
+3. TIGHT: first email <= ~80 words, plain owner-language, no banned jargon, problem stated as fact (no hedging). Tighten if needed.
+4. GROUNDED: nothing invented — only the provided context. Remove anything unverifiable.
+5. SUBJECT <=60 chars, not spammy.
+Keep the language rules. Return the full corrected object via the emit_personalization tool (all fields), even fields you didn't change.`;
+
+async function selfCritique(
+  cfg: AppConfig,
+  input: AiInput,
+  draft: Personalized,
+): Promise<Personalized> {
+  const system = `${buildSystemPrompt(input.outreachLang, input.digestLang)}\n\n${CRITIQUE_RUBRIC}`;
+  const userContent =
+    `${buildUserMessage(input)}\n\nCURRENT DRAFT (review against the checks, fix only what fails):\n` +
+    JSON.stringify(draft);
+  return providerCall(cfg, system, userContent);
+}
+
 export interface PersonalizationResult {
   personalized: Personalized;
   provider: "anthropic" | "groq" | "openai" | "fallback";
@@ -282,33 +369,46 @@ export async function personalize(
   icpNote?: string,
   reviewsText?: string,
 ): Promise<PersonalizationResult> {
+  const vertical = await matchVertical(
+    `${lead.discovery_query ?? ""} ${lead.company} ${enrichment.title ?? ""} ${enrichment.summary_text.slice(0, 400)}`,
+  );
   const input: AiInput = {
     ourOffer: cfg.OUR_OFFER,
     lead,
     enrichment,
     outreachLang: cfg.OUTREACH_LANG,
     digestLang: cfg.DIGEST_LANG,
+    verticalFacts: verticalFacts(vertical),
     ...(icpNote ? { icpNote } : {}),
     ...(reviewsText ? { reviewsText } : {}),
   };
+  const provider: PersonalizationResult["provider"] =
+    cfg.LLM_PROVIDER === "groq" ? "groq" : cfg.LLM_PROVIDER === "openai" ? "openai" : "anthropic";
   try {
-    if (cfg.LLM_PROVIDER === "groq") {
-      const personalized = await callOpenAICompatible(cfg, input, {
-        apiKey: cfg.GROQ_API_KEY,
-        baseURL: "https://api.groq.com/openai/v1",
-        model: cfg.GROQ_MODEL,
-      });
-      return { personalized, provider: "groq" };
+    let personalized =
+      cfg.LLM_PROVIDER === "groq"
+        ? await callOpenAICompatible(cfg, input, {
+            apiKey: cfg.GROQ_API_KEY,
+            baseURL: "https://api.groq.com/openai/v1",
+            model: cfg.GROQ_MODEL,
+          })
+        : cfg.LLM_PROVIDER === "openai"
+          ? await callOpenAICompatible(cfg, input, {
+              apiKey: cfg.OPENAI_API_KEY,
+              baseURL: cfg.OPENAI_BASE_URL,
+              model: cfg.OPENAI_MODEL,
+            })
+          : await callAnthropic(cfg, input);
+
+    // Second pass: review against the rubric and rewrite weak/off-channel drafts.
+    if (cfg.SELF_CRITIQUE) {
+      try {
+        personalized = await selfCritique(cfg, input, personalized);
+      } catch (err) {
+        console.warn(`[ai] self-critique skipped for ${lead.domain}: ${(err as Error).message}`);
+      }
     }
-    if (cfg.LLM_PROVIDER === "openai") {
-      const personalized = await callOpenAICompatible(cfg, input, {
-        apiKey: cfg.OPENAI_API_KEY,
-        baseURL: cfg.OPENAI_BASE_URL,
-        model: cfg.OPENAI_MODEL,
-      });
-      return { personalized, provider: "openai" };
-    }
-    return { personalized: await callAnthropic(cfg, input), provider: "anthropic" };
+    return { personalized, provider };
   } catch (err) {
     console.warn(
       `[ai] personalization failed for ${lead.domain}, using fallback: ${(err as Error).message}`,

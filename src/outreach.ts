@@ -44,13 +44,11 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   lines.push("");
   if (row.opener) lines.push(row.opener);
 
-  // The opener already states the problem; this is the plain offer + payoff.
+  // The opener states the problem; this is the plain offer. Benefit stays in
+  // the brief — keeping the email tight helps deliverability and reply rate.
   if (row.automation) {
     lines.push("");
-    lines.push(
-      `${capitalize(stripTrailingPunct(row.automation))}` +
-        (row.est_benefit ? ` — ${stripTrailingPunct(row.est_benefit)}.` : "."),
-    );
+    lines.push(`${capitalize(stripTrailingPunct(row.automation))}.`);
   }
 
   lines.push("");
@@ -65,7 +63,7 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   };
 }
 
-function draftMarkdown(row: OutputRow, draft: EmailDraft): string {
+function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): string {
   const meta = [
     `**Company:** ${row.company}`,
     `**Domain:** ${row.domain}`,
@@ -83,15 +81,27 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft): string {
 
   const briefBlock = row.brief ? `\n> **Разбор:** ${row.brief}\n` : "";
 
+  const greet = greeting(row.company);
+  const days = [3, 7];
+  const followups = [row.followup_1, row.followup_2]
+    .map((f, i) => {
+      if (!f) return "";
+      return `\n---\n\n**Follow-up ${i + 1}** _(send ~${days[i]} days later if no reply — same thread, subject "Re: ${draft.subject}")_\n\n${greet}\n\n${f}\n\n— ${cfg.SENDER_SIGNATURE}`;
+    })
+    .join("\n");
+
   return `# Draft — ${row.company}
 
 ${meta}
 ${briefBlock}
 ---
 
+### Email 1 — initial
+
 **Subject:** ${draft.subject}
 
 ${draft.body}
+${followups}
 `;
 }
 
@@ -142,7 +152,7 @@ export async function writeDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<Dr
   for (const row of rows) {
     const draft = assembleDraft(row, cfg);
     const path = join(cfg.DRAFTS_DIR, `${domainSlug(row.domain)}.md`);
-    await writeFile(path, draftMarkdown(row, draft), "utf8");
+    await writeFile(path, draftMarkdown(row, draft, cfg), "utf8");
   }
 
   const header = DRAFT_CSV_COLUMNS.join(",");

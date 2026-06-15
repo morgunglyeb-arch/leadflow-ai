@@ -1,0 +1,156 @@
+{
+  "_comment": "Industry reality per vertical: how customers ACTUALLY contact/book, which automations genuinely sell, and a rough ticket size for economic framing. Matched by keyword against the discovery query / company / site text. Keeps the pitch grounded in how each business really works (e.g. dentists book by phone, not Instagram).",
+  "verticals": [
+    {
+      "match": ["dental implant", "implant"],
+      "name": "dental implant clinic",
+      "money_channel": "phone calls and the website (online booking or contact form)",
+      "booking_culture": "patients book high-value implant treatment by phone or the practice's online system — never via Instagram/Telegram",
+      "automations": ["instant text-back to every missed call", "instant reply to web enquiry forms", "consultation reminders to cut no-shows", "re-engaging enquiries that never booked"],
+      "avg_ticket": "£2,000–£15,000 per implant case"
+    },
+    {
+      "match": ["dental", "dentist"],
+      "name": "dental clinic",
+      "money_channel": "phone calls and the website (online booking or contact form)",
+      "booking_culture": "patients book by phone or online — not through social DMs",
+      "automations": ["missed-call text-back", "instant reply to web enquiries", "appointment reminders to cut no-shows", "reactivation of lapsed patients"],
+      "avg_ticket": "£100–£3,000+ per treatment"
+    },
+    {
+      "match": ["orthodont", "braces", "invisalign"],
+      "name": "orthodontic practice",
+      "money_channel": "phone and website enquiry forms",
+      "booking_culture": "parents/patients enquire by phone and web form about a multi-month, high-value treatment",
+      "automations": ["instant text-back to missed calls", "instant web-enquiry replies", "consultation reminders", "nurturing slow-deciding enquiries"],
+      "avg_ticket": "£2,000–£6,000 per treatment plan"
+    },
+    {
+      "match": ["aesthetic", "botox", "filler", "skin clinic", "cosmetic", "med spa", "medical aesthetic"],
+      "name": "aesthetics clinic",
+      "money_channel": "Instagram & WhatsApp DMs AND phone — aesthetics is one of the few clinic types where social-DM booking is genuinely normal",
+      "booking_culture": "clients really do DM on Instagram/WhatsApp to ask prices and book, alongside phone",
+      "automations": ["a 24/7 assistant in Instagram & WhatsApp that answers price questions and books", "missed-call text-back", "reminders and rebooking for repeat treatments"],
+      "avg_ticket": "£150–£800 per treatment, repeat custom"
+    },
+    {
+      "match": ["physio", "physiotherapy", "sports injury", "rehabilitation"],
+      "name": "physiotherapy clinic",
+      "money_channel": "phone and website booking",
+      "booking_culture": "patients book by phone or online; some message on WhatsApp",
+      "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment reminders", "rebooking reminders for course-of-treatment patients"],
+      "avg_ticket": "£50–£90 per session, multi-session courses"
+    },
+    {
+      "match": ["chiropract", "osteopath"],
+      "name": "chiropractic / osteopathy clinic",
+      "money_channel": "phone and website booking",
+      "booking_culture": "patients book by phone or online system",
+      "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment & course reminders"],
+      "avg_ticket": "£40–£80 per session"
+    },
+    {
+      "match": ["gp", "private gp", "doctor", "medical centre", "health clinic"],
+      "name": "private GP / medical clinic",
+      "money_channel": "phone and website",
+      "booking_culture": "patients call or use the online system; discreet, not social",
+      "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment reminders"],
+      "avg_ticket": "£100–£500 per appointment/package"
+    },
+    {
+      "match": ["optician", "optometr", "eyewear"],
+      "name": "opticians",
+      "money_channel": "phone, website and walk-in",
+      "booking_culture": "eye-test bookings by phone/online; product sales in store",
+      "automations": ["missed-call text-back", "online eye-test booking replies", "recall reminders for annual eye tests"],
+      "avg_ticket": "£20–£60 eye test, £100–£400 glasses"
+    },
+    {
+      "match": ["vet", "veterinary", "animal hospital"],
+      "name": "veterinary clinic",
+      "money_channel": "phone and website",
+      "booking_culture": "owners call for appointments, often urgent",
+      "automations": ["missed-call text-back (urgent cases)", "instant web-enquiry replies", "vaccination/check-up reminders"],
+      "avg_ticket": "£40–£300+ per visit"
+    },
+    {
+      "match": ["fertility", "ivf", "reproductive"],
+      "name": "fertility clinic",
+      "money_channel": "phone and website enquiry forms",
+      "booking_culture": "sensitive, high-value enquiries by phone and form — never social",
+      "automations": ["instant web-enquiry replies", "missed-call text-back", "nurturing enquiries through a long decision"],
+      "avg_ticket": "£3,000–£8,000 per cycle"
+    },
+    {
+      "match": ["plumb", "drain", "heating", "boiler"],
+      "name": "plumbing / heating company",
+      "money_channel": "the PHONE — emergencies; speed wins the job",
+      "booking_culture": "customers call when something breaks and ring the next number if no answer; nobody books a plumber on Instagram",
+      "automations": ["instant text-back to every missed call", "instant web-enquiry replies", "automatic booking/quote follow-ups"],
+      "avg_ticket": "£80–£500 per job, £1,500+ for installs"
+    },
+    {
+      "match": ["electric"],
+      "name": "electrical contractor",
+      "money_channel": "the PHONE and website quote requests",
+      "booking_culture": "customers call or request a quote online; speed of response wins",
+      "automations": ["missed-call text-back", "instant quote-request replies", "quote follow-ups"],
+      "avg_ticket": "£100–£2,000+ per job"
+    },
+    {
+      "match": ["roof"],
+      "name": "roofing contractor",
+      "money_channel": "the PHONE and quote forms",
+      "booking_culture": "homeowners call for a free quote and go with whoever responds first",
+      "automations": ["missed-call text-back", "instant quote-request replies", "quote follow-ups so estimates don't go cold"],
+      "avg_ticket": "£500–£10,000 per job"
+    },
+    {
+      "match": ["hvac", "air conditioning", "cooling", "ventilation"],
+      "name": "HVAC company",
+      "money_channel": "the PHONE and website",
+      "booking_culture": "commercial & domestic clients call for service/installs; response speed wins",
+      "automations": ["missed-call text-back", "instant web-enquiry replies", "service reminders & quote follow-ups"],
+      "avg_ticket": "£150–£5,000+ per job"
+    },
+    {
+      "match": ["locksmith"],
+      "name": "locksmith",
+      "money_channel": "the PHONE — emergency, the fastest answer gets the job",
+      "booking_culture": "people locked out call and ring the next result instantly if no answer",
+      "automations": ["instant text-back to every missed call", "automatic 'on our way / book' replies"],
+      "avg_ticket": "£60–£250 per call-out"
+    },
+    {
+      "match": ["bookkeep", "accountan", "accounting"],
+      "name": "bookkeeping / accountancy firm",
+      "money_channel": "website enquiry forms and phone",
+      "booking_culture": "businesses enquire by form/phone for an ongoing service",
+      "automations": ["instant web-enquiry replies & qualification", "onboarding document chasing", "client report reminders"],
+      "avg_ticket": "£150–£1,500/month retainer"
+    },
+    {
+      "match": ["law", "solicitor", "legal", "conveyanc", "immigration"],
+      "name": "law firm",
+      "money_channel": "phone and website enquiry forms",
+      "booking_culture": "clients enquire by phone and form; formal, not social",
+      "automations": ["instant web-enquiry replies & qualification", "missed-call text-back", "nurturing enquiries that don't convert immediately"],
+      "avg_ticket": "£500–£10,000+ per matter"
+    },
+    {
+      "match": ["insurance broker", "mortgage broker", "broker"],
+      "name": "insurance / mortgage broker",
+      "money_channel": "phone and website enquiry forms",
+      "booking_culture": "clients submit forms and call; fast follow-up wins the deal",
+      "automations": ["instant web-enquiry replies & qualification", "missed-call text-back", "follow-ups on quotes in progress"],
+      "avg_ticket": "£300–£3,000 commission per client"
+    }
+  ],
+  "default": {
+    "name": "local service business",
+    "money_channel": "phone calls and the website (contact form / online booking)",
+    "booking_culture": "customers mostly call or use the website — a social-media link in the footer is usually marketing, not a booking channel",
+    "automations": ["missed-call text-back", "instant reply to web enquiries", "appointment/booking reminders", "follow-ups so enquiries don't go cold"],
+    "avg_ticket": "varies — frame the cost of a lost customer qualitatively"
+  }
+}

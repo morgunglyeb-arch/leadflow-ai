@@ -24,6 +24,13 @@ const schema = z.object({
   // Retry transient 429s (rate limits) before giving up to fallback
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 
+  // Second LLM pass that reviews each draft against a rubric (right money
+  // channel? worth their money? concise? grounded?) and rewrites weak ones.
+  SELF_CRITIQUE: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+
   OUR_OFFER: z
     .string()
     .default(

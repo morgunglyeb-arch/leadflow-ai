@@ -36,6 +36,30 @@ function chunk<T>(arr: T[], size: number): T[][] {
   return out;
 }
 
+/**
+ * Rank by likely ROI of contacting them, not just raw fit: businesses that pay
+ * for leads (ad pixels), take bookings by phone only, run emergency trades, or
+ * are clearly busy have the most expensive unautomated gap → contact first.
+ */
+function roiScore(row: OutputRow): number {
+  const sig = new Set((row.signals ?? "").split("|").filter(Boolean));
+  let s = (row.fit_score ?? 0) * 2;
+  if (sig.has("runs_google_ads") || sig.has("runs_meta_ads")) s += 3;
+  if (sig.has("phone_booking") && !sig.has("online_booking")) s += 2;
+  if (/plumb|electric|roof|hvac|boiler|locksmith|emergency|drain/i.test(row.discovery_query ?? "")) s += 2;
+  if (sig.has("whatsapp")) s += 1; // real click-to-chat channel (not just a social link)
+  const reviews = row.reviews ?? 0;
+  if (reviews > 1000) s += 2;
+  else if (reviews > 300) s += 1;
+  // buy-signals: motivated + has budget
+  if (sig.has("hiring_reception")) s += 2;
+  if (sig.has("expanding")) s += 1;
+  // de-prioritize low-budget / hard-to-close
+  if (sig.has("diy_site")) s -= 3;
+  if (sig.has("multi_location")) s -= 2;
+  return s;
+}
+
 export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
   const concurrency = flags.concurrency ?? cfg.CONCURRENCY;
   const target = flags.limit && flags.limit > 0 ? flags.limit : cfg.MAX_LEADS;
@@ -120,8 +144,8 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
     );
   }
 
-  // 4. final set: qualified, best fit first, capped to target
-  const rows = qualified.sort((a, b) => (b.fit_score ?? 0) - (a.fit_score ?? 0)).slice(0, target);
+  // 4. final set: qualified, highest ROI first, capped to target
+  const rows = qualified.sort((a, b) => roiScore(b) - roiScore(a)).slice(0, target);
 
   if (flags.dry) {
     console.log("\n--- DRY RUN OUTPUT ---\n");

@@ -49,6 +49,9 @@ export interface Personalized {
   est_benefit: string; // qualitative benefit, no invented numbers
   // internal brief for the operator, in DIGEST_LANG (not sent to the prospect)
   brief: string;
+  // follow-up bodies (outreach language), sent only if no reply
+  followup_1: string;
+  followup_2: string;
 }
 
 export type LeadStatus = "draft" | "approved" | "sent" | "skipped";

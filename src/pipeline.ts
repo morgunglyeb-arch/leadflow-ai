@@ -129,6 +129,8 @@ export async function processLeads(
           automation: personalized.automation,
           est_benefit: personalized.est_benefit,
           brief: personalized.brief,
+          followup_1: personalized.followup_1,
+          followup_2: personalized.followup_2,
         };
         done++;
         console.log(
