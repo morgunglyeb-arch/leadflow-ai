@@ -1,5 +1,9 @@
-import "dotenv/config";
+import { config as loadEnv } from "dotenv";
 import { z } from "zod";
+
+// `.env` is the app's source of truth — override any vars the surrounding
+// shell may have preset (e.g. an empty ANTHROPIC_API_KEY) so config is honored.
+loadEnv({ override: true });
 
 const schema = z.object({
   // "anthropic" | "groq" | "openai" (any OpenAI-compatible endpoint:
