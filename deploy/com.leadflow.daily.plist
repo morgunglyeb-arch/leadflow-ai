@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job: run LeadFlow prospecting every day at 08:30.
+
+  Setup:
+    1. Edit the two REPLACE_ME paths below to your absolute project path.
+    2. cp deploy/com.leadflow.daily.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.leadflow.daily.plist
+    4. (run once now)  launchctl start com.leadflow.daily
+  Remove:
+    launchctl unload ~/Library/LaunchAgents/com.leadflow.daily.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.leadflow.daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>REPLACE_ME/LeadFlow-AI/scripts/run-daily.sh</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MIN_FIT</key>
+    <string>3</string>
+  </dict>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>REPLACE_ME/LeadFlow-AI/data/out/daily.log</string>
+  <key>StandardErrorPath</key>
+  <string>REPLACE_ME/LeadFlow-AI/data/out/daily.err.log</string>
+</dict>
+</plist>

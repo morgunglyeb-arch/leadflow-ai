@@ -24,6 +24,7 @@ export interface Enrichment {
   description?: string;
   summary_text: string;
   signals: string[];
+  emails: string[]; // discovered on the site, best-ranked first
   ok: boolean;
   source: "live" | "cache" | "mock" | "failed";
   fetched_at: string;
@@ -45,6 +46,8 @@ export interface Personalized {
   process: string; // the manual/repetitive process spotted (or "unclear")
   automation: string; // what we'd automate it with
   est_benefit: string; // qualitative benefit, no invented numbers
+  // internal brief for the operator, in DIGEST_LANG (not sent to the prospect)
+  brief: string;
 }
 
 export type LeadStatus = "draft" | "approved" | "sent" | "skipped";
@@ -55,4 +58,5 @@ export type OutputRow = DiscoveredLead & {
   signals: string;
   ai_provider: "anthropic" | "groq" | "openai" | "fallback";
   status: LeadStatus;
+  email_source: "provided" | "site" | "none";
 } & Partial<Personalized>;

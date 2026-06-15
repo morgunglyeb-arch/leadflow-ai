@@ -26,6 +26,11 @@ const schema = z.object({
       "AI automation for SMBs — we build agentic workflows that replace manual ops (lead enrichment, reporting, customer triage).",
     ),
 
+  // Language of the cold email sent TO the prospect (their language).
+  OUTREACH_LANG: z.enum(["en", "uk", "ru"]).default("en"),
+  // Language of the per-lead brief shown to YOU (problem + what to automate).
+  DIGEST_LANG: z.enum(["ru", "uk", "en"]).default("ru"),
+
   LEADS_SOURCE: z.enum(["csv", "sheets"]).default("csv"),
   LEADS_CSV_PATH: z.string().default("data/leads.csv"),
   GOOGLE_SHEETS_ID: z.string().optional(),
@@ -37,7 +42,7 @@ const schema = z.object({
   // Which discoverer to use when sourcing new leads. "csv" reuses LEADS_SOURCE.
   DISCOVERY_SOURCE: z.enum(["search", "maps", "vibe", "seed", "csv"]).default("search"),
   ICP_CONFIG_PATH: z.string().default("config/icp.json"),
-  MAX_LEADS: z.coerce.number().int().positive().default(25),
+  MAX_LEADS: z.coerce.number().int().positive().default(50),
 
   // Web search discoverer (Serper by default; provider-agnostic shape)
   SEARCH_PROVIDER: z.enum(["serper"]).default("serper"),
@@ -61,6 +66,7 @@ const schema = z.object({
   OUTPUT_CSV_PATH: z.string().default("data/out/leads_enriched.csv"),
   DRAFTS_DIR: z.string().default("data/out/drafts"),
   DRAFTS_CSV_PATH: z.string().default("data/out/drafts.csv"),
+  DIGEST_HTML_PATH: z.string().default("data/out/digest.html"),
   SHEETS_OUTPUT_ENABLED: z
     .string()
     .default("false")
@@ -78,6 +84,8 @@ const schema = z.object({
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
   EMAIL_TEST_TO: z.string().optional(),
+  // Your own inbox — where the daily digest of leads + drafts is sent
+  EMAIL_DIGEST_TO: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof schema>;
@@ -105,6 +113,10 @@ export function assertLLMReady(cfg: AppConfig): void {
 
 export function emailTestReady(cfg: AppConfig): boolean {
   return Boolean(cfg.RESEND_API_KEY && cfg.EMAIL_FROM && cfg.EMAIL_TEST_TO);
+}
+
+export function digestReady(cfg: AppConfig): boolean {
+  return Boolean(cfg.RESEND_API_KEY && cfg.EMAIL_FROM && cfg.EMAIL_DIGEST_TO);
 }
 
 export function sheetsOutputReady(cfg: AppConfig): boolean {

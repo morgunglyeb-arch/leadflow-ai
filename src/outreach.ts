@@ -67,19 +67,23 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft): string {
     `**Company:** ${row.company}`,
     `**Domain:** ${row.domain}`,
     row.name ? `**Contact:** ${row.name}${row.role ? ` (${row.role})` : ""}` : "",
-    draft.to ? `**To:** ${draft.to}` : "**To:** _(no email — find before sending)_",
+    draft.to
+      ? `**To:** ${draft.to}${row.email_source === "site" ? " _(found on site)_" : ""}`
+      : "**To:** _(no email — find before sending)_",
+    row.phone ? `**Phone:** ${row.phone}` : "",
     `**Fit:** ${row.fit_score ?? "?"} / 5 · **Status:** ${row.status}`,
     `**Source:** ${row.discovery_source}${row.discovery_query ? ` · "${row.discovery_query}"` : ""}`,
     row.signals ? `**Signals:** ${row.signals}` : "",
-    row.reason ? `**Why fit:** ${row.reason}` : "",
   ]
     .filter(Boolean)
     .join("  \n");
 
+  const briefBlock = row.brief ? `\n> **Разбор:** ${row.brief}\n` : "";
+
   return `# Draft — ${row.company}
 
 ${meta}
-
+${briefBlock}
 ---
 
 **Subject:** ${draft.subject}

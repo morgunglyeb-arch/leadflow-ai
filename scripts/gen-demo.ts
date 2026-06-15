@@ -1,5 +1,14 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 interface DemoLead {
   company: string;
@@ -277,9 +286,14 @@ async function main(): Promise<void> {
     segments: DISCOVERY.map((s) => ({ market: s.market, queries: s.queries.map((q) => q.query) })),
   };
   await mkdir("config", { recursive: true });
-  await writeFile("config/icp.json", JSON.stringify(icp, null, 2) + "\n", "utf8");
   await writeFile("config/icp.example.json", JSON.stringify(icp, null, 2) + "\n", "utf8");
-  console.log("Wrote config/icp.json + config/icp.example.json");
+  // Don't clobber a real ICP the user already configured.
+  if (await exists("config/icp.json")) {
+    console.log("Wrote config/icp.example.json (kept existing config/icp.json)");
+  } else {
+    await writeFile("config/icp.json", JSON.stringify(icp, null, 2) + "\n", "utf8");
+    console.log("Wrote config/icp.json + config/icp.example.json");
+  }
 
   // Discovery fixtures keyed by query slug
   const discDir = join(fixtureDir, "discovery");

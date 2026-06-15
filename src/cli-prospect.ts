@@ -2,7 +2,13 @@ import { loadConfig } from "./config.js";
 import { runProspecting, type ProspectFlags } from "./prospect.js";
 
 function parseFlags(argv: string[]): ProspectFlags {
-  const flags: ProspectFlags = { dry: false, mock: false, force: false, sendTest: false };
+  const flags: ProspectFlags = {
+    dry: false,
+    mock: false,
+    force: false,
+    sendTest: false,
+    digest: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a) continue;
@@ -10,6 +16,7 @@ function parseFlags(argv: string[]): ProspectFlags {
     else if (a === "--mock") flags.mock = true;
     else if (a === "--force") flags.force = true;
     else if (a === "--send-test") flags.sendTest = true;
+    else if (a === "--digest") flags.digest = true;
     else if (a === "--limit") flags.limit = Number.parseInt(argv[++i] ?? "0", 10);
     else if (a.startsWith("--limit=")) flags.limit = Number.parseInt(a.slice("--limit=".length), 10);
     else if (a === "--concurrency") flags.concurrency = Number.parseInt(argv[++i] ?? "0", 10);
@@ -42,12 +49,14 @@ Flags:
   --concurrency=N      Override CONCURRENCY (default 5)
   --min-fit=N          Mark leads with fit_score < N as 'skipped'
   --force              Ignore cache + idempotency
+  --digest             Email the digest (RU analysis + EN drafts) to EMAIL_DIGEST_TO
   --send-test          Email the top row through Resend (smoke test)
   --help, -h           Show this message
 
 Examples:
-  npm run prospect -- --mock --dry           # offline discovery → pitch demo
-  npm run prospect -- --limit=20 --min-fit=3 # 20 leads, drop weak fits
+  npm run prospect -- --mock --dry              # offline discovery → pitch demo
+  npm run prospect -- --limit=50 --min-fit=3    # 50 leads, drop weak fits
+  npm run prospect -- --digest --min-fit=3      # daily: find, filter, email me
 `);
 }
 

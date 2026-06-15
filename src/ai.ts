@@ -13,25 +13,39 @@ export const PersonalizedSchema = z.object({
   process: z.string().min(3).max(240),
   automation: z.string().min(3).max(280),
   est_benefit: z.string().min(3).max(240),
+  brief: z.string().min(3).max(700),
 });
 
-const SYSTEM_PROMPT = `You are an expert SDR for an AI-automation studio. For each lead you write concise cold-email personalization AND a concrete automation pitch — a specific manual/repetitive process the company likely runs, and how WE would automate it.
+const LANG_NAME: Record<string, string> = { en: "English", uk: "Ukrainian", ru: "Russian" };
+
+function buildSystemPrompt(outreachLang: string, digestLang: string): string {
+  const outName = LANG_NAME[outreachLang] ?? "English";
+  const digName = LANG_NAME[digestLang] ?? "Russian";
+  return `You are an expert SDR for an AI-automation studio. For each lead you write concise cold-email personalization AND a concrete automation pitch — a specific manual/repetitive process the company likely runs, and how WE would automate it.
 
 Hard rules:
 - Use ONLY the company context provided in the user message. Never invent facts, funding, headcount, customers, product names, or numbers that are not literally present.
 - If the context is thin or missing, write a clean GENERIC opener tied to their company name and role only, set fit_score <= 2, set process to "unclear from site", and keep the automation generic.
 - Reference at most one specific detail per message — what they do, who they sell to, or a clear signal from the page. Do not stack multiple claims.
 - Tone: natural, peer-to-peer, confident, no flattery clichés. Banned phrases: "I hope this finds you well", "I came across your", "love what you're doing", "huge fan", "saw you guys are crushing it".
+
+LANGUAGE:
+- Write opener, icebreaker, subject, process, automation, est_benefit and reason in ${outName} (this is the language of the email to the prospect).
+- Write "brief" in ${digName}. The brief is for OUR sales operator (NOT the prospect): 2-4 sentences covering (a) what the company does, (b) the specific manual problem you spotted, (c) what exactly we'd automate, (d) why the fit score. Plain and practical.
+
+Fields:
 - opener: 1-2 sentences, first line of a cold email. No greeting line, no "Hi NAME,".
 - icebreaker: one short observation about their business, separate from the opener.
-- subject: <= 60 chars, lowercase or sentence case, no emojis, no ALL CAPS.
-- fit_score: 1 (no fit) to 5 (excellent fit) against OUR offer. Be honest. If the company is clearly not in our target, score 1-2 and say why.
+- subject: <= 60 chars, no emojis, no ALL CAPS.
+- fit_score: 1 (no fit) to 5 (excellent fit) against OUR offer. Be honest.
 - reason: one line justifying fit_score, grounded in the context.
-- process: the single most likely MANUAL or repetitive process at this company, INFERRED from the context (e.g. "phone-based appointment booking", "manual order/returns handling", "client onboarding paperwork"). Hedge honestly ("likely", "probably") — do not assert internal facts you can't see. If unclear, say "unclear from site".
-- automation: in one sentence, how WE would automate that process with an agentic workflow, tied to OUR offer.
+- process: the single most likely MANUAL or repetitive process at this company, INFERRED from context (e.g. "phone-based appointment booking", "manual order/returns handling", "client onboarding paperwork"). Hedge honestly ("likely", "probably"). If unclear, say "unclear from site".
+- automation: one sentence on how WE would automate that process with an agentic workflow, tied to OUR offer.
 - est_benefit: a QUALITATIVE benefit (e.g. "fewer missed bookings, faster response"). NEVER invent percentages, hours saved, or dollar figures unless they appear in the context.
+- brief: see LANGUAGE above.
 
 Output via the emit_personalization tool only.`;
+}
 
 const TOOL_NAME = "emit_personalization";
 const TOOL_SCHEMA = {
@@ -45,6 +59,7 @@ const TOOL_SCHEMA = {
     process: { type: "string", maxLength: 240 },
     automation: { type: "string", maxLength: 280 },
     est_benefit: { type: "string", maxLength: 240 },
+    brief: { type: "string", maxLength: 700 },
   },
   required: [
     "opener",
@@ -55,6 +70,7 @@ const TOOL_SCHEMA = {
     "process",
     "automation",
     "est_benefit",
+    "brief",
   ],
   additionalProperties: false,
 };
@@ -64,6 +80,8 @@ interface AiInput {
   lead: Lead;
   enrichment: Enrichment;
   icpNote?: string;
+  outreachLang: string;
+  digestLang: string;
 }
 
 function buildUserMessage(input: AiInput): string {
@@ -93,11 +111,25 @@ function buildUserMessage(input: AiInput): string {
     .join("\n");
 }
 
-export function fallbackPersonalization(lead: Lead, enrichment: Enrichment): Personalized {
+const FALLBACK_BRIEF: Record<string, (c: string) => string> = {
+  ru: (c) =>
+    `${c}: автоматический разбор не удался (LLM недоступен/ошибка). Зайди на сайт вручную, чтобы оценить ручные процессы и фит. Письмо ниже — нейтральный шаблон.`,
+  uk: (c) =>
+    `${c}: автоматичний розбір не вдався (LLM недоступний/помилка). Зайди на сайт вручну, щоб оцінити ручні процеси та фіт. Лист нижче — нейтральний шаблон.`,
+  en: (c) =>
+    `${c}: automatic analysis failed (LLM unavailable/error). Review the site manually to judge manual ops and fit. The email below is a neutral template.`,
+};
+
+export function fallbackPersonalization(
+  lead: Lead,
+  enrichment: Enrichment,
+  digestLang = "ru",
+): Personalized {
   const role = lead.role ? ` as ${lead.role.toLowerCase()}` : "";
   const opener = enrichment.ok
     ? `Working on something at ${lead.company} I think is relevant${role} — wanted to keep this short and ask if it lines up.`
     : `Wanted to reach out directly${role} about a small thing I think is relevant to ${lead.company}.`;
+  const brief = (FALLBACK_BRIEF[digestLang] ?? FALLBACK_BRIEF.ru!)(lead.company);
   return {
     opener,
     icebreaker: `Curious how ${lead.company} currently handles this internally.`,
@@ -110,6 +142,7 @@ export function fallbackPersonalization(lead: Lead, enrichment: Enrichment): Per
     automation:
       "A short discovery call to map which repetitive ops could move to an agentic workflow.",
     est_benefit: "Less manual back-office work once the right process is identified.",
+    brief,
   };
 }
 
@@ -117,11 +150,11 @@ async function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personaliz
   const client = new Anthropic({ apiKey: cfg.ANTHROPIC_API_KEY });
   const res = await client.messages.create({
     model: cfg.ANTHROPIC_MODEL,
-    max_tokens: 1024,
+    max_tokens: 1200,
     system: [
       {
         type: "text",
-        text: SYSTEM_PROMPT,
+        text: buildSystemPrompt(input.outreachLang, input.digestLang),
         cache_control: { type: "ephemeral" },
       },
     ],
@@ -169,14 +202,14 @@ async function callOpenAICompatible(
 ): Promise<Personalized> {
   const client = new OpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
   const messages = [
-    { role: "system" as const, content: SYSTEM_PROMPT },
+    { role: "system" as const, content: buildSystemPrompt(input.outreachLang, input.digestLang) },
     {
       role: "user" as const,
       content:
         `${buildUserMessage(input)}\n\n` +
         "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
         "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
-        "process (string), automation (string), est_benefit (string).",
+        "process (string), automation (string), est_benefit (string), brief (string).",
     },
   ];
 
@@ -225,6 +258,8 @@ export async function personalize(
     ourOffer: cfg.OUR_OFFER,
     lead,
     enrichment,
+    outreachLang: cfg.OUTREACH_LANG,
+    digestLang: cfg.DIGEST_LANG,
     ...(icpNote ? { icpNote } : {}),
   };
   try {
@@ -249,6 +284,9 @@ export async function personalize(
     console.warn(
       `[ai] personalization failed for ${lead.domain}, using fallback: ${(err as Error).message}`,
     );
-    return { personalized: fallbackPersonalization(lead, enrichment), provider: "fallback" };
+    return {
+      personalized: fallbackPersonalization(lead, enrichment, cfg.DIGEST_LANG),
+      provider: "fallback",
+    };
   }
 }

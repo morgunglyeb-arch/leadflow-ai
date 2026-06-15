@@ -44,7 +44,7 @@ export async function processLeads(
         let personalized;
         let provider: "anthropic" | "groq" | "openai" | "fallback";
         if (!opts.llmReady) {
-          personalized = fallbackPersonalization(lead, enrichment);
+          personalized = fallbackPersonalization(lead, enrichment, cfg.DIGEST_LANG);
           provider = "fallback";
         } else {
           const r = await personalize(cfg, lead, enrichment, opts.icpNote);
@@ -60,7 +60,11 @@ export async function processLeads(
           ...(lead.name !== undefined ? { name: lead.name } : {}),
           ...(lead.role !== undefined ? { role: lead.role } : {}),
           ...(lead.linkedin !== undefined ? { linkedin: lead.linkedin } : {}),
-          ...(lead.email !== undefined ? { email: lead.email } : {}),
+          // prefer a known email, else the best one found on the site
+          ...((lead.email ?? enrichment.emails[0]) !== undefined
+            ? { email: lead.email ?? enrichment.emails[0] }
+            : {}),
+          email_source: lead.email ? "provided" : enrichment.emails[0] ? "site" : "none",
           ...(lead.phone !== undefined ? { phone: lead.phone } : {}),
           ...(lead.rating !== undefined ? { rating: lead.rating } : {}),
           ...(lead.reviews !== undefined ? { reviews: lead.reviews } : {}),
@@ -78,6 +82,7 @@ export async function processLeads(
           process: personalized.process,
           automation: personalized.automation,
           est_benefit: personalized.est_benefit,
+          brief: personalized.brief,
         };
         done++;
         console.log(

@@ -118,6 +118,42 @@ Worth a quick 15-min call to see if it's a fit?
 
 Every fact (80 SaaS startups, Mosaic/Causal, accruals) comes from the site context — the model is forbidden to invent. Thin context → `process: "unclear from site"` and `fit_score ≤ 2`.
 
+### Email finding
+
+During enrichment the pipeline also scrapes the homepage, `/about` and `/contact` pages for emails (mailto links + text), then ranks them: same-domain first, role inboxes (`info@`, `hello@`, `bookings@`…) next. The best one lands in the `email` column with `email_source=site`. Realistic hit-rate for local SMBs is ~50% (many hide behind a form) — the rest are flagged so you can fill them in. The `Enricher`/email seam makes adding Hunter.io or Apollo trivial later.
+
+### Two languages: outreach vs. analysis
+
+Cold outreach and your own review often need different languages. LeadFlow separates them:
+
+| Setting | Controls | Example |
+|---|---|---|
+| `OUTREACH_LANG` | the email **sent to the prospect** | `en` for London businesses |
+| `DIGEST_LANG` | the per-lead **analysis you read** | `ru` so you understand the problem + pitch |
+
+So a single LLM call returns the English email **and** a Russian `brief` ("Разбор") explaining what the company does, the manual problem spotted, what we'd automate, and why the fit score — for an operator who doesn't read English.
+
+### Daily automation — a digest in your inbox
+
+`npm run prospect -- --digest` is the daily agent: discover ~50 new leads → skip ones already seen (idempotent, so each day is fresh) → enrich + find emails → filter by `--min-fit` → write drafts → **email you one digest**. Each lead in the digest shows: fit score, found email + phone, the `Разбор` (your language), and the ready-to-send English draft. You skim it, pick who to contact, and send manually from your own inbox.
+
+```bash
+# preview the digest locally (always written, no email needed):
+npm run prospect -- --limit=50 --min-fit=3      # → data/out/digest.html
+# email it to yourself (needs RESEND_API_KEY + EMAIL_FROM + EMAIL_DIGEST_TO):
+npm run prospect -- --digest --min-fit=3
+```
+
+**Schedule it daily** (macOS launchd):
+
+```bash
+# 1. edit deploy/com.leadflow.daily.plist — replace REPLACE_ME with your path
+cp deploy/com.leadflow.daily.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.leadflow.daily.plist
+```
+
+Or cron: `30 8 * * * /path/to/LeadFlow-AI/scripts/run-daily.sh`. The run is idempotent — it appends only new leads to `data/out/leads_enriched.csv` and skips domains/emails already processed, so you get fresh prospects every morning.
+
 ---
 
 ## Why it's built this way

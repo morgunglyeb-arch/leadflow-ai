@@ -91,9 +91,58 @@ interface ParsedSite {
   description?: string;
   summary_text: string;
   signals: string[];
+  emails: string[];
 }
 
-function parseSiteHtml(html: string): ParsedSite {
+const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+// Domains/patterns that are never a real contact address.
+const EMAIL_NOISE = [
+  "example.com",
+  "example.org",
+  "sentry.io",
+  "wixpress.com",
+  "wix.com",
+  "schema.org",
+  "w3.org",
+  "domain.com",
+  "yourdomain",
+  "email.com",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".svg",
+];
+const ROLE_INBOX = /^(info|hello|contact|enquir|enquiries|reception|admin|office|bookings?|appointments?|hi|team|sales|support|mail)@/i;
+
+/** Extract + rank emails from raw HTML (mailto links + body text). */
+export function extractEmails(html: string, siteDomain: string): string[] {
+  const found = new Set<string>();
+  // mailto: links first (most reliable)
+  const mailto = html.matchAll(/mailto:([^"'?>\s]+)/gi);
+  for (const m of mailto) if (m[1]) found.add(m[1].toLowerCase());
+  for (const m of html.matchAll(EMAIL_RE)) found.add(m[0].toLowerCase());
+
+  const root = siteDomain.replace(/^www\./, "");
+  const scored: Array<{ email: string; score: number }> = [];
+  for (const email of found) {
+    if (EMAIL_NOISE.some((n) => email.includes(n))) continue;
+    if (email.length > 60) continue;
+    const at = email.split("@")[1] ?? "";
+    let score = 0;
+    if (at === root || at.endsWith(`.${root}`)) score += 5;
+    if (ROLE_INBOX.test(email)) score += 2;
+    if (/(gmail|outlook|hotmail|yahoo|icloud|proton)\./.test(at)) score += 1;
+    scored.push({ email, score });
+  }
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.email)
+    .slice(0, 5);
+}
+
+function parseSiteHtml(html: string, domain: string): ParsedSite {
   const title = extractTag(html, "title");
   const description = extractMetaDescription(html);
   const headings = extractHeadings(html);
@@ -110,18 +159,21 @@ function parseSiteHtml(html: string): ParsedSite {
 
   const summary_text = composed.slice(0, MAX_TEXT_CHARS);
   const signals = detectSignals(`${title ?? ""} ${description ?? ""} ${bodyText}`);
-  return { title, description, summary_text, signals };
+  const emails = extractEmails(html, domain);
+  return { title, description, summary_text, signals, emails };
 }
 
 function parsePlainFixture(text: string): ParsedSite {
   const cleaned = text.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT_CHARS);
   const signals = detectSignals(text);
   const firstLine = text.split("\n").map((l) => l.trim()).find(Boolean);
+  const emails = extractEmails(text, "");
   return {
     title: firstLine,
     description: undefined,
     summary_text: cleaned,
     signals,
+    emails,
   };
 }
 
@@ -153,13 +205,19 @@ async function fetchWithTimeout(
 }
 
 async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite> {
-  const candidates = [`https://${domain}`, `https://${domain}/about`];
+  // homepage + about + contact pages (contact pages are where emails live)
+  const candidates = [
+    `https://${domain}`,
+    `https://${domain}/about`,
+    `https://${domain}/contact`,
+    `https://${domain}/contact-us`,
+  ];
   let firstError: Error | undefined;
   const collected: ParsedSite[] = [];
   for (const url of candidates) {
     try {
       const { html } = await fetchWithTimeout(url, cfg);
-      collected.push(parseSiteHtml(html));
+      collected.push(parseSiteHtml(html, domain));
     } catch (err) {
       if (!firstError) firstError = err as Error;
     }
@@ -167,10 +225,10 @@ async function fetchSiteLive(domain: string, cfg: AppConfig): Promise<ParsedSite
   if (collected.length === 0) {
     throw firstError ?? new Error("fetch failed");
   }
-  return mergeParsed(collected);
+  return mergeParsed(collected, domain);
 }
 
-function mergeParsed(parts: ParsedSite[]): ParsedSite {
+function mergeParsed(parts: ParsedSite[], domain: string): ParsedSite {
   const title = parts.find((p) => p.title)?.title;
   const description = parts.find((p) => p.description)?.description;
   const summary_text = parts
@@ -178,7 +236,26 @@ function mergeParsed(parts: ParsedSite[]): ParsedSite {
     .join("\n---\n")
     .slice(0, MAX_TEXT_CHARS);
   const signals = [...new Set(parts.flatMap((p) => p.signals))];
-  return { title, description, summary_text, signals };
+  // re-rank the union of emails against the domain
+  const allEmails = [...new Set(parts.flatMap((p) => p.emails))];
+  const emails = rerankEmails(allEmails, domain);
+  return { title, description, summary_text, signals, emails };
+}
+
+function rerankEmails(emails: string[], domain: string): string[] {
+  const root = domain.replace(/^www\./, "");
+  return emails
+    .map((email) => {
+      const at = email.split("@")[1] ?? "";
+      let score = 0;
+      if (at === root || at.endsWith(`.${root}`)) score += 5;
+      if (ROLE_INBOX.test(email)) score += 2;
+      if (/(gmail|outlook|hotmail|yahoo|icloud|proton)\./.test(at)) score += 1;
+      return { email, score };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map((s) => s.email)
+    .slice(0, 5);
 }
 
 async function loadMockFixture(domain: string): Promise<ParsedSite | null> {
@@ -205,7 +282,7 @@ export async function enrichLead(
 
   if (!opts.force) {
     const cached = await loadCachedEnrichment(cfg.ENRICH_CACHE_DIR, domain);
-    if (cached) return { ...cached, source: "cache" };
+    if (cached) return { ...cached, emails: cached.emails ?? [], source: "cache" };
   }
 
   if (opts.mock) {
@@ -217,6 +294,7 @@ export async function enrichLead(
         description: fixture.description,
         summary_text: fixture.summary_text,
         signals: fixture.signals,
+        emails: rerankEmails(fixture.emails, domain),
         ok: true,
         source: "mock",
         fetched_at: now,
@@ -228,6 +306,7 @@ export async function enrichLead(
       domain,
       summary_text: "",
       signals: [],
+      emails: [],
       ok: false,
       source: "failed",
       fetched_at: now,
@@ -244,6 +323,7 @@ export async function enrichLead(
       description: parsed.description,
       summary_text: parsed.summary_text,
       signals: parsed.signals,
+      emails: parsed.emails,
       ok: true,
       source: "live",
       fetched_at: now,
@@ -255,6 +335,7 @@ export async function enrichLead(
       domain,
       summary_text: "",
       signals: [],
+      emails: [],
       ok: false,
       source: "failed",
       fetched_at: now,

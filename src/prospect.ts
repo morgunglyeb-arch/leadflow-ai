@@ -1,8 +1,9 @@
 import type { AppConfig } from "./config.js";
-import { assertDiscoveryReady, assertLLMReady } from "./config.js";
+import { assertDiscoveryReady, assertLLMReady, digestReady } from "./config.js";
 import { discoverLeads } from "./discover/index.js";
 import { loadExistingKeys } from "./output.js";
 import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
+import { sendDigest, writeDigestFile } from "./digest.js";
 import type { OutputRow } from "./types.js";
 
 export interface ProspectFlags {
@@ -10,6 +11,7 @@ export interface ProspectFlags {
   mock: boolean;
   force: boolean;
   sendTest: boolean;
+  digest: boolean;
   limit?: number;
   concurrency?: number;
   minFit?: number;
@@ -102,6 +104,25 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
     label: "prospect",
     writeDraftsQueue: true,
   });
+
+  // 7. digest: always write a local preview file; email it if --digest
+  const toSend = flags.minFit !== undefined && flags.minFit > 1
+    ? rows.filter((r) => (r.fit_score ?? 0) >= flags.minFit!)
+    : rows;
+  const previewPath = await writeDigestFile(cfg, toSend);
+  console.log(`[prospect] digest preview → ${previewPath}`);
+
+  if (flags.digest) {
+    if (!digestReady(cfg)) {
+      console.warn(
+        "[prospect] --digest requested but RESEND_API_KEY / EMAIL_FROM / EMAIL_DIGEST_TO not all set — skipping",
+      );
+    } else {
+      const r = await sendDigest(cfg, toSend);
+      if (r.ok) console.log(`[prospect] digest emailed to ${r.recipients} recipient(s) (id=${r.id})`);
+      else console.error(`[prospect] digest FAILED: ${r.error}`);
+    }
+  }
 
   return rows;
 }
