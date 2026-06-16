@@ -76,18 +76,18 @@ LANGUAGE (strict):
 - Write "brief" ONLY in ${digName}, for OUR operator (not the prospect): 2-4 plain sentences — what the business does, the EXACT problem we'll solve (no hedging), the EXACT thing we'll build and sell them, and why the fit score. If ${digName} is Russian, write it entirely in Russian Cyrillic.
 
 Fields:
-- opener: 1-2 sentences, first line of the email, references their exact situation in plain words. No greeting line.
+- opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. A short sender self-intro is added automatically before this, so do NOT introduce yourself or say "I'm…"; no greeting line.
 - icebreaker: one short, specific observation about their business.
 - subject: <= 60 chars, plain, curiosity or benefit, no emojis, no ALL CAPS.
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
 - process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. Or "unclear from site".
-- automation: one plain sentence — exactly what we'd build for them, in their channel, in owner-language. No jargon.
+- automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an automatic assistant that texts back every missed call within seconds and books the patient in for you — 24/7, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
 - followup_1, followup_2: see FOLLOW-UPS above.
 - subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=60 chars, plain, no emojis/ALL CAPS.
-- demo: ONE concrete, tangible example of the assistant in action for THIS business — ideally the actual message a customer would receive, e.g. for a clinic missed call: "Hi, sorry we missed your call at [Clinic] — reply here and we'll get you booked in." Make it specific and realistic, in ${outName}. This shows the owner exactly what they'd get.
+- demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi, sorry we missed your call at Smile Dental — reply here and we'll get you booked in." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
 
 Output via the emit_personalization tool only.`;
 }

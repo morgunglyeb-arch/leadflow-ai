@@ -60,6 +60,10 @@ function stripTrailingPunct(s: string): string {
   return s.trim().replace(/[.!;,\s]+$/, "");
 }
 
+function stripQuotes(s: string): string {
+  return s.trim().replace(/^["'“”]+|["'“”]+$/g, "").trim();
+}
+
 /**
  * Assemble a full, ready-to-review cold email from the AI fields. The pitch
  * (process → automation → benefit) is the body's spine; nothing here invents
@@ -70,6 +74,11 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const lines: string[] = [];
   lines.push(greeting(row.company));
   lines.push("");
+  // Short self-intro so they know who's writing and why to listen.
+  if (cfg.SENDER_INTRO) {
+    lines.push(cfg.SENDER_INTRO);
+    lines.push("");
+  }
   if (row.opener) lines.push(row.opener);
 
   // The opener states the problem; this is the plain offer. Benefit stays in
@@ -77,6 +86,12 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   if (row.automation) {
     lines.push("");
     lines.push(`${capitalize(stripTrailingPunct(row.automation))}.`);
+  }
+  // Concrete example so the offer is unmistakable — they SEE what it does.
+  if (row.demo) {
+    lines.push("");
+    lines.push(`Here's exactly what they'd get:`);
+    lines.push(`"${stripQuotes(row.demo)}"`);
   }
 
   lines.push("");

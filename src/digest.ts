@@ -26,13 +26,13 @@ function fitColor(n: number): string {
   );
 }
 
-function leadCard(row: OutputRow, i: number): string {
+function leadCard(row: OutputRow, i: number, intro?: string): string {
   const fit = row.fit_score ?? 0;
   const email = row.email
     ? `<a href="mailto:${esc(row.email)}">${esc(row.email)}</a>${row.email_source === "site" ? " <span style=\"color:#94a3b8\">(с сайта)</span>" : ""}`
     : '<span style="color:#b91c1c">email не найден — найди вручную</span>';
   const draftBody = esc(row.opener ?? "")
-    ? buildDraftPreview(row)
+    ? buildDraftPreview(row, intro)
     : "(черновик не сгенерирован)";
 
   return `
@@ -83,14 +83,20 @@ function followupBlock(row: OutputRow): string {
   <div style="font-size:12px;color:#334155;padding:8px 10px;background:#f8fafc;border-radius:8px;margin-top:6px;">${rows}</div></details>`;
 }
 
-function buildDraftPreview(row: OutputRow): string {
+function buildDraftPreview(row: OutputRow, intro?: string): string {
   // Mirror the assembled draft body (greeting addresses the business, not a person).
   const short = (row.company.split(/[-–—|,:]/)[0] ?? "").trim();
   const greet = short.length >= 2 ? `Hi ${esc(short)} team,` : "Hello,";
-  const parts: string[] = [greet, "", esc(row.opener ?? "")];
+  const parts: string[] = [greet, ""];
+  if (intro) parts.push(esc(intro), "");
+  parts.push(esc(row.opener ?? ""));
   if (row.automation) {
     const a = row.automation.trim().replace(/[.!;,\s]+$/, "");
     parts.push("", esc(a.charAt(0).toUpperCase() + a.slice(1) + "."));
+  }
+  if (row.demo) {
+    const d = row.demo.trim().replace(/^["'“”]+|["'“”]+$/g, "");
+    parts.push("", "Here's exactly what they'd get:", esc(`"${d}"`));
   }
   return parts.join("\n");
 }
@@ -115,7 +121,7 @@ export function renderDigestHtml(rows: OutputRow[], cfg: AppConfig): string {
       Прочитай «Разбор» по каждому, выбери кого писать — и отправь готовый английский текст вручную с своей почты.
     </div>
   </td></tr>
-  ${sorted.map((r, i) => leadCard(r, i + 1)).join("")}
+  ${sorted.map((r, i) => leadCard(r, i + 1, cfg.SENDER_INTRO)).join("")}
   <tr><td style="padding-top:18px;border-top:1px solid #e5e7eb;font-size:12px;color:#9ca3af;">
     Сгенерировано LeadFlow AI · фильтр fit, анализ и тексты — автоматически, факты только из сайтов компаний.
   </td></tr>

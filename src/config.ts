@@ -109,6 +109,13 @@ const schema = z.object({
 
   // Sender identity used when assembling draft emails
   SENDER_NAME: z.string().default("Glyeb"),
+  // One-line self-intro that positions you (prepended before the pitch so the
+  // prospect knows who's writing). Keep it short and credible — no fake claims.
+  SENDER_INTRO: z
+    .string()
+    .default(
+      "I'm Glyeb, a business-automation specialist — I help local businesses stop losing customers to slow, manual admin.",
+    ),
   SENDER_SIGNATURE: z
     .string()
     .default("Glyeb · AI automation for SMBs · github.com/morgunglyeb-arch"),
