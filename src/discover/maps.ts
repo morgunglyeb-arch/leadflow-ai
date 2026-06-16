@@ -238,14 +238,12 @@ async function resolveDomain(
       const domain = normalizeDomain(item.link);
       if (!domain || isNonSite(domain)) continue;
       const root = domain.split(".")[0] ?? "";
-      const resultTitle = (item.title ?? "").toLowerCase();
-      // accept if a distinctive name word is in the domain, or >=2 in the title
       const inDomain = tokens.some((t) => root.includes(t));
-      const inTitle = tokens.filter((t) => resultTitle.includes(t)).length >= 2;
-      // If the name has no distinctive words, we can't verify — drop it rather
-      // than attach a random competitor's domain (and a wrong email).
+      // Require a distinctive name word IN THE DOMAIN itself. Title-only matches
+      // let aggregators/competitors through (e.g. a directory page mentioning
+      // "Wimpole Street" → drvisor.com), which means a wrong company + email.
       if (tokens.length === 0) continue;
-      if (inDomain || inTitle) return domain;
+      if (inDomain) return domain;
     }
     return undefined;
   } catch {
