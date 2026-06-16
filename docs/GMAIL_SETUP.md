@@ -27,9 +27,13 @@ once; after that the daily run is fully automatic.
 npm run campaign -- --auth
 ```
 
-- It prints a URL. Open it, sign in with the **sending Gmail**, allow access.
-- Google shows a code (or a redirect URL containing `code=...`). Paste it back.
+- It prints a URL. Open it, sign in with the **sending Gmail**, click **Allow**.
+- You'll be redirected to `http://localhost:42813` — the command **captures the
+  code automatically** (modern loopback flow; no copy-paste).
 - A token is saved to `secrets/gmail_token.json` (gitignored). Done.
+
+> If your browser shows "site can't be reached" at localhost:42813, that's fine
+> as long as the URL bar shows `?code=...` — the local server already grabbed it.
 
 ## 3. Configure `.env`
 

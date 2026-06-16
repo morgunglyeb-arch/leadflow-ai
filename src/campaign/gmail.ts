@@ -1,9 +1,12 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import { createServer } from "node:http";
 import { google } from "googleapis";
 import type { AppConfig } from "../config.js";
 
 type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
+
+const LOOPBACK_PORT = 42813;
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
@@ -30,18 +33,46 @@ function makeOAuthClient(creds: OAuthCreds): OAuth2Client {
   return new google.auth.OAuth2(creds.client_id, creds.client_secret, redirect);
 }
 
-/** Step 1 of auth: a URL the user opens to grant Gmail send+read access. */
-export async function getAuthUrl(cfg: AppConfig): Promise<string> {
-  const client = makeOAuthClient(await loadClientCreds(cfg.GMAIL_CREDENTIALS_PATH));
-  return client.generateAuthUrl({ access_type: "offline", prompt: "consent", scope: SCOPES });
-}
+/**
+ * Modern loopback OAuth flow (the deprecated copy-paste "OOB" flow no longer
+ * works). Spins up a local server, prints the consent URL, and captures the
+ * redirect with the code automatically — then saves the token.
+ */
+export async function authorizeInteractive(cfg: AppConfig): Promise<string> {
+  const creds = await loadClientCreds(cfg.GMAIL_CREDENTIALS_PATH);
+  const redirectUri = `http://localhost:${LOOPBACK_PORT}`;
+  const client = new google.auth.OAuth2(creds.client_id, creds.client_secret, redirectUri);
+  const url = client.generateAuthUrl({ access_type: "offline", prompt: "consent", scope: SCOPES });
 
-/** Step 2: exchange the pasted code for a token and persist it. */
-export async function saveTokenFromCode(cfg: AppConfig, code: string): Promise<void> {
-  const client = makeOAuthClient(await loadClientCreds(cfg.GMAIL_CREDENTIALS_PATH));
-  const { tokens } = await client.getToken(code.trim());
+  console.log("\n1. Open this URL, sign in with your SENDING Gmail, and click Allow:\n");
+  console.log(url + "\n");
+  console.log("2. After you approve, this window captures the code automatically…\n");
+
+  const code = await new Promise<string>((resolve, reject) => {
+    const server = createServer((req, res) => {
+      const u = new URL(req.url ?? "/", redirectUri);
+      const c = u.searchParams.get("code");
+      const err = u.searchParams.get("error");
+      res.writeHead(200, { "content-type": "text/html" });
+      res.end(
+        `<html><body style="font-family:sans-serif;padding:40px"><h2>${c ? "✓ Authorized — you can close this tab." : "Authorization failed."}</h2></body></html>`,
+      );
+      server.close();
+      if (c) resolve(c);
+      else reject(new Error(err ?? "no code returned"));
+    });
+    server.on("error", reject);
+    server.listen(LOOPBACK_PORT);
+    setTimeout(() => {
+      server.close();
+      reject(new Error("auth timed out after 5 min"));
+    }, 300_000);
+  });
+
+  const { tokens } = await client.getToken(code);
   await mkdir(dirname(cfg.GMAIL_TOKEN_PATH), { recursive: true });
   await writeFile(cfg.GMAIL_TOKEN_PATH, JSON.stringify(tokens, null, 2), "utf8");
+  return cfg.GMAIL_TOKEN_PATH;
 }
 
 export async function getGmailClient(cfg: AppConfig): Promise<OAuth2Client> {

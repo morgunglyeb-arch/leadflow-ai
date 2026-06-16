@@ -1,6 +1,5 @@
-import { createInterface } from "node:readline/promises";
 import { loadConfig } from "./config.js";
-import { getAuthUrl, saveTokenFromCode } from "./campaign/gmail.js";
+import { authorizeInteractive } from "./campaign/gmail.js";
 import { runCampaign, type CampaignFlags } from "./campaign/run.js";
 import { loadState } from "./campaign/store.js";
 
@@ -41,14 +40,8 @@ reply), sends the strongest queued leads, then due follow-ups, then learns.`);
 
 async function doAuth(): Promise<void> {
   const cfg = loadConfig();
-  const url = await getAuthUrl(cfg);
-  console.log("\n1. Open this URL, sign in with your sending Gmail, and grant access:\n");
-  console.log(url + "\n");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const code = await rl.question("2. Paste the code Google gives you here: ");
-  rl.close();
-  await saveTokenFromCode(cfg, code);
-  console.log(`\n✓ Token saved to ${cfg.GMAIL_TOKEN_PATH}. You can now run the campaign.`);
+  const path = await authorizeInteractive(cfg);
+  console.log(`\n✓ Token saved to ${path}. You can now run the campaign.`);
 }
 
 async function doStatus(): Promise<void> {
