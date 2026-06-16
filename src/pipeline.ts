@@ -148,6 +148,7 @@ export async function processLeads(
           followup_2: personalized.followup_2,
           subject_b: personalized.subject_b,
           demo: personalized.demo,
+          services: personalized.services,
         };
         done++;
         console.log(

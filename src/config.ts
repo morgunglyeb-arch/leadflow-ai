@@ -119,9 +119,12 @@ const schema = z.object({
   SENDER_SIGNATURE: z
     .string()
     .default("Glyeb · AI automation for SMBs · github.com/morgunglyeb-arch"),
+  // No calls (you don't do live English calls). Reply-based, async CTA.
   CALL_TO_ACTION: z
     .string()
-    .default("Worth a quick 15-min call to see if it's a fit?"),
+    .default(
+      "If any of these would be useful, just reply and I'll send a short example showing how it'd work for you — no call needed.",
+    ),
 
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),

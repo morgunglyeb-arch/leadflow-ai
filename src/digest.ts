@@ -90,13 +90,17 @@ function buildDraftPreview(row: OutputRow, intro?: string): string {
   const parts: string[] = [greet, ""];
   if (intro) parts.push(esc(intro), "");
   parts.push(esc(row.opener ?? ""));
-  if (row.automation) {
+  const services = row.services ?? [];
+  if (services.length > 0) {
+    parts.push("", "A few things we could set up for you:");
+    for (const s of services) parts.push(esc(`• ${s.replace(/[.!;,\s]+$/, "")}`));
+  } else if (row.automation) {
     const a = row.automation.trim().replace(/[.!;,\s]+$/, "");
     parts.push("", esc(a.charAt(0).toUpperCase() + a.slice(1) + "."));
   }
   if (row.demo) {
     const d = row.demo.trim().replace(/^["'“”]+|["'“”]+$/g, "");
-    parts.push("", "Here's exactly what they'd get:", esc(`"${d}"`));
+    parts.push("", "For example, here's what your customers would get:", esc(`"${d}"`));
   }
   return parts.join("\n");
 }

@@ -36,11 +36,12 @@ const CSV_COLUMNS: Array<keyof OutputRow> = [
   "followup_2",
   "subject_b",
   "demo",
+  "services",
 ];
 
 function csvEscape(v: unknown): string {
   if (v === undefined || v === null) return "";
-  const s = String(v);
+  const s = Array.isArray(v) ? v.join(" | ") : String(v);
   if (s.includes(",") || s.includes('"') || s.includes("\n")) {
     return `"${s.replace(/"/g, '""')}"`;
   }

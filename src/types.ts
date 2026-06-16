@@ -56,6 +56,8 @@ export interface Personalized {
   subject_b: string;
   // a concrete, tangible example of the assistant in action for this business
   demo: string;
+  // a short menu of relevant services we could set up (so they see what's possible)
+  services: string[];
 }
 
 export type LeadStatus = "draft" | "approved" | "sent" | "skipped";

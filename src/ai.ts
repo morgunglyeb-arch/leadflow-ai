@@ -20,6 +20,7 @@ export const PersonalizedSchema = z.object({
   followup_2: z.string().min(5).max(500),
   subject_b: z.string().min(3).max(120),
   demo: z.string().min(3).max(320),
+  services: z.array(z.string().min(3).max(100)).min(2).max(4),
 });
 
 const LANG_NAME: Record<string, string> = { en: "English", uk: "Ukrainian", ru: "Russian" };
@@ -62,6 +63,11 @@ WRITING FOR A NON-TECHNICAL OWNER (critical):
 - Lead with the pain and the result (missed calls = lost customers; never miss a booking again), not the technology. No flattery clichés, no "I hope this finds you well", "I came across your".
 - The email must make sense and feel worth a reply on its own — it should sell itself.
 
+NEVER PROPOSE A CALL OR MEETING. The sender does not take live calls. The only ask is a REPLY (e.g. "reply and I'll send a short example/video"). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat". Offering to SEND a short recorded video or example is fine (it's async).
+
+SHOW A FEW SERVICES (people often don't know what's possible):
+- services: 2-4 short, concrete things we could set up for THIS business, drawn from the relevant automations for their type (see INDUSTRY FACTS) — e.g. "Auto text-back to every missed call", "An AI assistant in WhatsApp/Instagram that answers and books", "A simple CRM that logs every enquiry and follows up", "Automatic appointment reminders to cut no-shows". Each <=12 words, plain, no jargon. Only list channels their customers actually use (don't list Instagram booking for a dentist). This menu shows them the range of what's possible.
+
 KEEP IT SHORT (deliverability + reply rate):
 - The FIRST email (opener + the offer line) must read in under ~80 words total. Short sentences. One idea. Cold emails that are short get more replies and land in the inbox.
 - If COMPLAINT reviews are provided, that real customer pain is your STRONGEST angle — name it (e.g. "a few reviewers mention struggling to get through by phone") without exaggerating or inventing.
@@ -85,7 +91,8 @@ Fields:
 - automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an automatic assistant that texts back every missed call within seconds and books the patient in for you — 24/7, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
-- followup_1, followup_2: see FOLLOW-UPS above.
+- followup_1, followup_2: see FOLLOW-UPS above (offer to SEND an example/video; never a call).
+- services: see "SHOW A FEW SERVICES" above.
 - subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=60 chars, plain, no emojis/ALL CAPS.
 - demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi, sorry we missed your call at Smile Dental — reply here and we'll get you booked in." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
 
@@ -109,6 +116,12 @@ const TOOL_SCHEMA = {
     followup_2: { type: "string", maxLength: 500 },
     subject_b: { type: "string", maxLength: 120 },
     demo: { type: "string", maxLength: 320 },
+    services: {
+      type: "array",
+      items: { type: "string", maxLength: 100 },
+      minItems: 2,
+      maxItems: 4,
+    },
   },
   required: [
     "opener",
@@ -124,6 +137,7 @@ const TOOL_SCHEMA = {
     "followup_2",
     "subject_b",
     "demo",
+    "services",
   ],
   additionalProperties: false,
 };
@@ -244,6 +258,11 @@ export function fallbackPersonalization(
     followup_2: `I'll assume the timing isn't right for now — happy to leave the door open if things change.`,
     subject_b: `a quick win for ${lead.company}`,
     demo: "",
+    services: [
+      "Auto text-back to every missed call",
+      "Instant replies to website and social enquiries",
+      "A simple system that logs leads and follows up",
+    ],
   };
 }
 
@@ -306,7 +325,8 @@ const JSON_KEYS_HINT =
   "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
   "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
   "process (string), automation (string), est_benefit (string), brief (string), " +
-  "followup_1 (string), followup_2 (string), subject_b (string), demo (string).";
+  "followup_1 (string), followup_2 (string), subject_b (string), demo (string), " +
+  "services (array of 2-4 short strings).";
 
 async function callOpenAIRaw(
   cfg: AppConfig,

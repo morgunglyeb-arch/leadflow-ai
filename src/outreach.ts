@@ -81,16 +81,20 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   }
   if (row.opener) lines.push(row.opener);
 
-  // The opener states the problem; this is the plain offer. Benefit stays in
-  // the brief — keeping the email tight helps deliverability and reply rate.
-  if (row.automation) {
+  // A short menu of what we could set up — so they see what's possible.
+  const services = row.services ?? [];
+  if (services.length > 0) {
+    lines.push("");
+    lines.push("A few things we could set up for you:");
+    for (const s of services) lines.push(`• ${stripTrailingPunct(s)}`);
+  } else if (row.automation) {
     lines.push("");
     lines.push(`${capitalize(stripTrailingPunct(row.automation))}.`);
   }
-  // Concrete example so the offer is unmistakable — they SEE what it does.
+  // Concrete example so it's unmistakable — they SEE what it does.
   if (row.demo) {
     lines.push("");
-    lines.push(`Here's exactly what they'd get:`);
+    lines.push(`For example, here's what your customers would get:`);
     lines.push(`"${stripQuotes(row.demo)}"`);
   }
 
