@@ -110,6 +110,33 @@ const schema = z.object({
   EMAIL_TEST_TO: z.string().optional(),
   // Your own inbox — where the daily digest of leads + drafts is sent
   EMAIL_DIGEST_TO: z.string().optional(),
+
+  // --- Autonomous campaign (Gmail send + follow-up + learning) -------------
+  CAMPAIGN_STATE_PATH: z.string().default("data/campaign/state.json"),
+  // Master safety switch — must be explicitly true for the agent to SEND.
+  SENDING_ENABLED: z
+    .string()
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
+  // Gmail OAuth (one-time setup). Credentials = the OAuth client json from
+  // Google Cloud; token = produced by the auth flow (`npm run campaign -- --auth`).
+  GMAIL_CREDENTIALS_PATH: z.string().default("secrets/gmail_credentials.json"),
+  GMAIL_TOKEN_PATH: z.string().default("secrets/gmail_token.json"),
+  GMAIL_SENDER: z.string().optional(), // your gmail address (the From:)
+
+  // The agent self-limits volume: it sends min(warmup-today, qualified leads
+  // above the quality bar). Protects deliverability — never blasts.
+  SEND_DAILY_CAP: z.coerce.number().int().positive().default(40),
+  SEND_WARMUP_START: z.coerce.number().int().positive().default(10),
+  SEND_WARMUP_STEP: z.coerce.number().int().positive().default(5),
+  // Only send leads scoring at/above this ROI/quality bar (the rest queue for
+  // your manual review). Higher = fewer, stronger sends.
+  SEND_MIN_SCORE: z.coerce.number().default(9),
+  // Days to wait before each follow-up if no reply (comma-separated).
+  FOLLOWUP_GAP_DAYS: z.string().default("3,7"),
+  OPT_OUT_TEXT: z
+    .string()
+    .default("Not relevant? Reply 'no' and I won't follow up."),
 });
 
 export type AppConfig = z.infer<typeof schema>;

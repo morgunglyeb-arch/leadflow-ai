@@ -1,0 +1,75 @@
+import { createInterface } from "node:readline/promises";
+import { loadConfig } from "./config.js";
+import { getAuthUrl, saveTokenFromCode } from "./campaign/gmail.js";
+import { runCampaign, type CampaignFlags } from "./campaign/run.js";
+import { loadState } from "./campaign/store.js";
+
+function parseFlags(argv: string[]): { mode: "run" | "auth" | "status"; flags: CampaignFlags } {
+  const flags: CampaignFlags = { mock: false, dryRun: false, topUp: false };
+  let mode: "run" | "auth" | "status" = "run";
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!a) continue;
+    if (a === "--auth") mode = "auth";
+    else if (a === "--status") mode = "status";
+    else if (a === "--mock") flags.mock = true;
+    else if (a === "--dry-run" || a === "--dry") flags.dryRun = true;
+    else if (a === "--top-up") flags.topUp = true;
+    else if (a === "--concurrency") flags.concurrency = Number.parseInt(argv[++i] ?? "0", 10);
+    else if (a.startsWith("--concurrency=")) flags.concurrency = Number.parseInt(a.slice(14), 10);
+    else if (a === "--help" || a === "-h") {
+      printHelp();
+      process.exit(0);
+    }
+  }
+  return { mode, flags };
+}
+
+function printHelp(): void {
+  console.log(`LeadFlow AI — autonomous campaign (Gmail send + follow-up + learn)
+
+Usage:
+  npm run campaign -- --auth          One-time Google OAuth (paste the code)
+  npm run campaign -- --top-up --dry  Discover+enqueue, show what it WOULD send
+  npm run campaign -- --top-up        Discover, send (needs SENDING_ENABLED=true + auth)
+  npm run campaign -- --status        Show campaign state summary
+
+The agent decides HOW MANY to send: today's warmup cap × leads above the
+quality bar (SEND_MIN_SCORE). It polls replies first (stops sequences on a
+reply), sends the strongest queued leads, then due follow-ups, then learns.`);
+}
+
+async function doAuth(): Promise<void> {
+  const cfg = loadConfig();
+  const url = await getAuthUrl(cfg);
+  console.log("\n1. Open this URL, sign in with your sending Gmail, and grant access:\n");
+  console.log(url + "\n");
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const code = await rl.question("2. Paste the code Google gives you here: ");
+  rl.close();
+  await saveTokenFromCode(cfg, code);
+  console.log(`\n✓ Token saved to ${cfg.GMAIL_TOKEN_PATH}. You can now run the campaign.`);
+}
+
+async function doStatus(): Promise<void> {
+  const cfg = loadConfig();
+  const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
+  const leads = Object.values(state.leads);
+  const by: Record<string, number> = {};
+  for (const l of leads) by[l.status] = (by[l.status] ?? 0) + 1;
+  console.log(`Campaign — warmup day ${state.warmup_day}, ${leads.length} leads total`);
+  for (const [k, v] of Object.entries(by)) console.log(`  ${k}: ${v}`);
+  const flagged = leads.filter((l) => l.flagged).length;
+  if (flagged) console.log(`  (${flagged} spam-flagged → manual review)`);
+}
+
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+if (isMain) {
+  const { mode, flags } = parseFlags(process.argv.slice(2));
+  const run =
+    mode === "auth" ? doAuth() : mode === "status" ? doStatus() : runCampaign(loadConfig(), flags);
+  run.catch((err) => {
+    console.error("[campaign] fatal:", err);
+    process.exit(1);
+  });
+}

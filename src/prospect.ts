@@ -41,7 +41,7 @@ function chunk<T>(arr: T[], size: number): T[][] {
  * for leads (ad pixels), take bookings by phone only, run emergency trades, or
  * are clearly busy have the most expensive unautomated gap → contact first.
  */
-function roiScore(row: OutputRow): number {
+export function roiScore(row: OutputRow): number {
   const sig = new Set((row.signals ?? "").split("|").filter(Boolean));
   let s = (row.fit_score ?? 0) * 2;
   if (sig.has("runs_google_ads") || sig.has("runs_meta_ads")) s += 3;

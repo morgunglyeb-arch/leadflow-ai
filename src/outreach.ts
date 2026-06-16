@@ -9,6 +9,34 @@ export interface EmailDraft {
   body: string;
 }
 
+export interface EmailSequence {
+  to?: string;
+  subject: string;
+  initial: string;
+  followup_1: string;
+  followup_2: string;
+}
+
+/**
+ * Full sendable bodies for the 3-touch sequence (greeting + content + opt-out +
+ * signature). Used by the autonomous campaign sender.
+ */
+export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence {
+  const greet = greeting(row.company);
+  const sig = `— ${cfg.SENDER_SIGNATURE}`;
+  const initialDraft = assembleDraft(row, cfg);
+  // append a one-line opt-out to the first touch (compliance + deliverability)
+  const initial = `${initialDraft.body}\n\n${cfg.OPT_OUT_TEXT}`;
+  const fu = (text: string): string => `${greet}\n\n${text}\n\n${sig}`;
+  return {
+    ...(row.email ? { to: row.email } : {}),
+    subject: initialDraft.subject,
+    initial,
+    followup_1: row.followup_1 ? fu(row.followup_1) : "",
+    followup_2: row.followup_2 ? fu(row.followup_2) : "",
+  };
+}
+
 /**
  * Greeting addresses the BUSINESS, not a person — the recipient often isn't the
  * named contact, so a wrong first name hurts. We use a tidy short company name.

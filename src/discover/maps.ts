@@ -198,14 +198,15 @@ async function serperPlaces(q: string, cfg: AppConfig): Promise<SerperPlace[]> {
 
 function nameTokens(name: string): string[] {
   const stop = new Set([
-    "the", "and", "ltd", "limited", "clinic", "centre", "center", "company",
-    "services", "london", "uk", "co", "group", "practice", "studio",
+    "the", "and", "ltd", "limited", "llp", "clinic", "centre", "center", "company",
+    "services", "service", "london", "uk", "co", "group", "practice", "studio",
+    "dental", "medical", "health", "care", "surgery", "dentist", "dentists",
   ]);
   return name
     .toLowerCase()
     .replace(/[^a-z0-9 ]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length >= 4 && !stop.has(w));
+    .filter((w) => w.length >= 3 && !stop.has(w));
 }
 
 /**
@@ -241,7 +242,10 @@ async function resolveDomain(
       // accept if a distinctive name word is in the domain, or >=2 in the title
       const inDomain = tokens.some((t) => root.includes(t));
       const inTitle = tokens.filter((t) => resultTitle.includes(t)).length >= 2;
-      if (tokens.length === 0 || inDomain || inTitle) return domain;
+      // If the name has no distinctive words, we can't verify — drop it rather
+      // than attach a random competitor's domain (and a wrong email).
+      if (tokens.length === 0) continue;
+      if (inDomain || inTitle) return domain;
     }
     return undefined;
   } catch {

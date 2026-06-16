@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import { z } from "zod";
@@ -126,8 +127,37 @@ interface AiInput {
   icpNote?: string;
   reviewsText?: string;
   verticalFacts?: string;
+  winnersText?: string;
   outreachLang: string;
   digestLang: string;
+}
+
+interface Winner {
+  vertical?: string;
+  subject?: string;
+  opener?: string;
+}
+let winnersCache: Winner[] | undefined;
+
+/** Load openers that earned replies (written by the learning loop) for few-shot. */
+async function loadWinners(): Promise<Winner[]> {
+  if (winnersCache !== undefined) return winnersCache;
+  try {
+    const w = JSON.parse(await readFile("data/campaign/winners.json", "utf8"));
+    winnersCache = Array.isArray(w) ? (w as Winner[]) : [];
+  } catch {
+    winnersCache = [];
+  }
+  return winnersCache;
+}
+
+function winnersText(winners: Winner[]): string | undefined {
+  const good = winners.filter((w) => w.opener).slice(0, 5);
+  if (good.length === 0) return undefined;
+  return [
+    "EXAMPLES THAT EARNED REPLIES (emulate the angle/style for similar businesses — do NOT copy verbatim):",
+    ...good.map((w) => `- [${w.vertical ?? ""}] subject "${w.subject ?? ""}" — ${(w.opener ?? "").slice(0, 160)}`),
+  ].join("\n");
 }
 
 function buildUserMessage(input: AiInput): string {
@@ -141,6 +171,7 @@ function buildUserMessage(input: AiInput): string {
   return [
     `OUR OFFER:\n${ourOffer}`,
     icpNote ? `\nTARGETING NOTE: ${icpNote}` : null,
+    input.winnersText ? `\n${input.winnersText}` : null,
     "",
     "LEAD:",
     `- company: ${lead.company}`,
@@ -372,6 +403,7 @@ export async function personalize(
   const vertical = await matchVertical(
     `${lead.discovery_query ?? ""} ${lead.company} ${enrichment.title ?? ""} ${enrichment.summary_text.slice(0, 400)}`,
   );
+  const wt = winnersText(await loadWinners());
   const input: AiInput = {
     ourOffer: cfg.OUR_OFFER,
     lead,
@@ -381,6 +413,7 @@ export async function personalize(
     verticalFacts: verticalFacts(vertical),
     ...(icpNote ? { icpNote } : {}),
     ...(reviewsText ? { reviewsText } : {}),
+    ...(wt ? { winnersText: wt } : {}),
   };
   const provider: PersonalizationResult["provider"] =
     cfg.LLM_PROVIDER === "groq" ? "groq" : cfg.LLM_PROVIDER === "openai" ? "openai" : "anthropic";
