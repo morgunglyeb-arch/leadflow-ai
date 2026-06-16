@@ -52,6 +52,10 @@ export interface Personalized {
   // follow-up bodies (outreach language), sent only if no reply
   followup_1: string;
   followup_2: string;
+  // A/B: a second subject line on a different angle (we test which wins)
+  subject_b: string;
+  // a concrete, tangible example of the assistant in action for this business
+  demo: string;
 }
 
 export type LeadStatus = "draft" | "approved" | "sent" | "skipped";

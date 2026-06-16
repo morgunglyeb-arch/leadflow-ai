@@ -18,6 +18,8 @@ export const PersonalizedSchema = z.object({
   brief: z.string().min(3).max(700),
   followup_1: z.string().min(5).max(500),
   followup_2: z.string().min(5).max(500),
+  subject_b: z.string().min(3).max(120),
+  demo: z.string().min(3).max(320),
 });
 
 const LANG_NAME: Record<string, string> = { en: "English", uk: "Ukrainian", ru: "Russian" };
@@ -84,6 +86,8 @@ Fields:
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
 - followup_1, followup_2: see FOLLOW-UPS above.
+- subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=60 chars, plain, no emojis/ALL CAPS.
+- demo: ONE concrete, tangible example of the assistant in action for THIS business — ideally the actual message a customer would receive, e.g. for a clinic missed call: "Hi, sorry we missed your call at [Clinic] — reply here and we'll get you booked in." Make it specific and realistic, in ${outName}. This shows the owner exactly what they'd get.
 
 Output via the emit_personalization tool only.`;
 }
@@ -103,6 +107,8 @@ const TOOL_SCHEMA = {
     brief: { type: "string", maxLength: 700 },
     followup_1: { type: "string", maxLength: 500 },
     followup_2: { type: "string", maxLength: 500 },
+    subject_b: { type: "string", maxLength: 120 },
+    demo: { type: "string", maxLength: 320 },
   },
   required: [
     "opener",
@@ -116,6 +122,8 @@ const TOOL_SCHEMA = {
     "brief",
     "followup_1",
     "followup_2",
+    "subject_b",
+    "demo",
   ],
   additionalProperties: false,
 };
@@ -234,6 +242,8 @@ export function fallbackPersonalization(
     brief,
     followup_1: `Just floating this back to the top of your inbox — happy to show a quick example of what we'd set up for ${lead.company}.`,
     followup_2: `I'll assume the timing isn't right for now — happy to leave the door open if things change.`,
+    subject_b: `a quick win for ${lead.company}`,
+    demo: "",
   };
 }
 
@@ -296,7 +306,7 @@ const JSON_KEYS_HINT =
   "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
   "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
   "process (string), automation (string), est_benefit (string), brief (string), " +
-  "followup_1 (string), followup_2 (string).";
+  "followup_1 (string), followup_2 (string), subject_b (string), demo (string).";
 
 async function callOpenAIRaw(
   cfg: AppConfig,

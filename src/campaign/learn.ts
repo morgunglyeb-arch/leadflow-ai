@@ -54,12 +54,29 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
   await writeFile(WINNERS_PATH, JSON.stringify(winners, null, 2), "utf8");
 
   const pct = (a: number, b: number): string => (b === 0 ? "—" : `${Math.round((a / b) * 100)}%`);
+
+  // A/B subject performance
+  const ab: Record<string, { sent: number; replied: number }> = {
+    A: { sent: 0, replied: 0 },
+    B: { sent: 0, replied: 0 },
+  };
+  for (const l of sentLeads) {
+    const v = l.variant ?? "A";
+    const e = ab[v] ?? { sent: 0, replied: 0 };
+    e.sent++;
+    if (l.status === "replied") e.replied++;
+  }
+
   const lines: string[] = [
     `# LeadFlow campaign learnings`,
     ``,
     `Updated ${new Date().toISOString()}`,
     ``,
     `- Sent: **${sentLeads.length}** · Replied: **${replied.length}** (${pct(replied.length, sentLeads.length)}) · Interested: **${interested.length}** (${pct(interested.length, sentLeads.length)})`,
+    ``,
+    `## A/B subject lines`,
+    `- Variant A: sent ${ab.A!.sent}, replied ${pct(ab.A!.replied, ab.A!.sent)}`,
+    `- Variant B: sent ${ab.B!.sent}, replied ${pct(ab.B!.replied, ab.B!.sent)}`,
     ``,
     `## Reply rate by niche`,
     ...[...byVertical.entries()]

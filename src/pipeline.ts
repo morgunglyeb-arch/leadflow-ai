@@ -131,6 +131,8 @@ export async function processLeads(
           brief: personalized.brief,
           followup_1: personalized.followup_1,
           followup_2: personalized.followup_2,
+          subject_b: personalized.subject_b,
+          demo: personalized.demo,
         };
         done++;
         console.log(

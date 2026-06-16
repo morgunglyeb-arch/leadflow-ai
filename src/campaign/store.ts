@@ -31,6 +31,8 @@ export interface CampaignLead {
   threadId?: string; // Gmail thread for reply detection + threading
   lastMessageId?: string; // RFC822 Message-ID for threading follow-ups
   subject?: string;
+  subjectB?: string; // A/B alternative subject line
+  variant?: "A" | "B"; // which subject was actually sent (for learning)
   score: number; // ROI/quality score at enqueue time
   flagged?: boolean; // spam-risk → held back from auto-send for manual review
   history: Array<{ at: string; event: string; detail?: string }>;
@@ -98,6 +100,7 @@ export function enqueueLeads(
       score: scoreOf(r),
       ...(spam.risky ? { flagged: true } : {}),
       ...(seq.subject ? { subject: seq.subject } : {}),
+      ...(r.subject_b ? { subjectB: r.subject_b } : {}),
       history: [
         {
           at: new Date().toISOString(),

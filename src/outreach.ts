@@ -118,17 +118,22 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
     })
     .join("\n");
 
+  const altSubject = row.subject_b ? `**Subject (B-variant):** ${row.subject_b}\n\n` : "";
+  const demoBlock = row.demo
+    ? `\n💬 **Example to show them** (drop into a reply or the call): _${row.demo}_\n`
+    : "";
+
   return `# Draft — ${row.company}
 
 ${meta}
-${briefBlock}
+${briefBlock}${demoBlock}
 ---
 
 ### Email 1 — initial
 
 **Subject:** ${draft.subject}
 
-${draft.body}
+${altSubject}${draft.body}
 ${followups}
 `;
 }

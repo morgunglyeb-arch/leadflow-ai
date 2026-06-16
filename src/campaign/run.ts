@@ -209,6 +209,17 @@ async function sendStep(
 ): Promise<void> {
   const body = lead.emails[which];
   if (!body) return;
+
+  // A/B: on the first touch, randomly pick subject A or B and record it so the
+  // learning loop can compare reply rates by variant.
+  if (which === "initial" && !lead.variant) {
+    if (lead.subjectB && Math.random() < 0.5) {
+      lead.variant = "B";
+      lead.subject = lead.subjectB;
+    } else {
+      lead.variant = "A";
+    }
+  }
   const subject =
     which === "initial" ? (lead.subject ?? `quick idea for ${lead.company}`) : `Re: ${lead.subject ?? lead.company}`;
 
