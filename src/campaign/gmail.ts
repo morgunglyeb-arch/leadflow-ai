@@ -118,21 +118,26 @@ export interface ThreadReply {
   fromMe: boolean;
 }
 
+export interface ThreadReplyInfo {
+  from: string;
+  snippet: string;
+}
+
 /** Look for a reply in the thread from someone other than us. */
 export async function getThreadReply(
   cfg: AppConfig,
   threadId: string,
   senderEmail: string,
-): Promise<string | null> {
+): Promise<ThreadReplyInfo | null> {
   const auth = await getGmailClient(cfg);
   const gmail = google.gmail({ version: "v1", auth });
   const res = await gmail.users.threads.get({ userId: "me", id: threadId, format: "metadata" });
   const messages = res.data.messages ?? [];
   for (const m of messages) {
     const from = m.payload?.headers?.find((h) => /^from$/i.test(h.name ?? ""))?.value ?? "";
-    const isFromMe = from.toLowerCase().includes(senderEmail.toLowerCase());
+    const isFromMe = senderEmail && from.toLowerCase().includes(senderEmail.toLowerCase());
     if (!isFromMe && from) {
-      return (m.snippet ?? "(reply received)").slice(0, 400);
+      return { from, snippet: (m.snippet ?? "(reply received)").slice(0, 400) };
     }
   }
   return null;

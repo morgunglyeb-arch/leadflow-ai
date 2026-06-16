@@ -26,3 +26,13 @@ export function isStopReply(sentiment: ReplyRecord["sentiment"]): boolean {
   // any genuine human reply stops the sequence; auto-replies do NOT
   return sentiment !== "auto";
 }
+
+/** Detect a delivery bounce (so we stop + suppress the address). */
+export function isBounce(from: string, snippet: string): boolean {
+  const f = from.toLowerCase();
+  const s = snippet.toLowerCase();
+  if (/mailer-daemon|postmaster|mail delivery|delivery subsystem/.test(f)) return true;
+  return /(wasn'?t delivered|delivery (has )?failed|address (couldn'?t|not) be found|undeliverable|delivery status notification|recipient .* (rejected|not found))/.test(
+    s,
+  );
+}

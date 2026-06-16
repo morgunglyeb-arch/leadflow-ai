@@ -137,6 +137,18 @@ const schema = z.object({
   OPT_OUT_TEXT: z
     .string()
     .default("Not relevant? Reply 'no' and I won't follow up."),
+
+  // Never-contact list (domains/emails); opt-outs & bounces are auto-added.
+  SUPPRESSION_PATH: z.string().default("data/campaign/suppression.txt"),
+  // Only send during these local hours (24h), and jitter between sends so the
+  // pattern looks human and protects deliverability.
+  SEND_WINDOW: z.string().default("9-18"),
+  SEND_JITTER_SEC: z.coerce.number().int().min(0).max(600).default(45),
+  // When a lead replies "interested", draft a suggested response for you.
+  REPLY_ASSIST: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
 });
 
 export type AppConfig = z.infer<typeof schema>;

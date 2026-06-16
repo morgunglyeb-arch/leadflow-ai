@@ -15,8 +15,21 @@ import {
   warmupCap,
 } from "./policy.js";
 import { getThreadReply, sendEmail } from "./gmail.js";
-import { classifyReply, isStopReply } from "./classify.js";
+import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
+import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
+import { suggestReply } from "../ai.js";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function inSendWindow(cfg: AppConfig): boolean {
+  const [a, b] = cfg.SEND_WINDOW.split("-").map((s) => Number.parseInt(s.trim(), 10));
+  if (a === undefined || b === undefined || Number.isNaN(a) || Number.isNaN(b)) return true;
+  const h = new Date().getHours();
+  return h >= a && h < b;
+}
 
 export interface CampaignFlags {
   mock: boolean;
@@ -36,8 +49,11 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
     }`,
   );
 
-  // 1) POLL replies on everything awaiting a response → stop sequences
-  if (live) await pollReplies(cfg, state);
+  const suppression = await loadSuppression(cfg.SUPPRESSION_PATH);
+
+  // 1) POLL replies on everything awaiting a response → stop sequences,
+  //    handle bounces, and draft suggested responses to interested leads.
+  if (live) await pollReplies(cfg, state, suppression);
 
   // 2) TOP UP the queue with fresh qualified leads (agent decides volume by
   //    sending pace, so we keep a backlog rather than a fixed count)
@@ -54,16 +70,25 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
         minFit: 3,
         ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
       });
-      const added = enqueueLeads(state, rows, roiScoreOf, cfg);
-      console.log(`[campaign] enqueued ${added} new leads (queue was ${queued}, cap ${cap})`);
+      const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
+      const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
+      console.log(
+        `[campaign] enqueued ${added} new leads (queue was ${queued}, cap ${cap}` +
+          `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
+      );
     }
   }
 
-  // 3) SEND first touches — the strongest queued leads, up to today's cap
+  // 3) SEND first touches — strongest queued leads, up to today's cap, in window
+  const sendableNow = live && inSendWindow(cfg);
+  if (live && !sendableNow) {
+    console.log(`[campaign] outside send window (${cfg.SEND_WINDOW}) — skipping sends this run`);
+  }
   const firstTouches = selectFirstTouches(state, cfg);
   console.log(`[campaign] first-touches to send: ${firstTouches.length}`);
   for (const lead of firstTouches) {
-    await sendStep(cfg, lead, "initial", live);
+    await sendStep(cfg, lead, "initial", sendableNow);
+    if (sendableNow) await sleep(jitterMs(cfg));
   }
 
   // 4) SEND due follow-ups (only to non-repliers, after the gap)
@@ -71,20 +96,59 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   console.log(`[campaign] follow-ups due: ${followups.length}`);
   for (const lead of followups) {
     const which = lead.step === 1 ? "followup_1" : "followup_2";
-    await sendStep(cfg, lead, which, live);
+    await sendStep(cfg, lead, which, sendableNow);
+    if (sendableNow) await sleep(jitterMs(cfg));
   }
 
-  // 5) LEARN from outcomes
+  // 5) LEARN + write replies-to-action for the operator
   await summarizeAndLearn(state);
+  await writeRepliesToAction(cfg, state);
 
   await saveState(cfg.CAMPAIGN_STATE_PATH, state);
   const flagged = Object.values(state.leads).filter((l) => l.flagged).length;
+  const needAction = Object.values(state.leads).filter(
+    (l) => l.status === "replied" && l.reply?.sentiment === "interested",
+  ).length;
   console.log(
-    `[campaign] done. ${flagged > 0 ? `${flagged} flagged for manual review. ` : ""}state → ${cfg.CAMPAIGN_STATE_PATH}`,
+    `[campaign] done.${needAction > 0 ? ` ${needAction} INTERESTED replies need your reply (see data/campaign/replies.md).` : ""}` +
+      `${flagged > 0 ? ` ${flagged} flagged for manual review.` : ""} state → ${cfg.CAMPAIGN_STATE_PATH}`,
   );
 }
 
-async function pollReplies(cfg: AppConfig, state: CampaignState): Promise<void> {
+function jitterMs(cfg: AppConfig): number {
+  return Math.floor(Math.random() * cfg.SEND_JITTER_SEC * 1000);
+}
+
+async function writeRepliesToAction(cfg: AppConfig, state: CampaignState): Promise<void> {
+  const interested = Object.values(state.leads).filter(
+    (l) => l.reply && (l.reply.sentiment === "interested" || l.reply.sentiment === "objection"),
+  );
+  if (interested.length === 0) return;
+  const path = "data/campaign/replies.md";
+  const blocks = interested.map((l) => {
+    return [
+      `## ${l.company} <${l.email}> — ${l.reply?.sentiment}`,
+      ``,
+      `**They replied:** ${l.reply?.snippet}`,
+      ``,
+      l.reply?.suggested ? `**Suggested response (review & send):**\n\n${l.reply.suggested}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  });
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(
+    path,
+    `# Replies needing your action\n\nUpdated ${new Date().toISOString()}\n\n${blocks.join("\n\n---\n\n")}\n`,
+    "utf8",
+  );
+}
+
+async function pollReplies(
+  cfg: AppConfig,
+  state: CampaignState,
+  suppression: Set<string>,
+): Promise<void> {
   const sender = cfg.GMAIL_SENDER ?? "";
   const awaiting = Object.values(state.leads).filter(
     (l) => l.threadId && ["sent", "followup_1", "followup_2"].includes(l.status),
@@ -92,14 +156,44 @@ async function pollReplies(cfg: AppConfig, state: CampaignState): Promise<void> 
   for (const lead of awaiting) {
     try {
       const reply = await getThreadReply(cfg, lead.threadId!, sender);
-      if (reply) {
-        const sentiment = classifyReply(reply);
-        lead.reply = { at: new Date().toISOString(), snippet: reply, sentiment };
-        if (isStopReply(sentiment)) {
-          lead.status = sentiment === "not_interested" ? "opted_out" : "replied";
-          logEvent(lead, "reply", sentiment);
-          console.log(`[campaign] reply from ${lead.company} (${sentiment}) — sequence stopped`);
+      if (!reply) continue;
+
+      // Bounce → stop + suppress the address (protects sender reputation)
+      if (isBounce(reply.from, reply.snippet)) {
+        lead.status = "bounced";
+        logEvent(lead, "bounced", reply.from);
+        await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "bounce");
+        suppression.add(lead.email.toLowerCase());
+        console.log(`[campaign] bounce for ${lead.company} — suppressed`);
+        continue;
+      }
+
+      const sentiment = classifyReply(reply.snippet);
+      lead.reply = { at: new Date().toISOString(), snippet: reply.snippet, sentiment };
+      if (isStopReply(sentiment)) {
+        lead.status = sentiment === "not_interested" ? "opted_out" : "replied";
+        logEvent(lead, "reply", sentiment);
+        if (sentiment === "not_interested") {
+          await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
+          suppression.add(lead.email.toLowerCase());
         }
+        // Draft a suggested response for interested / objection replies
+        if (cfg.REPLY_ASSIST && (sentiment === "interested" || sentiment === "objection")) {
+          try {
+            lead.reply.suggested = await suggestReply(cfg, {
+              company: lead.company,
+              ourOffer: cfg.OUR_OFFER,
+              ...(lead.snapshot.process ? { pitchedProcess: lead.snapshot.process } : {}),
+              ...(lead.snapshot.automation ? { pitchedAutomation: lead.snapshot.automation } : {}),
+              theirReply: reply.snippet,
+            });
+          } catch (err) {
+            console.warn(`[campaign] reply draft failed for ${lead.domain}: ${(err as Error).message}`);
+          }
+        }
+        console.log(
+          `[campaign] reply from ${lead.company} (${sentiment})${sentiment === "interested" ? " ⭐ — drafted a response" : ""} — sequence stopped`,
+        );
       }
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);

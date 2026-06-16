@@ -452,3 +452,61 @@ export async function personalize(
     };
   }
 }
+
+/** Provider-agnostic free-text generation (no schema) — used for reply drafts. */
+async function generateText(cfg: AppConfig, system: string, user: string): Promise<string> {
+  if (cfg.LLM_PROVIDER === "anthropic") {
+    const client = new Anthropic({ apiKey: cfg.ANTHROPIC_API_KEY });
+    const res = await client.messages.create({
+      model: cfg.ANTHROPIC_MODEL,
+      max_tokens: 500,
+      system: [{ type: "text", text: system }],
+      messages: [{ role: "user", content: user }],
+    });
+    return res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+  }
+  const isGroq = cfg.LLM_PROVIDER === "groq";
+  const client = new OpenAI({
+    apiKey: isGroq ? cfg.GROQ_API_KEY : cfg.OPENAI_API_KEY,
+    baseURL: isGroq ? "https://api.groq.com/openai/v1" : cfg.OPENAI_BASE_URL,
+  });
+  const res = await client.chat.completions.create({
+    model: isGroq ? cfg.GROQ_MODEL : cfg.OPENAI_MODEL,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  });
+  return (res.choices[0]?.message?.content ?? "").trim();
+}
+
+export interface ReplyContext {
+  company: string;
+  ourOffer: string;
+  pitchedProcess?: string;
+  pitchedAutomation?: string;
+  theirReply: string;
+}
+
+/**
+ * Draft a suggested response to a prospect's reply, so the operator can answer
+ * fast (speed-to-lead) and move toward a call. Plain, short, no jargon.
+ */
+export async function suggestReply(cfg: AppConfig, ctx: ReplyContext): Promise<string> {
+  const lang = LANG_NAME[cfg.OUTREACH_LANG] ?? "English";
+  const system = `You help a small AI-automation studio reply to a prospect who responded to a cold email. Write the reply the operator should send: warm, concise (<=80 words), plain language (no jargon like "workflow/API/agentic"), and move toward a quick 15-minute call or a concrete next step. Answer their actual question (e.g. rough pricing range, how it works) honestly; if unsure, offer to cover it on a short call. Write in ${lang}. Output ONLY the reply body (no subject, no signature).`;
+  const user = [
+    `Our offer: ${ctx.ourOffer}`,
+    ctx.pitchedProcess ? `We pitched fixing: ${ctx.pitchedProcess}` : "",
+    ctx.pitchedAutomation ? `What we proposed: ${ctx.pitchedAutomation}` : "",
+    `\nThe prospect (${ctx.company}) replied:\n"${ctx.theirReply}"`,
+    `\nDraft the reply to send:`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return generateText(cfg, system, user);
+}

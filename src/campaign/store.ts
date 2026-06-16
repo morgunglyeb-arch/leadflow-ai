@@ -19,6 +19,7 @@ export interface ReplyRecord {
   at: string;
   snippet: string;
   sentiment?: "interested" | "not_interested" | "objection" | "auto" | "unclear";
+  suggested?: string; // a drafted response for the operator to send
 }
 
 export interface CampaignLead {
