@@ -68,6 +68,17 @@ const schema = z.object({
   // dropping leads with no email / no automation gap.
   OVERFETCH: z.coerce.number().min(1).max(10).default(4),
 
+  // Email verification before sending (fewer bounces, protects reputation).
+  // Free MX-record check by default; deeper check if ZEROBOUNCE_API_KEY is set.
+  EMAIL_VERIFY: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  ZEROBOUNCE_API_KEY: z.string().optional(),
+
+  // Optional UK director lookup (Companies House) for personalization.
+  COMPANIES_HOUSE_API_KEY: z.string().optional(),
+
   // Web search discoverer (Serper by default; provider-agnostic shape)
   SEARCH_PROVIDER: z.enum(["serper"]).default("serper"),
   SERPER_API_KEY: z.string().optional(),

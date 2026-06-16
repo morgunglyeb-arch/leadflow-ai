@@ -11,6 +11,7 @@ import {
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
+import { verifyEmail } from "./verify-email.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
 
 /** A row for a lead we dropped before pitching (no email / disqualified). */
@@ -71,16 +72,30 @@ export async function processLeads(
           force: opts.force,
         });
 
-        const email = lead.email ?? enrichment.emails[0];
+        let email = lead.email ?? enrichment.emails[0];
 
-        // Email gate: no email + requireEmail → skip the LLM entirely.
+        // Verify the email (free MX check, or ZeroBounce if configured) so we
+        // don't waste a send / risk a bounce on a dead address. Walk the
+        // candidate emails and keep the first that verifies.
+        if (email && cfg.EMAIL_VERIFY && !opts.mock) {
+          const candidates = [email, ...enrichment.emails.filter((e) => e !== email)];
+          email = undefined;
+          for (const cand of candidates) {
+            if ((await verifyEmail(cfg, cand)).ok) {
+              email = cand;
+              break;
+            }
+          }
+        }
+
+        // Email gate: no (valid) email + requireEmail → skip the LLM entirely.
         if (opts.requireEmail && !email) {
           done++;
           console.log(
             `[${opts.label}] (${done}/${leads.length}) ${lead.company.padEnd(28).slice(0, 28)} ` +
-              `skipped — no email found`,
+              `skipped — no valid email`,
           );
-          return buildSkippedRow(lead, enrichment, "no-email");
+          return buildSkippedRow(lead, enrichment, "no-valid-email");
         }
 
         let personalized;
