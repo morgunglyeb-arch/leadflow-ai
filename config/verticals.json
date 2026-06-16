@@ -1,5 +1,5 @@
 {
-  "_comment": "Industry reality per vertical: how customers ACTUALLY contact/book, which automations genuinely sell, and a rough ticket size for economic framing. Matched by keyword against the discovery query / company / site text. Keeps the pitch grounded in how each business really works (e.g. dentists book by phone, not Instagram).",
+  "_comment": "Industry reality per vertical: how customers ACTUALLY contact/book, which automations genuinely sell, a rough ticket size for economic framing, and service_price = the realistic UK MARKET RATE to quote the client for the main automation (OPERATOR-ONLY — never shown to the prospect). Matched by keyword against the discovery query / company / site text.",
   "verticals": [
     {
       "match": ["dental implant", "implant"],
@@ -7,7 +7,8 @@
       "money_channel": "phone calls and the website (online booking or contact form)",
       "booking_culture": "patients book high-value implant treatment by phone or the practice's online system — never via Instagram/Telegram",
       "automations": ["instant text-back to every missed call", "instant reply to web enquiry forms", "consultation reminders to cut no-shows", "re-engaging enquiries that never booked"],
-      "avg_ticket": "£2,000–£15,000 per implant case"
+      "avg_ticket": "£2,000–£15,000 per implant case",
+      "service_price": "AI receptionist + missed-call text-back: ~£1,000–£3,000 setup + £200–£500/mo. One recovered implant case (£2k–£15k) covers a year of it."
     },
     {
       "match": ["dental", "dentist"],
@@ -15,7 +16,8 @@
       "money_channel": "phone calls and the website (online booking or contact form)",
       "booking_culture": "patients book by phone or online — not through social DMs",
       "automations": ["missed-call text-back", "instant reply to web enquiries", "appointment reminders to cut no-shows", "reactivation of lapsed patients"],
-      "avg_ticket": "£100–£3,000+ per treatment"
+      "avg_ticket": "£100–£3,000+ per treatment",
+      "service_price": "Missed-call text-back + web-enquiry replies: ~£600–£1,800 setup + £150–£400/mo."
     },
     {
       "match": ["orthodont", "braces", "invisalign"],
@@ -23,7 +25,8 @@
       "money_channel": "phone and website enquiry forms",
       "booking_culture": "parents/patients enquire by phone and web form about a multi-month, high-value treatment",
       "automations": ["instant text-back to missed calls", "instant web-enquiry replies", "consultation reminders", "nurturing slow-deciding enquiries"],
-      "avg_ticket": "£2,000–£6,000 per treatment plan"
+      "avg_ticket": "£2,000–£6,000 per treatment plan",
+      "service_price": "AI enquiry-responder + nurture: ~£1,000–£2,500 setup + £200–£450/mo. One booked plan pays for it."
     },
     {
       "match": ["aesthetic", "botox", "filler", "skin clinic", "cosmetic", "med spa", "medical aesthetic"],
@@ -31,7 +34,8 @@
       "money_channel": "Instagram & WhatsApp DMs AND phone — aesthetics is one of the few clinic types where social-DM booking is genuinely normal",
       "booking_culture": "clients really do DM on Instagram/WhatsApp to ask prices and book, alongside phone",
       "automations": ["a 24/7 assistant in Instagram & WhatsApp that answers price questions and books", "missed-call text-back", "reminders and rebooking for repeat treatments"],
-      "avg_ticket": "£150–£800 per treatment, repeat custom"
+      "avg_ticket": "£150–£800 per treatment, repeat custom",
+      "service_price": "Instagram/WhatsApp booking assistant: ~£800–£2,500 setup + £150–£450/mo."
     },
     {
       "match": ["physio", "physiotherapy", "sports injury", "rehabilitation"],
@@ -39,7 +43,8 @@
       "money_channel": "phone and website booking",
       "booking_culture": "patients book by phone or online; some message on WhatsApp",
       "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment reminders", "rebooking reminders for course-of-treatment patients"],
-      "avg_ticket": "£50–£90 per session, multi-session courses"
+      "avg_ticket": "£50–£90 per session, multi-session courses",
+      "service_price": "Missed-call text-back + rebooking reminders: ~£500–£1,500 setup + £120–£350/mo."
     },
     {
       "match": ["chiropract", "osteopath"],
@@ -47,7 +52,8 @@
       "money_channel": "phone and website booking",
       "booking_culture": "patients book by phone or online system",
       "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment & course reminders"],
-      "avg_ticket": "£40–£80 per session"
+      "avg_ticket": "£40–£80 per session",
+      "service_price": "Missed-call text-back + reminders: ~£500–£1,500 setup + £120–£350/mo."
     },
     {
       "match": ["gp", "private gp", "doctor", "medical centre", "health clinic"],
@@ -55,7 +61,8 @@
       "money_channel": "phone and website",
       "booking_culture": "patients call or use the online system; discreet, not social",
       "automations": ["missed-call text-back", "instant web-enquiry replies", "appointment reminders"],
-      "avg_ticket": "£100–£500 per appointment/package"
+      "avg_ticket": "£100–£500 per appointment/package",
+      "service_price": "AI receptionist + reminders: ~£700–£1,800 setup + £150–£400/mo."
     },
     {
       "match": ["optician", "optometr", "eyewear"],
@@ -63,7 +70,8 @@
       "money_channel": "phone, website and walk-in",
       "booking_culture": "eye-test bookings by phone/online; product sales in store",
       "automations": ["missed-call text-back", "online eye-test booking replies", "recall reminders for annual eye tests"],
-      "avg_ticket": "£20–£60 eye test, £100–£400 glasses"
+      "avg_ticket": "£20–£60 eye test, £100–£400 glasses",
+      "service_price": "Recall reminders + missed-call text-back: ~£500–£1,500 setup + £120–£300/mo."
     },
     {
       "match": ["vet", "veterinary", "animal hospital"],
@@ -71,7 +79,8 @@
       "money_channel": "phone and website",
       "booking_culture": "owners call for appointments, often urgent",
       "automations": ["missed-call text-back (urgent cases)", "instant web-enquiry replies", "vaccination/check-up reminders"],
-      "avg_ticket": "£40–£300+ per visit"
+      "avg_ticket": "£40–£300+ per visit",
+      "service_price": "Missed-call text-back + reminders: ~£600–£1,800 setup + £150–£400/mo."
     },
     {
       "match": ["fertility", "ivf", "reproductive"],
@@ -79,7 +88,8 @@
       "money_channel": "phone and website enquiry forms",
       "booking_culture": "sensitive, high-value enquiries by phone and form — never social",
       "automations": ["instant web-enquiry replies", "missed-call text-back", "nurturing enquiries through a long decision"],
-      "avg_ticket": "£3,000–£8,000 per cycle"
+      "avg_ticket": "£3,000–£8,000 per cycle",
+      "service_price": "AI enquiry-responder + long-decision nurture: ~£1,500–£3,500 setup + £250–£550/mo. One cycle covers it."
     },
     {
       "match": ["plumb", "drain", "heating", "boiler"],
@@ -87,7 +97,8 @@
       "money_channel": "the PHONE — emergencies; speed wins the job",
       "booking_culture": "customers call when something breaks and ring the next number if no answer; nobody books a plumber on Instagram",
       "automations": ["instant text-back to every missed call", "instant web-enquiry replies", "automatic booking/quote follow-ups"],
-      "avg_ticket": "£80–£500 per job, £1,500+ for installs"
+      "avg_ticket": "£80–£500 per job, £1,500+ for installs",
+      "service_price": "Missed-call text-back: ~£200–£800 setup + £99–£300/mo. One recovered call-out pays the month."
     },
     {
       "match": ["electric"],
@@ -95,7 +106,8 @@
       "money_channel": "the PHONE and website quote requests",
       "booking_culture": "customers call or request a quote online; speed of response wins",
       "automations": ["missed-call text-back", "instant quote-request replies", "quote follow-ups"],
-      "avg_ticket": "£100–£2,000+ per job"
+      "avg_ticket": "£100–£2,000+ per job",
+      "service_price": "Missed-call text-back + quote follow-ups: ~£300–£1,000 setup + £99–£350/mo."
     },
     {
       "match": ["roof"],
@@ -103,7 +115,8 @@
       "money_channel": "the PHONE and quote forms",
       "booking_culture": "homeowners call for a free quote and go with whoever responds first",
       "automations": ["missed-call text-back", "instant quote-request replies", "quote follow-ups so estimates don't go cold"],
-      "avg_ticket": "£500–£10,000 per job"
+      "avg_ticket": "£500–£10,000 per job",
+      "service_price": "Missed-call text-back + quote follow-ups: ~£300–£1,200 setup + £120–£400/mo. One job covers it for years."
     },
     {
       "match": ["hvac", "air conditioning", "cooling", "ventilation"],
@@ -111,7 +124,8 @@
       "money_channel": "the PHONE and website",
       "booking_culture": "commercial & domestic clients call for service/installs; response speed wins",
       "automations": ["missed-call text-back", "instant web-enquiry replies", "service reminders & quote follow-ups"],
-      "avg_ticket": "£150–£5,000+ per job"
+      "avg_ticket": "£150–£5,000+ per job",
+      "service_price": "Missed-call text-back + service reminders: ~£400–£1,200 setup + £120–£400/mo."
     },
     {
       "match": ["locksmith"],
@@ -119,7 +133,8 @@
       "money_channel": "the PHONE — emergency, the fastest answer gets the job",
       "booking_culture": "people locked out call and ring the next result instantly if no answer",
       "automations": ["instant text-back to every missed call", "automatic 'on our way / book' replies"],
-      "avg_ticket": "£60–£250 per call-out"
+      "avg_ticket": "£60–£250 per call-out",
+      "service_price": "Missed-call text-back: ~£200–£700 setup + £99–£250/mo. A couple of call-outs covers the month."
     },
     {
       "match": ["bookkeep", "accountan", "accounting"],
@@ -127,7 +142,8 @@
       "money_channel": "website enquiry forms and phone",
       "booking_culture": "businesses enquire by form/phone for an ongoing service",
       "automations": ["instant web-enquiry replies & qualification", "onboarding document chasing", "client report reminders"],
-      "avg_ticket": "£150–£1,500/month retainer"
+      "avg_ticket": "£150–£1,500/month retainer",
+      "service_price": "Enquiry qualifier + onboarding chase: ~£800–£2,500 setup + £150–£450/mo. One retained client pays for it."
     },
     {
       "match": ["law", "solicitor", "legal", "conveyanc", "immigration"],
@@ -135,7 +151,8 @@
       "money_channel": "phone and website enquiry forms",
       "booking_culture": "clients enquire by phone and form; formal, not social",
       "automations": ["instant web-enquiry replies & qualification", "missed-call text-back", "nurturing enquiries that don't convert immediately"],
-      "avg_ticket": "£500–£10,000+ per matter"
+      "avg_ticket": "£500–£10,000+ per matter",
+      "service_price": "Enquiry qualifier + missed-call text-back: ~£1,000–£3,000 setup + £200–£500/mo. One matter covers it."
     },
     {
       "match": ["insurance broker", "mortgage broker", "broker"],
@@ -143,7 +160,8 @@
       "money_channel": "phone and website enquiry forms",
       "booking_culture": "clients submit forms and call; fast follow-up wins the deal",
       "automations": ["instant web-enquiry replies & qualification", "missed-call text-back", "follow-ups on quotes in progress"],
-      "avg_ticket": "£300–£3,000 commission per client"
+      "avg_ticket": "£300–£3,000 commission per client",
+      "service_price": "Enquiry qualifier + quote follow-ups: ~£800–£2,500 setup + £150–£450/mo. One extra client covers it."
     }
   ],
   "default": {
@@ -151,6 +169,7 @@
     "money_channel": "phone calls and the website (contact form / online booking)",
     "booking_culture": "customers mostly call or use the website — a social-media link in the footer is usually marketing, not a booking channel",
     "automations": ["missed-call text-back", "instant reply to web enquiries", "appointment/booking reminders", "follow-ups so enquiries don't go cold"],
-    "avg_ticket": "varies — frame the cost of a lost customer qualitatively"
+    "avg_ticket": "varies — frame the cost of a lost customer qualitatively",
+    "service_price": "Missed-call text-back + web-enquiry replies: ~£500–£1,500 setup + £120–£400/mo (typical UK SMB market rate)."
   }
 }

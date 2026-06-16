@@ -34,6 +34,7 @@ function leadCard(row: OutputRow, i: number, intro?: string): string {
   const draftBody = esc(row.opener ?? "")
     ? buildDraftPreview(row, intro)
     : "(черновик не сгенерирован)";
+  const siteUrl = `https://${String(row.domain).replace(/^https?:\/\//, "")}`;
 
   return `
 <tr><td style="padding:16px 0;border-top:1px solid #e5e7eb;">
@@ -41,7 +42,7 @@ function leadCard(row: OutputRow, i: number, intro?: string): string {
     <td>
       <div style="font-size:16px;font-weight:700;color:#111;">${i}. ${esc(row.company)}</div>
       <div style="font-size:12px;color:#6b7280;margin-top:2px;">
-        ${esc(row.domain)}${row.location ? " · " + esc(row.location) : ""}${row.phone ? " · " + esc(row.phone) : ""}
+        <a href="${esc(siteUrl)}" style="color:#2563eb;">${esc(row.domain)}</a>${row.location ? " · " + esc(row.location) : ""}${row.phone ? " · " + esc(row.phone) : ""}
       </div>
     </td>
     <td align="right" valign="top" style="width:64px;">
@@ -53,9 +54,11 @@ function leadCard(row: OutputRow, i: number, intro?: string): string {
   <div style="background:#f1f5f9;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:14px;color:#1f2937;">
     <b>Разбор:</b> ${esc(row.brief)}
   </div>
+  ${priceBlock(row)}
+  ${alreadyBlock(row)}
 
   <div style="font-size:13px;color:#374151;margin-bottom:6px;">
-    📧 <b>Кому:</b> ${email}
+    📧 <b>Кому:</b> ${email} · 🔗 <a href="${esc(siteUrl)}" style="color:#2563eb;">сайт</a>
   </div>
 
   <div style="background:#0b0f17;color:#e5e7eb;border-radius:8px;padding:12px 14px;font-size:13px;
@@ -63,8 +66,33 @@ function leadCard(row: OutputRow, i: number, intro?: string): string {
 <b style="color:#93c5fd;">Subject:</b> ${esc(row.subject)}
 
 ${draftBody}</div>
+  ${translationBlock(row)}
   ${followupBlock(row)}
 </td></tr>`;
+}
+
+/** Market price to quote — OPERATOR ONLY, never part of the prospect email. */
+function priceBlock(row: OutputRow): string {
+  if (!row.market_price) return "";
+  return `<div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px;color:#065f46;">
+    💷 <b>Рыночная цена (тебе, не клиенту):</b> ${esc(row.market_price)}
+  </div>`;
+}
+
+/** What the business ALREADY has automated — so you don't re-pitch it. */
+function alreadyBlock(row: OutputRow): string {
+  if (!row.already_automated) return "";
+  return `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:13px;color:#9a3412;">
+    ⚙️ <b>Уже есть у них (не предлагать это):</b> ${esc(row.already_automated)}
+  </div>`;
+}
+
+/** Russian translation of the exact English email, shown under the original. */
+function translationBlock(row: OutputRow): string {
+  if (!row.email_translation) return "";
+  return `<details style="margin-top:8px;" open><summary style="cursor:pointer;color:#2563eb;font-size:12px;">🌐 Перевод письма (RU)</summary>
+  <div style="background:#f8fafc;border-radius:8px;padding:12px 14px;margin-top:6px;font-size:13px;
+    color:#334155;white-space:pre-wrap;line-height:1.5;">${esc(row.email_translation)}</div></details>`;
 }
 
 function followupBlock(row: OutputRow): string {
@@ -138,13 +166,18 @@ export function renderDigestText(rows: OutputRow[]): string {
   const sorted = rows; // already ROI-ranked
   return sorted
     .map((r, i) => {
+      const site = `https://${String(r.domain).replace(/^https?:\/\//, "")}`;
       const lines = [
         `${i + 1}. ${r.company} (${r.domain}) — fit ${r.fit_score ?? "?"}`,
+        `Сайт: ${site}`,
         `Кому: ${r.email ?? "email не найден"}${r.phone ? " · " + r.phone : ""}`,
         `Разбор: ${r.brief ?? ""}`,
+        r.market_price ? `Рыночная цена (тебе): ${r.market_price}` : "",
+        r.already_automated ? `Уже есть у них: ${r.already_automated}` : "",
         `Subject: ${r.subject ?? ""}`,
         `${r.opener ?? ""}`,
-      ];
+        r.email_translation ? `\n— Перевод (RU) —\n${r.email_translation}` : "",
+      ].filter(Boolean);
       return lines.join("\n");
     })
     .join("\n\n———\n\n");

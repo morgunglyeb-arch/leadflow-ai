@@ -10,11 +10,19 @@ import {
 } from "./store.js";
 import {
   advanceWarmup,
+  inboxRemaining,
+  recordInboxSend,
   selectDueFollowups,
   selectFirstTouches,
   warmupCap,
 } from "./policy.js";
-import { getThreadReply, sendEmail } from "./gmail.js";
+import {
+  getThreadReply,
+  sendEmail,
+  gmailInboxes,
+  inboxByEmail,
+  type Inbox,
+} from "./gmail.js";
 import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
@@ -42,11 +50,14 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
   advanceWarmup(state);
   const cap = warmupCap(state, cfg);
+  const inboxes = gmailInboxes(cfg);
+  const combinedCap = cap * inboxes.length;
   const live = cfg.SENDING_ENABLED && !flags.dryRun;
   console.log(
-    `[campaign] day ${state.warmup_day} · cap ${cap}/day · sending=${live ? "LIVE" : "dry-run"} · queued=${
-      Object.values(state.leads).filter((l) => l.status === "queued").length
-    }`,
+    `[campaign] day ${state.warmup_day} · cap ${cap}/inbox × ${inboxes.length} inbox(es) = ${combinedCap}/day · ` +
+      `sending=${live ? "LIVE" : "dry-run"} · queued=${
+        Object.values(state.leads).filter((l) => l.status === "queued").length
+      }`,
   );
 
   const suppression = await loadSuppression(cfg.SUPPRESSION_PATH);
@@ -59,15 +70,15 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   //    sending pace, so we keep a backlog rather than a fixed count)
   if (flags.topUp) {
     const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
-    if (queued < cap * 2) {
+    if (queued < combinedCap * 2) {
       const rows = await runProspecting(cfg, {
         dry: false,
         mock: flags.mock,
         force: false,
         sendTest: false,
         digest: false,
-        limit: cap * 3,
-        minFit: 3,
+        limit: combinedCap * 3,
+        minFit: cfg.MIN_FIT,
         ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
       });
       const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
@@ -79,24 +90,47 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
     }
   }
 
-  // 3) SEND first touches — strongest queued leads, up to today's cap, in window
+  // 3) SEND first touches — strongest queued leads, rotated across inboxes
+  //    (each inbox limited to its own warmup cap), up to the combined cap.
   const sendableNow = live && inSendWindow(cfg);
   if (live && !sendableNow) {
     console.log(`[campaign] outside send window (${cfg.SEND_WINDOW}) — skipping sends this run`);
   }
-  const firstTouches = selectFirstTouches(state, cfg);
-  console.log(`[campaign] first-touches to send: ${firstTouches.length}`);
+  // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
+  const remaining = new Map(inboxes.map((b) => [b.email, inboxRemaining(state, cfg, b.email)]));
+  const totalRoom = [...remaining.values()].reduce((a, b) => a + b, 0);
+  const firstTouches = selectFirstTouches(state, cfg, totalRoom);
+  console.log(
+    `[campaign] first-touches to send: ${firstTouches.length} (room left today: ${totalRoom})`,
+  );
+  let rr = 0;
   for (const lead of firstTouches) {
-    await sendStep(cfg, lead, "initial", sendableNow);
+    // find the next inbox (round-robin) that still has capacity today
+    let chosen: Inbox | undefined;
+    for (let i = 0; i < inboxes.length; i++) {
+      const cand = inboxes[(rr + i) % inboxes.length]!;
+      if ((remaining.get(cand.email) ?? 0) > 0) {
+        chosen = cand;
+        rr = rr + i + 1;
+        break;
+      }
+    }
+    if (!chosen) break; // all inboxes hit their cap
+    const sent = await sendStep(cfg, lead, "initial", sendableNow, chosen);
+    if (sent) {
+      recordInboxSend(state, chosen.email);
+      remaining.set(chosen.email, (remaining.get(chosen.email) ?? 1) - 1);
+    }
     if (sendableNow) await sleep(jitterMs(cfg));
   }
 
-  // 4) SEND due follow-ups (only to non-repliers, after the gap)
+  // 4) SEND due follow-ups (only to non-repliers, after the gap) — from the
+  //    SAME inbox that started the thread, so threading/deliverability hold.
   const followups = selectDueFollowups(state, cfg);
   console.log(`[campaign] follow-ups due: ${followups.length}`);
   for (const lead of followups) {
     const which = lead.step === 1 ? "followup_1" : "followup_2";
-    await sendStep(cfg, lead, which, sendableNow);
+    await sendStep(cfg, lead, which, sendableNow, inboxByEmail(cfg, lead.inbox));
     if (sendableNow) await sleep(jitterMs(cfg));
   }
 
@@ -149,13 +183,13 @@ async function pollReplies(
   state: CampaignState,
   suppression: Set<string>,
 ): Promise<void> {
-  const sender = cfg.GMAIL_SENDER ?? "";
   const awaiting = Object.values(state.leads).filter(
     (l) => l.threadId && ["sent", "followup_1", "followup_2"].includes(l.status),
   );
   for (const lead of awaiting) {
     try {
-      const reply = await getThreadReply(cfg, lead.threadId!, sender);
+      const sender = lead.inbox ?? cfg.GMAIL_SENDER ?? "";
+      const reply = await getThreadReply(cfg, lead.threadId!, sender, inboxByEmail(cfg, lead.inbox));
       if (!reply) continue;
 
       // Bounce → stop + suppress the address (protects sender reputation)
@@ -206,9 +240,10 @@ async function sendStep(
   lead: CampaignLead,
   which: "initial" | "followup_1" | "followup_2",
   live: boolean,
-): Promise<void> {
+  inbox?: Inbox,
+): Promise<boolean> {
   const body = lead.emails[which];
-  if (!body) return;
+  if (!body) return false;
 
   // A/B: on the first touch, randomly pick subject A or B and record it so the
   // learning loop can compare reply rates by variant.
@@ -223,26 +258,34 @@ async function sendStep(
   const subject =
     which === "initial" ? (lead.subject ?? `quick idea for ${lead.company}`) : `Re: ${lead.subject ?? lead.company}`;
 
+  const via = inbox?.email ? ` via ${inbox.email}` : "";
   if (!live) {
-    console.log(`[campaign] (dry) would send ${which} → ${lead.company} <${lead.email}>`);
-    return;
+    console.log(`[campaign] (dry) would send ${which} → ${lead.company} <${lead.email}>${via}`);
+    return false;
   }
   try {
-    const res = await sendEmail(cfg, {
-      to: lead.email,
-      subject,
-      body,
-      ...(lead.threadId ? { threadId: lead.threadId } : {}),
-      ...(lead.lastMessageId ? { inReplyTo: lead.lastMessageId } : {}),
-    });
+    const res = await sendEmail(
+      cfg,
+      {
+        to: lead.email,
+        subject,
+        body,
+        ...(lead.threadId ? { threadId: lead.threadId } : {}),
+        ...(lead.lastMessageId ? { inReplyTo: lead.lastMessageId } : {}),
+      },
+      inbox,
+    );
     lead.threadId = res.threadId;
     if (res.rfcMessageId) lead.lastMessageId = res.rfcMessageId;
+    if (inbox?.email && which === "initial") lead.inbox = inbox.email; // pin the inbox to the thread
     lead.step = which === "initial" ? 1 : which === "followup_1" ? 2 : 3;
     lead.status = which === "initial" ? "sent" : which === "followup_1" ? "followup_1" : "followup_2";
-    logEvent(lead, which === "initial" ? "sent" : which, `to ${lead.email}`);
-    console.log(`[campaign] sent ${which} → ${lead.company} <${lead.email}>`);
+    logEvent(lead, which === "initial" ? "sent" : which, `to ${lead.email}${via}`);
+    console.log(`[campaign] sent ${which} → ${lead.company} <${lead.email}>${via}`);
+    return true;
   } catch (err) {
     logEvent(lead, "send_error", (err as Error).message);
     console.error(`[campaign] send failed for ${lead.company}: ${(err as Error).message}`);
+    return false;
   }
 }

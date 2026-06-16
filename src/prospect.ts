@@ -4,7 +4,51 @@ import { discoverLeads } from "./discover/index.js";
 import { loadExistingKeys } from "./output.js";
 import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
 import { sendDigest, writeDigestFile } from "./digest.js";
+import { assembleDraft } from "./outreach.js";
+import { translate } from "./ai.js";
+import { existingAutomations } from "./enrich.js";
+import { matchVertical, verticalPrice } from "./vertical.js";
+import { pLimit } from "./pLimit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
+
+const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
+
+/**
+ * Attach operator-only digest extras to the FINAL leads: the market price to
+ * quote for the proposed automation, the automations they ALREADY have (so the
+ * operator can sanity-check we're not re-pitching), and a faithful translation
+ * of the outgoing English email into the operator's language.
+ */
+async function attachDigestExtras(
+  cfg: AppConfig,
+  rows: OutputRow[],
+  concurrency: number,
+): Promise<void> {
+  const limit = pLimit(Math.max(1, Math.min(concurrency, 4)));
+  const targetLang = DIGEST_LANG_NAME[cfg.DIGEST_LANG] ?? "Russian";
+  await Promise.all(
+    rows.map((row) =>
+      limit(async () => {
+        const vertical = await matchVertical(
+          `${row.discovery_query ?? ""} ${row.company} ${(row.signals ?? "").replace(/\|/g, " ")}`,
+        );
+        const price = verticalPrice(vertical);
+        if (price) row.market_price = price;
+
+        const already = existingAutomations((row.signals ?? "").split("|").filter(Boolean));
+        if (already.length > 0) row.already_automated = already.join(", ");
+
+        // Translate the exact email the operator would send (only if the digest
+        // language differs from the outreach language).
+        if (cfg.DIGEST_LANG !== cfg.OUTREACH_LANG && row.opener) {
+          const body = assembleDraft(row, cfg).body;
+          const tr = await translate(cfg, body, targetLang);
+          if (tr) row.email_translation = tr;
+        }
+      }),
+    ),
+  );
+}
 
 export interface ProspectFlags {
   dry: boolean;
@@ -57,13 +101,18 @@ export function roiScore(row: OutputRow): number {
   // de-prioritize low-budget / hard-to-close
   if (sig.has("diy_site")) s -= 3;
   if (sig.has("multi_location")) s -= 2;
+  // ICP fit: we want SMALL businesses NOT yet automated. Each automation they
+  // already run is one less thing to sell AND a signal they're past our ICP.
+  for (const k of ["has_chatbot", "has_crm", "has_review_tool", "has_textback", "online_booking"]) {
+    if (sig.has(k)) s -= 2;
+  }
   return s;
 }
 
 export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
   const concurrency = flags.concurrency ?? cfg.CONCURRENCY;
   const target = flags.limit && flags.limit > 0 ? flags.limit : cfg.MAX_LEADS;
-  const minFit = flags.minFit ?? 1;
+  const minFit = flags.minFit ?? cfg.MIN_FIT;
   console.log(
     `[prospect] starting (discovery=${cfg.DISCOVERY_SOURCE}, provider=${cfg.LLM_PROVIDER}, ` +
       `target=${target} qualified, min-fit=${minFit}, mock=${flags.mock}, dry=${flags.dry})`,
@@ -153,6 +202,10 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
     console.log("\n--- END ---\n");
     return rows;
   }
+
+  // 4b. enrich the final set with operator-only digest extras (market price,
+  //     what they already have, and a translation of the outgoing email).
+  await attachDigestExtras(cfg, rows, concurrency);
 
   // 5. write enriched CSV + draft queue (drafts for review — no auto-send)
   await finalizeOutput(cfg, rows, {

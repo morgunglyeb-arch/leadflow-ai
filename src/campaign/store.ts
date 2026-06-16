@@ -28,6 +28,7 @@ export interface CampaignLead {
   email: string;
   status: CampaignStatus;
   step: number; // 0=none sent, 1=initial, 2=fu1, 3=fu2
+  inbox?: string; // sending mailbox (multi-inbox): pinned on first send
   threadId?: string; // Gmail thread for reply detection + threading
   lastMessageId?: string; // RFC822 Message-ID for threading follow-ups
   subject?: string;
@@ -53,6 +54,8 @@ export interface CampaignLead {
 export interface CampaignState {
   warmup_day: number; // 1-based; ramps the daily cap
   last_run_date?: string; // YYYY-MM-DD — to advance warmup once/day
+  // per-inbox sends today (multi-inbox daily cap), keyed by inbox email
+  inbox_sent?: Record<string, { date: string; count: number }>;
   leads: Record<string, CampaignLead>; // keyed by domain
 }
 
@@ -62,9 +65,14 @@ export async function loadState(path: string): Promise<CampaignState> {
   try {
     const raw = await readFile(path, "utf8");
     const parsed = JSON.parse(raw) as CampaignState;
-    return { warmup_day: parsed.warmup_day ?? 1, last_run_date: parsed.last_run_date, leads: parsed.leads ?? {} };
+    return {
+      warmup_day: parsed.warmup_day ?? 1,
+      last_run_date: parsed.last_run_date,
+      inbox_sent: parsed.inbox_sent ?? {},
+      leads: parsed.leads ?? {},
+    };
   } catch {
-    return { ...EMPTY, leads: {} };
+    return { ...EMPTY, inbox_sent: {}, leads: {} };
   }
 }
 

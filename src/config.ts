@@ -54,6 +54,9 @@ const schema = z.object({
   DISCOVERY_SOURCE: z.enum(["search", "maps", "vibe", "seed", "csv"]).default("search"),
   ICP_CONFIG_PATH: z.string().default("config/icp.json"),
   MAX_LEADS: z.coerce.number().int().positive().default(50),
+  // Only keep leads at/above this fit score (1-5). The operator wants strong
+  // leads only — default 4 ("strictly 4 and above").
+  MIN_FIT: z.coerce.number().int().min(1).max(5).default(4),
 
   // Qualification: only keep leads worth selling automation to.
   REQUIRE_EMAIL: z
@@ -144,6 +147,12 @@ const schema = z.object({
   GMAIL_CREDENTIALS_PATH: z.string().default("secrets/gmail_credentials.json"),
   GMAIL_TOKEN_PATH: z.string().default("secrets/gmail_token.json"),
   GMAIL_SENDER: z.string().optional(), // your gmail address (the From:)
+  // Multi-inbox: comma-separated Gmail addresses to ROTATE sends across (e.g.
+  // "a@gmail.com,b@gmail.com,c@gmail.com"). Each gets its own warmup cap, so 3
+  // inboxes ≈ 3× daily volume. Each needs its own one-time auth (npm run
+  // campaign -- --auth authorizes them all in turn). Empty = single inbox
+  // (GMAIL_SENDER + GMAIL_TOKEN_PATH), unchanged.
+  GMAIL_ACCOUNTS: z.string().optional(),
 
   // The agent self-limits volume: it sends min(warmup-today, qualified leads
   // above the quality bar). Protects deliverability — never blasts.

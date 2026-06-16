@@ -69,4 +69,11 @@ export type OutputRow = DiscoveredLead & {
   ai_provider: "anthropic" | "groq" | "openai" | "fallback";
   status: LeadStatus;
   email_source: "provided" | "site" | "none";
+  // --- operator-only digest extras (never sent to the prospect) ---
+  // Russian (DIGEST_LANG) translation of the assembled English email.
+  email_translation?: string;
+  // Realistic market price to quote the client for the proposed automation.
+  market_price?: string;
+  // Plain-words list of automations the business ALREADY has (don't re-pitch).
+  already_automated?: string;
 } & Partial<Personalized>;

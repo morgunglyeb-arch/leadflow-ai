@@ -8,6 +8,9 @@ const VerticalSchema = z.object({
   booking_culture: z.string(),
   automations: z.array(z.string()),
   avg_ticket: z.string(),
+  // Realistic UK market rate to QUOTE the client for the main automation.
+  // OPERATOR-ONLY — never fed to the email prompt / shown to the prospect.
+  service_price: z.string().optional(),
 });
 export type Vertical = z.infer<typeof VerticalSchema>;
 
@@ -48,6 +51,16 @@ export async function matchVertical(haystack: string): Promise<Vertical> {
     if ((v.match ?? []).some((m) => hay.includes(m.toLowerCase()))) return v;
   }
   return cfg.default;
+}
+
+/** Operator-only market price for the vertical's main automation (not in email). */
+export function verticalPrice(v: Vertical): string | undefined {
+  return v.service_price;
+}
+
+/** The popular, sector-typical automations — used when no specific gap is found. */
+export function verticalAutomations(v: Vertical): string[] {
+  return v.automations;
 }
 
 export function verticalFacts(v: Vertical): string {

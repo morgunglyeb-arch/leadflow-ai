@@ -44,6 +44,28 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   },
   { key: "contact_form", pattern: /(<form|contact[- ]?form|enquiry form|request a callback|get a quote)/i },
   { key: "live_chat", pattern: /(intercom|tawk\.to|livechatinc|drift\.com|crisp\.chat|zendesk)/i },
+  // --- ALREADY-AUTOMATED markers: things WE sell that they already run, so we
+  //     don't pitch what they have. These are the de-prioritizers for our ICP
+  //     (small businesses NOT yet automated). ---
+  // An AI/booking chat widget on the site (e.g. DenGro, ManyChat, Landbot,
+  // Tidio, Chatbase, Voiceflow) = they already have a chat assistant.
+  {
+    key: "has_chatbot",
+    pattern:
+      /(dengro|manychat|landbot|tidio|chatbase|voiceflow|botpress|smartsupp|chatfuel|leadbot|\bchatbot\b|ai assistant|virtual assistant|chat (?:with|to) (?:us|our team))/i,
+  },
+  // Automated review collection / reputation tools.
+  {
+    key: "has_review_tool",
+    pattern: /(birdeye|podium|nicejob|reviews\.io|reputation\.com|trustpilot\.com\/review|yotpo|reviewsio)/i,
+  },
+  // A real CRM / marketing-automation stack = they already automate follow-up.
+  {
+    key: "has_crm",
+    pattern: /(hubspot|salesforce|pipedrive|zoho|gohighlevel|go high level|keap|infusionsoft|activecampaign|klaviyo|mailchimp)/i,
+  },
+  // Automated SMS/missed-call text-back already in place.
+  { key: "has_textback", pattern: /(textback|text[- ]?back|missed[- ]?call (?:text|sms)|whatsapp business api)/i },
   // they PAY for leads (ad pixels) → missed-enquiry follow-up has obvious ROI
   { key: "runs_google_ads", pattern: /(googleadservices|gtag\/js|aw-\d{6,}|gclid)/i },
   { key: "runs_meta_ads", pattern: /(connect\.facebook\.net|fbq\(|facebook pixel|fbevents\.js)/i },
@@ -66,6 +88,30 @@ export function detectChannels(html: string): string[] {
     if (pattern.test(html)) hits.add(key);
   }
   return [...hits];
+}
+
+// Signals that mean a capability WE sell is ALREADY in place → don't pitch it.
+const ALREADY_AUTOMATED: Record<string, string> = {
+  has_chatbot: "a website chat assistant / chatbot",
+  online_booking: "online self-booking",
+  has_review_tool: "automated review collection",
+  has_crm: "a CRM / marketing-automation tool",
+  has_textback: "missed-call text-back / auto-SMS",
+  live_chat: "a live-chat widget",
+};
+
+/**
+ * From detected signals, list the automations the business ALREADY has, in plain
+ * words. The model must NOT re-pitch these; many of these present at once also
+ * means they're past our ICP (small, not-yet-automated) → lower the fit.
+ */
+export function existingAutomations(signals: string[]): string[] {
+  const set = new Set(signals);
+  const out: string[] = [];
+  for (const [key, label] of Object.entries(ALREADY_AUTOMATED)) {
+    if (set.has(key)) out.push(label);
+  }
+  return out;
 }
 
 function extractTag(html: string, tag: "title"): string | undefined {

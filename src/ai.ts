@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import type { DiscoveredLead, Enrichment, Lead, Personalized } from "./types.js";
 import { matchVertical, verticalFacts } from "./vertical.js";
+import { existingAutomations } from "./enrich.js";
 
 export const PersonalizedSchema = z.object({
   opener: z.string().min(5).max(400),
@@ -40,8 +41,13 @@ What we can build (pick the ONE best fit for THIS business from the site evidenc
 GROUNDING (no hallucination):
 - Use ONLY the company context + DETECTED SIGNALS provided. Never invent facts, numbers, tools, or channels that aren't evidenced.
 - State the problem as a FACT from the evidence — NO hedging words ("likely", "probably", "maybe", "скорее всего").
-- If you genuinely cannot see a concrete gap, set process to "unclear from site" (it will be filtered out) — do NOT guess.
-- Don't pitch what they ALREADY have. If they already have online booking and a chatbot, find a DIFFERENT gap (missed-call text-back, review collection, no-show reminders, follow-ups, reactivation of past customers). If everything obvious is already automated, lower the fit_score.
+- If you cannot see ONE specific gap from the evidence, do NOT say "unclear" — instead pitch the most popular automation for this SECTOR (from INDUSTRY FACTS) and frame the process as the sector-typical manual task most of these businesses still do by hand. Only set process to "unclear from site" if you have NO idea what the business even is.
+- Don't pitch what they ALREADY have (see ALREADY AUTOMATED in the lead). If they already have online booking and a chatbot, find a DIFFERENT gap (missed-call text-back, review collection, no-show reminders, follow-ups, reactivation of past customers). If everything obvious is already automated, lower the fit_score to 1-2.
+
+WHO WE TARGET (ICP — this matters):
+- Our customers are SMALL local businesses that have NOT yet automated and want to look modern and save time & money. The ideal lead still does things by hand (answers every call themselves, no after-hours cover, no auto follow-up).
+- We do NOT target premium/luxury operations or chains that already run booking + chat + CRM + reviews automation — they already have what we sell. If the evidence shows a slick, fully-automated, multi-location/luxury operation, that is a POOR fit → set fit_score 1-2 and say so in the brief.
+- A simple/old/basic website with a phone number and no booking/chat is a GREAT fit, not a bad one — that's a business that would benefit most.
 
 CHANNEL REALISM (very important — pitch only what pays off for THEM):
 - A social link (instagram, telegram, facebook in the footer) usually means a MARKETING presence, NOT that customers book or enquire there. Do NOT assume people book via Instagram/Telegram. Only pitch automating a social channel if there's REAL evidence customers use it to enquire/book — e.g. "DM us to book", a WhatsApp click-to-chat button, or an industry where DM-booking is genuinely normal (beauty, aesthetics, barbers, salons, nails, tattoo, restaurants).
@@ -87,7 +93,7 @@ Fields:
 - subject: <= 60 chars, plain, curiosity or benefit, no emojis, no ALL CAPS.
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
-- process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. Or "unclear from site".
+- process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. If no specific gap is visible, use the sector-typical manual task (see INDUSTRY FACTS) rather than "unclear from site".
 - automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an automatic assistant that texts back every missed call within seconds and books the patient in for you — 24/7, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
@@ -190,6 +196,7 @@ function buildUserMessage(input: AiInput): string {
     ? enrichment.summary_text
     : "(no website context available — write a generic, clean opener and set fit_score <= 2)";
   const signals = enrichment.signals.length > 0 ? enrichment.signals.join(", ") : "(none)";
+  const already = existingAutomations(enrichment.signals);
   return [
     `OUR OFFER:\n${ourOffer}`,
     icpNote ? `\nTARGETING NOTE: ${icpNote}` : null,
@@ -214,8 +221,11 @@ function buildUserMessage(input: AiInput): string {
       ? `REAL GOOGLE REVIEWS (use to spot what customers value and any pain like slow replies / hard to book; reference something specific and TRUE, never quote a made-up review):\n${input.reviewsText}\n`
       : null,
     `DETECTED SIGNALS (how they contact customers / book): ${signals}`,
+    already.length > 0
+      ? `\nALREADY AUTOMATED — they ALREADY HAVE: ${already.join(", ")}. Do NOT pitch any of these; pick a DIFFERENT gap. If they already have most of what we sell, they are NOT our ICP (we target small businesses not yet automated) → set fit_score 1-2.`
+      : `\nALREADY AUTOMATED: none detected — good ICP fit (a small business not yet automated).`,
     "",
-    `Now: pick the ONE most valuable thing they have NOT automated (use the signals to name the exact channel), state the problem as fact (no hedging), and write the email in plain owner-language with NO jargon.`,
+    `Now: pick the ONE most valuable thing they have NOT automated (use the signals to name the exact channel), state the problem as fact (no hedging), and write the email in plain owner-language with NO jargon. If you cannot pin a specific gap from the evidence, pitch the most popular automation for THIS sector (see INDUSTRY FACTS "Automations that genuinely sell here") and set the process to that sector-typical manual task — do NOT say "unclear from site".`,
     `Write all email fields in ${outName}. Write "brief" in ${digName} ONLY${input.digestLang === "ru" ? " (Russian Cyrillic — не пиши brief на английском)" : ""}.`,
   ]
     .filter((l) => l !== null)
@@ -512,6 +522,26 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
     ],
   });
   return (res.choices[0]?.message?.content ?? "").trim();
+}
+
+/**
+ * Translate an already-written email into the operator's language for the
+ * digest, so they can read exactly what's going out. Faithful translation only
+ * — no rewriting, no added/removed content. Returns "" on failure (the digest
+ * just shows the original then).
+ */
+export async function translate(
+  cfg: AppConfig,
+  text: string,
+  targetLang = "Russian",
+): Promise<string> {
+  if (!text.trim()) return "";
+  const system = `You are a professional translator. Translate the user's text into ${targetLang}, faithfully and naturally. Keep the meaning, tone and line breaks. Do NOT add, remove, explain or comment — output ONLY the translation. Keep the sender's name/signature and any URLs as-is.`;
+  try {
+    return await generateText(cfg, system, text);
+  } catch {
+    return "";
+  }
 }
 
 export interface ReplyContext {

@@ -13,6 +13,48 @@ const SCOPES = [
   "https://www.googleapis.com/auth/gmail.readonly",
 ];
 
+/** One sending mailbox: its address and the OAuth token file backing it. */
+export interface Inbox {
+  email: string;
+  tokenPath: string;
+}
+
+function sanitizeEmail(e: string): string {
+  return e.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+}
+
+function tokenPathFor(cfg: AppConfig, email: string): string {
+  const base = cfg.GMAIL_TOKEN_PATH.replace(/\.json$/i, "");
+  return `${base}_${sanitizeEmail(email)}.json`;
+}
+
+/**
+ * The sending inboxes to rotate across. With GMAIL_ACCOUNTS set, each address
+ * gets its own token file (so 3 accounts ≈ 3× the daily cap). The account that
+ * matches GMAIL_SENDER keeps the legacy token path, so existing auth still
+ * works. With GMAIL_ACCOUNTS empty, it's the single legacy inbox — unchanged.
+ */
+export function gmailInboxes(cfg: AppConfig): Inbox[] {
+  const list = (cfg.GMAIL_ACCOUNTS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (list.length === 0) {
+    return [{ email: cfg.GMAIL_SENDER ?? "me", tokenPath: cfg.GMAIL_TOKEN_PATH }];
+  }
+  return list.map((email) =>
+    email === cfg.GMAIL_SENDER
+      ? { email, tokenPath: cfg.GMAIL_TOKEN_PATH }
+      : { email, tokenPath: tokenPathFor(cfg, email) },
+  );
+}
+
+/** Find the inbox a lead was sent from (so follow-ups/replies use the same one). */
+export function inboxByEmail(cfg: AppConfig, email?: string): Inbox | undefined {
+  if (!email) return undefined;
+  return gmailInboxes(cfg).find((b) => b.email.toLowerCase() === email.toLowerCase());
+}
+
 interface OAuthCreds {
   client_id: string;
   client_secret: string;
@@ -38,13 +80,16 @@ function makeOAuthClient(creds: OAuthCreds): OAuth2Client {
  * works). Spins up a local server, prints the consent URL, and captures the
  * redirect with the code automatically — then saves the token.
  */
-export async function authorizeInteractive(cfg: AppConfig): Promise<string> {
+export async function authorizeInteractive(cfg: AppConfig, inbox?: Inbox): Promise<string> {
   const creds = await loadClientCreds(cfg.GMAIL_CREDENTIALS_PATH);
+  const tokenPath = inbox?.tokenPath ?? cfg.GMAIL_TOKEN_PATH;
   const redirectUri = `http://localhost:${LOOPBACK_PORT}`;
   const client = new google.auth.OAuth2(creds.client_id, creds.client_secret, redirectUri);
   const url = client.generateAuthUrl({ access_type: "offline", prompt: "consent", scope: SCOPES });
 
-  console.log("\n1. Open this URL, sign in with your SENDING Gmail, and click Allow:\n");
+  console.log(
+    `\n1. Open this URL, sign in with ${inbox ? `the inbox ${inbox.email}` : "your SENDING Gmail"}, and click Allow:\n`,
+  );
   console.log(url + "\n");
   console.log("2. After you approve, this window captures the code automatically…\n");
 
@@ -70,18 +115,21 @@ export async function authorizeInteractive(cfg: AppConfig): Promise<string> {
   });
 
   const { tokens } = await client.getToken(code);
-  await mkdir(dirname(cfg.GMAIL_TOKEN_PATH), { recursive: true });
-  await writeFile(cfg.GMAIL_TOKEN_PATH, JSON.stringify(tokens, null, 2), "utf8");
-  return cfg.GMAIL_TOKEN_PATH;
+  await mkdir(dirname(tokenPath), { recursive: true });
+  await writeFile(tokenPath, JSON.stringify(tokens, null, 2), "utf8");
+  return tokenPath;
 }
 
-export async function getGmailClient(cfg: AppConfig): Promise<OAuth2Client> {
+export async function getGmailClient(cfg: AppConfig, inbox?: Inbox): Promise<OAuth2Client> {
   const client = makeOAuthClient(await loadClientCreds(cfg.GMAIL_CREDENTIALS_PATH));
+  const tokenPath = inbox?.tokenPath ?? cfg.GMAIL_TOKEN_PATH;
   let token: unknown;
   try {
-    token = JSON.parse(await readFile(cfg.GMAIL_TOKEN_PATH, "utf8"));
+    token = JSON.parse(await readFile(tokenPath, "utf8"));
   } catch {
-    throw new Error("Gmail not authorized yet. Run: npm run campaign -- --auth");
+    throw new Error(
+      `Gmail not authorized for ${inbox?.email ?? "the sender"} (no token at ${tokenPath}). Run: npm run campaign -- --auth`,
+    );
   }
   client.setCredentials(token as Record<string, unknown>);
   return client;
@@ -117,10 +165,11 @@ export interface SendResult {
 export async function sendEmail(
   cfg: AppConfig,
   opts: { to: string; subject: string; body: string; threadId?: string; inReplyTo?: string },
+  inbox?: Inbox,
 ): Promise<SendResult> {
-  const auth = await getGmailClient(cfg);
+  const auth = await getGmailClient(cfg, inbox);
   const gmail = google.gmail({ version: "v1", auth });
-  const from = cfg.GMAIL_SENDER ?? "me";
+  const from = inbox?.email ?? cfg.GMAIL_SENDER ?? "me";
   const raw = buildMime({ from, ...opts });
   const res = await gmail.users.messages.send({
     userId: "me",
@@ -159,8 +208,9 @@ export async function getThreadReply(
   cfg: AppConfig,
   threadId: string,
   senderEmail: string,
+  inbox?: Inbox,
 ): Promise<ThreadReplyInfo | null> {
-  const auth = await getGmailClient(cfg);
+  const auth = await getGmailClient(cfg, inbox);
   const gmail = google.gmail({ version: "v1", auth });
   const res = await gmail.users.threads.get({ userId: "me", id: threadId, format: "metadata" });
   const messages = res.data.messages ?? [];
