@@ -138,8 +138,9 @@ const schema = z.object({
   // The agent self-limits volume: it sends min(warmup-today, qualified leads
   // above the quality bar). Protects deliverability — never blasts.
   SEND_DAILY_CAP: z.coerce.number().int().positive().default(40),
-  SEND_WARMUP_START: z.coerce.number().int().positive().default(10),
-  SEND_WARMUP_STEP: z.coerce.number().int().positive().default(5),
+  // Gentle warmup for a fresh inbox: day1=5, +3/day → reaches the cap in ~2.5wk
+  SEND_WARMUP_START: z.coerce.number().int().positive().default(5),
+  SEND_WARMUP_STEP: z.coerce.number().int().positive().default(3),
   // Only send leads scoring at/above this ROI/quality bar (the rest queue for
   // your manual review). Higher = fewer, stronger sends.
   SEND_MIN_SCORE: z.coerce.number().default(9),
