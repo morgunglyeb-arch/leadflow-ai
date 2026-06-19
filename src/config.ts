@@ -15,6 +15,9 @@ const schema = z.object({
   GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
 
   // Generic OpenAI-compatible provider (used when LLM_PROVIDER=openai)
+  // OPENAI_API_KEYS: optional comma/space-separated list, rotated with failover
+  // on 429 so a single exhausted key never stalls the run (see src/ai.ts).
+  OPENAI_API_KEYS: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z
     .string()
@@ -78,6 +81,16 @@ const schema = z.object({
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
   ZEROBOUNCE_API_KEY: z.string().optional(),
+
+  // Hunter.io — email finder + deliverability verification (free: 25 req/mo)
+  // Domain search finds emails we missed; verify checks if a specific address
+  // is deliverable (SMTP-level, much better than MX-only).
+  HUNTER_API_KEY: z.string().optional(),
+
+  // Firecrawl — JS-rendering web scraper (free: 500 credits/mo, keyless: rate-limited)
+  // When set, enrichment uses Firecrawl to crawl sites (handles SPA, anti-bot,
+  // cookie banners). Falls back to built-in HTTP crawler when empty.
+  FIRECRAWL_API_KEY: z.string().optional(),
 
   // Optional UK director lookup (Companies House) for personalization.
   COMPANIES_HOUSE_API_KEY: z.string().optional(),

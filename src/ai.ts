@@ -154,6 +154,7 @@ interface AiInput {
   enrichment: Enrichment;
   icpNote?: string;
   reviewsText?: string;
+  webContext?: string;
   verticalFacts?: string;
   winnersText?: string;
   outreachLang: string;
@@ -219,6 +220,9 @@ function buildUserMessage(input: AiInput): string {
     "",
     input.reviewsText
       ? `REAL GOOGLE REVIEWS (use to spot what customers value and any pain like slow replies / hard to book; reference something specific and TRUE, never quote a made-up review):\n${input.reviewsText}\n`
+      : null,
+    input.webContext
+      ? `WEB SEARCH CONTEXT (recent news, events, mentions — use naturally if relevant, never fabricate):\n${input.webContext}\n`
       : null,
     `DETECTED SIGNALS (how they contact customers / book): ${signals}`,
     already.length > 0
@@ -342,16 +346,21 @@ async function callOpenAIRaw(
   cfg: AppConfig,
   system: string,
   userContent: string,
-  opts: { apiKey?: string; baseURL: string; model: string },
+  opts: { apiKeys: (string | undefined)[]; baseURL: string; model: string },
 ): Promise<Personalized> {
-  const client = new OpenAI({ apiKey: opts.apiKey, baseURL: opts.baseURL });
+  const keys = opts.apiKeys.length ? opts.apiKeys : [undefined];
   const messages = [
     { role: "system" as const, content: system },
     { role: "user" as const, content: userContent },
   ];
 
+  // Try every key on a 429 before sleeping: a different key may have quota.
+  // Only once we've cycled through all keys do we back off and retry.
+  const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
   let lastErr: unknown;
-  for (let attempt = 0; attempt <= cfg.LLM_MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const apiKey = keys[attempt % keys.length];
+    const client = new OpenAI({ apiKey, baseURL: opts.baseURL });
     try {
       const res = await client.chat.completions.create({
         model: opts.model,
@@ -368,10 +377,16 @@ async function callOpenAIRaw(
       return PersonalizedSchema.parse(parsed);
     } catch (err) {
       lastErr = err;
-      if (isRateLimit(err) && attempt < cfg.LLM_MAX_RETRIES) {
-        const delay = retryDelayMs(err, attempt);
-        console.warn(`[ai] rate-limited, retrying in ${(delay / 1000).toFixed(1)}s…`);
-        await sleep(delay);
+      if (isRateLimit(err) && attempt < maxAttempts - 1) {
+        // Sleep only after we've just tried the last key in a cycle.
+        const cycledAllKeys = (attempt + 1) % keys.length === 0;
+        if (cycledAllKeys) {
+          const delay = retryDelayMs(err, attempt);
+          console.warn(`[ai] all keys rate-limited, retrying in ${(delay / 1000).toFixed(1)}s…`);
+          await sleep(delay);
+        } else {
+          console.warn("[ai] key rate-limited, rotating to next key…");
+        }
         continue;
       }
       throw err;
@@ -383,24 +398,37 @@ async function callOpenAIRaw(
 function callOpenAICompatible(
   cfg: AppConfig,
   input: AiInput,
-  opts: { apiKey?: string; baseURL: string; model: string },
+  opts: { apiKeys: (string | undefined)[]; baseURL: string; model: string },
 ): Promise<Personalized> {
   const system = buildSystemPrompt(input.outreachLang, input.digestLang);
   const userContent = `${buildUserMessage(input)}\n\n${JSON_KEYS_HINT}`;
   return callOpenAIRaw(cfg, system, userContent, opts);
 }
 
+/**
+ * Keys for the OpenAI-compatible (Gemini) provider. Prefers OPENAI_API_KEYS
+ * (comma/space separated) for rotation; falls back to the single OPENAI_API_KEY.
+ */
+function openaiKeys(cfg: AppConfig): (string | undefined)[] {
+  const multi = (cfg.OPENAI_API_KEYS ?? "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (multi.length) return multi;
+  return [cfg.OPENAI_API_KEY];
+}
+
 function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
   if (cfg.LLM_PROVIDER === "groq") {
     return callOpenAIRaw(cfg, system, `${userContent}\n\n${JSON_KEYS_HINT}`, {
-      apiKey: cfg.GROQ_API_KEY,
+      apiKeys: [cfg.GROQ_API_KEY],
       baseURL: "https://api.groq.com/openai/v1",
       model: cfg.GROQ_MODEL,
     });
   }
   if (cfg.LLM_PROVIDER === "openai") {
     return callOpenAIRaw(cfg, system, `${userContent}\n\n${JSON_KEYS_HINT}`, {
-      apiKey: cfg.OPENAI_API_KEY,
+      apiKeys: openaiKeys(cfg),
       baseURL: cfg.OPENAI_BASE_URL,
       model: cfg.OPENAI_MODEL,
     });
@@ -439,6 +467,7 @@ export async function personalize(
   enrichment: Enrichment,
   icpNote?: string,
   reviewsText?: string,
+  webContext?: string,
 ): Promise<PersonalizationResult> {
   const vertical = await matchVertical(
     `${lead.discovery_query ?? ""} ${lead.company} ${enrichment.title ?? ""} ${enrichment.summary_text.slice(0, 400)}`,
@@ -453,6 +482,7 @@ export async function personalize(
     verticalFacts: verticalFacts(vertical),
     ...(icpNote ? { icpNote } : {}),
     ...(reviewsText ? { reviewsText } : {}),
+    ...(webContext ? { webContext } : {}),
     ...(wt ? { winnersText: wt } : {}),
   };
   const provider: PersonalizationResult["provider"] =
@@ -461,13 +491,13 @@ export async function personalize(
     let personalized =
       cfg.LLM_PROVIDER === "groq"
         ? await callOpenAICompatible(cfg, input, {
-            apiKey: cfg.GROQ_API_KEY,
+            apiKeys: [cfg.GROQ_API_KEY],
             baseURL: "https://api.groq.com/openai/v1",
             model: cfg.GROQ_MODEL,
           })
         : cfg.LLM_PROVIDER === "openai"
           ? await callOpenAICompatible(cfg, input, {
-              apiKey: cfg.OPENAI_API_KEY,
+              apiKeys: openaiKeys(cfg),
               baseURL: cfg.OPENAI_BASE_URL,
               model: cfg.OPENAI_MODEL,
             })
