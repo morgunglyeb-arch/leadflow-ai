@@ -3,6 +3,7 @@ import { loadConfig } from "./config.js";
 import { authorizeInteractive, gmailInboxes } from "./campaign/gmail.js";
 import { runCampaign, type CampaignFlags } from "./campaign/run.js";
 import { loadState } from "./campaign/store.js";
+import { emitError } from "./ops-emit.js";
 
 function parseFlags(argv: string[]): { mode: "run" | "auth" | "status"; flags: CampaignFlags } {
   const flags: CampaignFlags = { mock: false, dryRun: false, topUp: false };
@@ -88,8 +89,9 @@ if (isMain) {
   const { mode, flags } = parseFlags(process.argv.slice(2));
   const run =
     mode === "auth" ? doAuth() : mode === "status" ? doStatus() : runCampaign(loadConfig(), flags);
-  run.catch((err) => {
+  run.catch(async (err) => {
     console.error("[campaign] fatal:", err);
+    await emitError(err);
     process.exit(1);
   });
 }

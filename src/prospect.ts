@@ -9,6 +9,7 @@ import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { matchVertical, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
+import { emitRunEnd, emitRunStart } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
 
 const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
@@ -109,7 +110,24 @@ export function roiScore(row: OutputRow): number {
   return s;
 }
 
+/**
+ * Public entrypoint: wraps the prospecting run with best-effort Opero Ops
+ * telemetry (run.start / run.end). Emits are no-ops unless OPERO_OPS_URL +
+ * INGEST_BEARER_TOKEN are set and never affect the run result.
+ */
 export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
+  const runId = await emitRunStart("prospect");
+  try {
+    const rows = await runProspectingCore(cfg, flags);
+    await emitRunEnd(runId, { status: "done", qualified: rows.length, sent: 0 });
+    return rows;
+  } catch (err) {
+    await emitRunEnd(runId, { status: "failed" });
+    throw err;
+  }
+}
+
+async function runProspectingCore(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
   const concurrency = flags.concurrency ?? cfg.CONCURRENCY;
   const target = flags.limit && flags.limit > 0 ? flags.limit : cfg.MAX_LEADS;
   const minFit = flags.minFit ?? cfg.MIN_FIT;
