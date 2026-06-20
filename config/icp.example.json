@@ -1,29 +1,29 @@
 {
-  "location": "",
-  "note": "We sell agentic AI automation to SMBs. Prioritize businesses with visible manual ops (bookings, support, returns, client reporting).",
-  "max_leads": 25,
+  "location": "London, UK",
+  "note": "LAUNCH NICHE: clinics & studios that live on appointments. (1) Dental/medical clinics — booking by phone + website, lose revenue to missed calls, no-shows, lapsed patients. (2) Aesthetics/beauty/fitness studios — booking via Instagram/WhatsApp DMs + phone, lose leads when DMs go unanswered. ONE playbook serves both: missed-call text-back, instant web/DM enquiry replies, reminders, reactivation. A missed enquiry = lost revenue. Copy this to config/icp.json (gitignored) and edit. Don't fan out to other verticals until this niche is proven.",
+  "max_leads": 50,
   "segments": [
     {
-      "market": "ecommerce",
+      "market": "local_smb",
       "queries": [
-        "shopify skincare brands",
-        "dtc coffee subscription brands",
-        "ecommerce logistics platforms"
+        "dental clinics",
+        "dental implant clinics",
+        "cosmetic dentistry clinics",
+        "orthodontist practices",
+        "private dental practices"
       ]
     },
     {
       "market": "local_smb",
       "queries": [
-        "physiotherapy and health clinics",
-        "boutique hotels"
-      ]
-    },
-    {
-      "market": "agency",
-      "queries": [
-        "boutique branding agencies",
-        "bookkeeping firms for startups",
-        "corporate law for startups"
+        "aesthetic skin clinics",
+        "medical aesthetics clinics",
+        "botox and filler clinics",
+        "med spas",
+        "beauty salons",
+        "fitness studios",
+        "pilates studios",
+        "private gyms"
       ]
     }
   ]
