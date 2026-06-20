@@ -1,4 +1,5 @@
 import { loadConfig } from "./config.js";
+import { emitError } from "./ops-emit.js";
 import { runProspecting, type ProspectFlags } from "./prospect.js";
 
 function parseFlags(argv: string[]): ProspectFlags {
@@ -64,8 +65,9 @@ const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const flags = parseFlags(process.argv.slice(2));
   const cfg = loadConfig();
-  runProspecting(cfg, flags).catch((err) => {
+  runProspecting(cfg, flags).catch(async (err) => {
     console.error("[prospect] fatal:", err);
+    await emitError(err);
     process.exit(1);
   });
 }

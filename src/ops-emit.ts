@@ -4,12 +4,12 @@
  * and never throws — pipeline behaviour must be completely unaffected by it.
  */
 
-async function post(body: Record<string, unknown>): Promise<unknown> {
+async function postTo(path: string, body: Record<string, unknown>): Promise<unknown> {
   const base = process.env.OPERO_OPS_URL;
   const token = process.env.INGEST_BEARER_TOKEN;
   if (!base || !token) return null;
   try {
-    const res = await fetch(`${base.replace(/\/$/, "")}/api/ingest/leadflow`, {
+    const res = await fetch(`${base.replace(/\/$/, "")}${path}`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
@@ -20,6 +20,23 @@ async function post(body: Record<string, unknown>): Promise<unknown> {
     console.warn(`[ops-emit] failed: ${(err as Error).message}`);
     return null;
   }
+}
+
+async function post(body: Record<string, unknown>): Promise<unknown> {
+  return postTo("/api/ingest/leadflow", body);
+}
+
+/** Report a fatal pipeline error to the hub (-> bug + push). */
+export async function emitError(err: unknown): Promise<void> {
+  const e = err as { name?: string; message?: string };
+  const name = e?.name ?? "Error";
+  const message = e?.message ?? String(err);
+  await postTo("/api/ingest/error", {
+    source: "leadflow",
+    title: `${name}: ${message}`.slice(0, 300),
+    level: "error",
+    fingerprint: `leadflow:${name}:${message.slice(0, 80)}`,
+  });
 }
 
 /** Mark a run as started; returns the hub's run id (or null when disabled). */
