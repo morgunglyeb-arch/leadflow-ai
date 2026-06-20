@@ -64,3 +64,19 @@ export async function emitEvent(
 ): Promise<void> {
   await post({ type, payload });
 }
+
+export interface ReplyFields {
+  company: string;
+  sentiment: string;
+  email?: string;
+  snippet?: string;
+  suggested?: string;
+}
+
+/**
+ * A prospect replied. Push the message + a human draft to the owner's phone
+ * (Telegram, via the hub). The hub never auto-sends — the operator decides.
+ */
+export async function emitReply(fields: ReplyFields): Promise<void> {
+  await post({ type: "reply", ...fields });
+}

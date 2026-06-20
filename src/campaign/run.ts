@@ -27,6 +27,7 @@ import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { suggestReply } from "../ai.js";
+import { emitReply } from "../ops-emit.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -211,8 +212,9 @@ async function pollReplies(
           await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
           suppression.add(lead.email.toLowerCase());
         }
-        // Draft a suggested response for interested / objection replies
-        if (cfg.REPLY_ASSIST && (sentiment === "interested" || sentiment === "objection")) {
+        // Draft a suggested response for every genuine reply except opt-outs
+        // (no point drafting an answer to "remove me").
+        if (cfg.REPLY_ASSIST && sentiment !== "not_interested") {
           try {
             lead.reply.suggested = await suggestReply(cfg, {
               company: lead.company,
@@ -228,6 +230,15 @@ async function pollReplies(
         console.log(
           `[campaign] reply from ${lead.company} (${sentiment})${sentiment === "interested" ? " ⭐ — drafted a response" : ""} — sequence stopped`,
         );
+        // Push the reply + human draft to the owner's phone (Telegram via hub).
+        // Best-effort, owner-only, never auto-sends — the operator decides.
+        await emitReply({
+          company: lead.company,
+          sentiment: sentiment ?? "unclear",
+          email: lead.email,
+          ...(reply.snippet ? { snippet: reply.snippet } : {}),
+          ...(lead.reply.suggested ? { suggested: lead.reply.suggested } : {}),
+        });
       }
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);

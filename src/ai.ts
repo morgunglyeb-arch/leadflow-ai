@@ -583,12 +583,21 @@ export interface ReplyContext {
 }
 
 /**
- * Draft a suggested response to a prospect's reply, so the operator can answer
- * fast (speed-to-lead) and move toward a call. Plain, short, no jargon.
+ * Draft a suggested response to a prospect's reply, for the operator to review
+ * and send by hand (never auto-sent). Must read like a real person typed it —
+ * no AI tells — and NEVER propose a call (the sender doesn't take live calls).
  */
 export async function suggestReply(cfg: AppConfig, ctx: ReplyContext): Promise<string> {
   const lang = LANG_NAME[cfg.OUTREACH_LANG] ?? "English";
-  const system = `You help a small AI-automation studio reply to a prospect who responded to a cold email. Write the reply the operator should send: warm, concise (<=80 words), plain language (no jargon like "workflow/API/agentic"), and move toward a quick 15-minute call or a concrete next step. Answer their actual question (e.g. rough pricing range, how it works) honestly; if unsure, offer to cover it on a short call. Write in ${lang}. Output ONLY the reply body (no subject, no signature).`;
+  const system = `You help a small AI-automation studio reply to a prospect who responded to a cold email. Write the reply the operator will send by hand.
+
+Sound like a real person typing a quick reply on their phone — natural and a little informal, NOT polished marketing copy. Avoid anything that reads as AI-written: no "I hope this email finds you well", no "Furthermore/Moreover/Additionally", no neatly balanced three-part sentences, no bullet lists, no em-dash pile-ups, no corporate filler. Use contractions. One small imperfection is fine.
+
+Keep it short (<=80 words), warm, plain language — no jargon ("workflow/API/agentic/leverage/solution"). Answer their actual question honestly (e.g. a rough price range, how it works); if you don't know, say you'll send a quick example or the details.
+
+NEVER propose a call, meeting or "quick chat" — the sender does not take live calls. The only ask is a reply, or offering to SEND a short recorded example/video (async). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat".
+
+Write in ${lang}. Output ONLY the reply body — no subject, no signature. Greet by the real name or skip the greeting; never use bracketed placeholders like [name].`;
   const user = [
     `Our offer: ${ctx.ourOffer}`,
     ctx.pitchedProcess ? `We pitched fixing: ${ctx.pitchedProcess}` : "",
