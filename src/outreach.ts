@@ -60,10 +60,6 @@ function stripTrailingPunct(s: string): string {
   return s.trim().replace(/[.!;,\s]+$/, "");
 }
 
-function stripQuotes(s: string): string {
-  return s.trim().replace(/^["'“”]+|["'“”]+$/g, "").trim();
-}
-
 /**
  * Assemble a full, ready-to-review cold email from the AI fields. The pitch
  * (process → automation → benefit) is the body's spine; nothing here invents
@@ -74,31 +70,32 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const lines: string[] = [];
   lines.push(greeting(row.company));
   lines.push("");
-  // Short self-intro so they know who's writing and why to listen.
-  if (cfg.SENDER_INTRO) {
-    lines.push(cfg.SENDER_INTRO);
-    lines.push("");
-  }
-  if (row.opener) lines.push(row.opener);
 
-  // A short menu of what we could set up — so they see what's possible.
-  const services = row.services ?? [];
-  if (services.length > 0) {
+  // First touch = ONE idea, led by the most specific personalization we have.
+  // Deliberately NO self-intro paragraph, NO bullet "menu", NO inline demo:
+  // those read as mass-mail and bury the hook (and trip spam filters). The
+  // breadth/menu belongs in a follow-up; the demo is the open loop the CTA
+  // promises ("reply and I'll send a short example").
+  const observation = [row.icebreaker, row.opener]
+    .map((s) => s?.trim())
+    .filter((s): s is string => Boolean(s))
+    .join(" ");
+  if (observation) {
+    lines.push(observation);
     lines.push("");
-    lines.push("A few things we could set up for you:");
-    for (const s of services) lines.push(`• ${stripTrailingPunct(s)}`);
-  } else if (row.automation) {
-    lines.push("");
-    lines.push(`${capitalize(stripTrailingPunct(row.automation))}.`);
-  }
-  // Concrete example so it's unmistakable — they SEE what it does.
-  if (row.demo) {
-    lines.push("");
-    lines.push(`For example, here's what your customers would get:`);
-    lines.push(`"${stripQuotes(row.demo)}"`);
   }
 
-  lines.push("");
+  // One concrete, done-for-you offer line — a single idea, never a list.
+  const offer = row.automation
+    ? `${capitalize(stripTrailingPunct(row.automation))}.`
+    : row.services?.[0]
+      ? `${capitalize(stripTrailingPunct(row.services[0]))}.`
+      : "";
+  if (offer) {
+    lines.push(offer);
+    lines.push("");
+  }
+
   lines.push(cfg.CALL_TO_ACTION);
   lines.push("");
   lines.push(`— ${cfg.SENDER_SIGNATURE}`);

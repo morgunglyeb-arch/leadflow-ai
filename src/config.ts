@@ -37,7 +37,7 @@ const schema = z.object({
   OUR_OFFER: z
     .string()
     .default(
-      "AI automation for SMBs — we build agentic workflows that replace manual ops (lead enrichment, reporting, customer triage).",
+      "AI automation for small businesses: we set up systems that handle the manual work for them — missed-call text-back, lead capture and follow-up, reporting, customer triage.",
     ),
 
   // Language of the cold email sent TO the prospect (their language).
@@ -132,9 +132,10 @@ const schema = z.object({
     .default(
       "I'm Glyeb, a business-automation specialist — I help local businesses stop losing customers to slow, manual admin.",
     ),
-  SENDER_SIGNATURE: z
-    .string()
-    .default("Glyeb · AI automation for SMBs · github.com/morgunglyeb-arch"),
+  // Shown to the prospect. NO GitHub link (off-brand + a trust/spam risk for a
+  // clinic owner). Set the full branded signature incl. the live domain via
+  // .env once the brand domain is connected, e.g. "Glyeb, Opero · opero.studio".
+  SENDER_SIGNATURE: z.string().default("Glyeb, Opero"),
   // No calls (you don't do live English calls). Reply-based, async CTA.
   CALL_TO_ACTION: z
     .string()
@@ -169,10 +170,13 @@ const schema = z.object({
 
   // The agent self-limits volume: it sends min(warmup-today, qualified leads
   // above the quality bar). Protects deliverability — never blasts.
-  SEND_DAILY_CAP: z.coerce.number().int().positive().default(40),
-  // Gentle warmup for a fresh inbox: day1=5, +3/day → reaches the cap in ~2.5wk
+  // Safe ceiling for a WARMED inbox is "under 50"; a fresh inbox must stay far
+  // lower and only reach ~25 at the end of warmup (see GTM plan). Default 25.
+  SEND_DAILY_CAP: z.coerce.number().int().positive().default(25),
+  // Gentle warmup for a fresh inbox: day1=5, +2/day (the safe step — +3 ramps
+  // too fast and costs ~+23% spam placement in month 1). ~3-4wk to full volume.
   SEND_WARMUP_START: z.coerce.number().int().positive().default(5),
-  SEND_WARMUP_STEP: z.coerce.number().int().positive().default(3),
+  SEND_WARMUP_STEP: z.coerce.number().int().positive().default(2),
   // Only send leads scoring at/above this ROI/quality bar (the rest queue for
   // your manual review). Higher = fewer, stronger sends.
   SEND_MIN_SCORE: z.coerce.number().default(9),
