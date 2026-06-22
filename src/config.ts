@@ -181,6 +181,11 @@ const schema = z.object({
   // Only send leads scoring at/above this ROI/quality bar (the rest queue for
   // your manual review). Higher = fewer, stronger sends.
   SEND_MIN_SCORE: z.coerce.number().default(9),
+  // Max FIRST-TOUCHES per run. 0 = off (send up to the full daily cap in one go).
+  // Set >0 + run the campaign on an hourly cron in the SEND_WINDOW to SPREAD the
+  // day's volume into small bursts (human-looking, protects deliverability)
+  // instead of firing the whole cap at once. Per-inbox daily caps still apply.
+  SEND_PER_RUN_CAP: z.coerce.number().int().min(0).default(0),
   // Days to wait before each follow-up if no reply (comma-separated).
   FOLLOWUP_GAP_DAYS: z.string().default("3,10"),
   // Deliverability GATE (deliverability-audit skill, enforced in code): before

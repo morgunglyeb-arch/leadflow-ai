@@ -80,6 +80,15 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
         Object.values(state.leads).filter((l) => l.status === "queued").length
       }`,
   );
+  // FOOTGUN GUARD: with peer-warmup OFF, coldRampReady() is a no-op (fail-open) —
+  // cold mail goes out on the send-side ramp alone, with NO reputation built by
+  // two-way inbox traffic. Warn loudly every live run so this is never silent.
+  if (live && !cfg.WARMUP_ENABLED) {
+    console.warn(
+      "[campaign] ⚠️ WARMUP_ENABLED=false while sending LIVE — peer-warmup is OFF and the cold-ramp gate is a no-op. " +
+        "Inboxes build reputation from the send ramp only. To protect deliverability set WARMUP_ENABLED=true and schedule the `--warmup` pass.",
+    );
+  }
 
   const suppression = await loadSuppression(cfg.SUPPRESSION_PATH);
 
@@ -131,7 +140,11 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
         `[warmup] cold first-touches paused — warmup day ${wday} < ${cfg.WARMUP_COLD_AFTER_DAYS}; follow-ups continue.`,
       );
   }
-  let firstTouches = coldAllowed ? selectFirstTouches(state, cfg, totalRoom) : [];
+  // Optional per-run sub-cap spreads the daily volume across hourly runs in the
+  // send window (anti-burst). 0 = off → use the full remaining room.
+  const runRoom =
+    cfg.SEND_PER_RUN_CAP > 0 ? Math.min(totalRoom, cfg.SEND_PER_RUN_CAP) : totalRoom;
+  let firstTouches = coldAllowed ? selectFirstTouches(state, cfg, runRoom) : [];
   // Compliance gate (PECR) — only auto-send to clearly-incorporated entities.
   // Prefer the flag resolved at enqueue (Companies House / heuristic); resolve +
   // cache it on the lead for any older queued lead that predates the flag.
