@@ -10,7 +10,30 @@ until the very last step, and only after `SENDING_ENABLED=true`.
 - LeadFlow → hub env (`OPERO_OPS_URL`, `INGEST_BEARER_TOKEN`) already set; emits on
   any real run.
 - `heyopero.com` deliverability: SPF/DKIM/DMARC/MX all green. 3 inboxes live.
+- `opero-team.com` + `withopero.com` went Active 2026-06-22 (Cloudflare integration).
 - Real lead list built: `data/out/drafts/` (8 UK clinics) — review these.
+- Companies House key live (HTTP 200); PECR gate validated on real clinics (3/5 of
+  the batch confirmed registered → emailable; 2 held as not-found, correct PECR).
+
+## Mailbox roster — 9 inboxes / 3 domains (sending identities)
+British names on purpose (trust with UK clinics). First-name local part.
+
+| Domain | Email | First | Last |
+|---|---|---|---|
+| heyopero.com | anna@heyopero.com | Anna | Bennett |
+| heyopero.com | sofia@heyopero.com | Sofia | Carter |
+| heyopero.com | james@heyopero.com | James | Hughes |
+| opero-team.com | emma@opero-team.com | Emma | Walsh |
+| opero-team.com | daniel@opero-team.com | Daniel | Reed |
+| opero-team.com | grace@opero-team.com | Grace | Turner |
+| withopero.com | thomas@withopero.com | Thomas | Clarke |
+| withopero.com | lucy@withopero.com | Lucy | Hayes |
+| withopero.com | jack@withopero.com | Jack | Ellis |
+
+⚠️ **LeadFlow still sends from 3 personal @gmail accounts**, NOT these 9. Before
+warmup/send: set `.env` `GMAIL_ACCOUNTS` to the 9 addresses above (+ `GMAIL_SENDER`
+to one of them), then `rm secrets/gmail_token_*.json` and `npm run campaign -- --auth`
+to OAuth each. Warming the wrong (personal) inboxes for 2–3 weeks would be wasted.
 
 ## 1. Start warmup on the 3 live inboxes NOW (don't wait for 9)
 Peer-warmup needs ≥2 inboxes; you have 3 on `heyopero.com`. Start the 2–3 week
