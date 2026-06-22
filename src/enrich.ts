@@ -4,6 +4,7 @@ import type { AppConfig } from "./config.js";
 import type { Enrichment } from "./types.js";
 import { loadCachedEnrichment, saveCachedEnrichment } from "./cache.js";
 import { normalizeDomain } from "./sources/index.js";
+import FirecrawlApp from "@mendable/firecrawl-js";
 
 const MAX_TEXT_CHARS = 4000;
 
@@ -400,6 +401,88 @@ function rerankEmails(emails: string[], domain: string): string[] {
     .slice(0, 5);
 }
 
+// ---------------------------------------------------------------------------
+// Firecrawl enrichment — JS-rendering, anti-bot bypass, clean markdown output.
+// Used when FIRECRAWL_API_KEY is set (or keyless mode for basic scrape).
+// Falls back to the built-in HTTP crawler on any error.
+// ---------------------------------------------------------------------------
+
+let firecrawlClient: InstanceType<typeof FirecrawlApp> | null = null;
+
+function getFirecrawl(cfg: AppConfig): InstanceType<typeof FirecrawlApp> | null {
+  if (!cfg.FIRECRAWL_API_KEY) return null;
+  if (firecrawlClient) return firecrawlClient;
+  firecrawlClient = new FirecrawlApp({ apiKey: cfg.FIRECRAWL_API_KEY });
+  return firecrawlClient;
+}
+
+async function fetchSiteFirecrawl(domain: string, cfg: AppConfig): Promise<ParsedSite | null> {
+  const fc = getFirecrawl(cfg);
+  if (!fc) return null;
+
+  try {
+    // Crawl homepage + up to 6 internal pages (same as our built-in crawler).
+    // Returns clean markdown per page — much better for LLM than raw HTML.
+    const result = await fc.crawlUrl(`https://${domain}`, {
+      limit: MAX_PAGES,
+      scrapeOptions: {
+        formats: ["markdown" as const, "html" as const],
+      },
+    });
+
+    if (!result || result.status === "failed" || result.status === "cancelled" || !result.data?.length) return null;
+
+    const collected: ParsedSite[] = [];
+    const allEmails: string[] = [];
+
+    for (const page of result.data) {
+      const html = page.html ?? "";
+      const markdown = page.markdown ?? "";
+      const title = page.metadata?.title;
+      const description = page.metadata?.description;
+
+      // Use markdown for summary (cleaner for LLM), HTML for signal/email detection
+      const signals = [
+        ...detectSignals(markdown || htmlToText(html)),
+        ...detectChannels(html),
+      ];
+      const emails = extractEmails(html, domain);
+      allEmails.push(...emails);
+
+      const summary_text = markdown
+        ? markdown.slice(0, PER_PAGE_CHARS)
+        : htmlToText(html).slice(0, PER_PAGE_CHARS);
+
+      collected.push({ title, description, summary_text, signals, emails });
+    }
+
+    // Merge all pages
+    const title = collected.find((p) => p.title)?.title;
+    const description = collected.find((p) => p.description)?.description;
+    let budget = MERGED_TEXT_CHARS;
+    const chunks: string[] = [];
+    collected.forEach((p, i) => {
+      if (budget <= 0) return;
+      const cap = i === 0 ? PER_PAGE_CHARS * 2 : PER_PAGE_CHARS;
+      const slice = p.summary_text.slice(0, Math.min(cap, budget));
+      if (slice.trim()) {
+        chunks.push(slice);
+        budget -= slice.length;
+      }
+    });
+
+    const summary_text = chunks.join("\n---\n");
+    const signals = [...new Set(collected.flatMap((p) => p.signals))];
+    const emails = rerankEmails([...new Set(allEmails)], domain);
+
+    console.log(`[firecrawl] ${domain}: ${result.data.length} pages, ${emails.length} emails, ${signals.length} signals`);
+    return { title, description, summary_text, signals, emails };
+  } catch (err) {
+    console.warn(`[firecrawl] ${domain} failed: ${(err as Error).message} — falling back to HTTP`);
+    return null;
+  }
+}
+
 async function loadMockFixture(domain: string): Promise<ParsedSite | null> {
   const path = join("data/fixtures", `${domain}.txt`);
   try {
@@ -458,7 +541,18 @@ export async function enrichLead(
   }
 
   try {
-    const parsed = await fetchSiteLive(domain, cfg);
+    // Try Firecrawl first (JS rendering, anti-bot, clean markdown).
+    // Falls back to built-in HTTP crawler on any error or if not configured.
+    let parsed: ParsedSite | null = null;
+    let source: "firecrawl" | "live" = "live";
+
+    parsed = await fetchSiteFirecrawl(domain, cfg);
+    if (parsed) {
+      source = "firecrawl";
+    } else {
+      parsed = await fetchSiteLive(domain, cfg);
+    }
+
     const enrichment: Enrichment = {
       domain,
       title: parsed.title,
@@ -467,7 +561,7 @@ export async function enrichLead(
       signals: parsed.signals,
       emails: parsed.emails,
       ok: true,
-      source: "live",
+      source,
       fetched_at: now,
     };
     await saveCachedEnrichment(cfg.ENRICH_CACHE_DIR, enrichment);

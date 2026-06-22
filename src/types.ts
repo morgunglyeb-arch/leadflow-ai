@@ -27,7 +27,7 @@ export interface Enrichment {
   signals: string[];
   emails: string[]; // discovered on the site, best-ranked first
   ok: boolean;
-  source: "live" | "cache" | "mock" | "failed";
+  source: "live" | "firecrawl" | "cache" | "mock" | "failed";
   fetched_at: string;
   error?: string;
 }

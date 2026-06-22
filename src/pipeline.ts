@@ -11,8 +11,9 @@ import {
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
-import { verifyEmail } from "./verify-email.js";
+import { verifyEmail, hunterDomainSearch } from "./verify-email.js";
 import { isCorporateEntity, isEmailableEntity } from "./compliance.js";
+import { searchBusinessContext, searchBusinessNews } from "./web-search.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
 
 /** A row for a lead we dropped before pitching (no email / disqualified). */
@@ -75,7 +76,18 @@ export async function processLeads(
 
         let email = lead.email ?? enrichment.emails[0];
 
-        // Verify the email (free MX check, or ZeroBounce if configured) so we
+        // If scraping found no email, ask Hunter.io to find one (large business-
+        // email database — catches many sites where the address isn't on-page).
+        if (!email && !opts.mock && cfg.HUNTER_API_KEY) {
+          const hunterEmails = await hunterDomainSearch(cfg, lead.domain);
+          if (hunterEmails.length > 0) {
+            const merged = [...new Set([...hunterEmails, ...enrichment.emails])];
+            enrichment.emails = merged;
+            email = merged[0];
+          }
+        }
+
+        // Verify the email (Hunter SMTP-level → ZeroBounce → MX fallback) so we
         // don't waste a send / risk a bounce on a dead address. Walk the
         // candidate emails and keep the first that verifies.
         if (email && cfg.EMAIL_VERIFY && !opts.mock) {
@@ -109,7 +121,17 @@ export async function processLeads(
           // hand-researched personalization — only for qualified, live leads.
           const reviews =
             !opts.mock && lead.cid ? await fetchReviewDigest(lead.cid, cfg) : undefined;
-          const r = await personalize(cfg, lead, enrichment, opts.icpNote, reviews);
+
+          // Web search for recent news/events (awards, expansions, complaints) —
+          // context the site crawler misses. Quick, optional, never blocks.
+          let webContext: string | undefined;
+          if (!opts.mock) {
+            const ctx = await searchBusinessContext(lead.company, lead.domain);
+            const news = ctx ? "" : await searchBusinessNews(lead.company, lead.domain);
+            webContext = ctx || news || undefined;
+          }
+
+          const r = await personalize(cfg, lead, enrichment, opts.icpNote, reviews, webContext);
           personalized = r.personalized;
           provider = r.provider;
         }

@@ -44,15 +44,117 @@ async function zeroBounceCheck(cfg: AppConfig, email: string): Promise<VerifyRes
   }
 }
 
+// ---------------------------------------------------------------------------
+// Hunter.io — email verification (SMTP-level, much better than MX-only)
+// https://hunter.io/api-documentation#email-verifier
+// ---------------------------------------------------------------------------
+
+interface HunterVerifyData {
+  result?: string; // "deliverable" | "undeliverable" | "risky" | "unknown"
+  score?: number;  // 0–100
+}
+interface HunterVerifyResponse {
+  data?: HunterVerifyData;
+  errors?: Array<{ details?: string }>;
+}
+
+async function hunterVerify(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
+  if (!cfg.HUNTER_API_KEY) return null;
+  try {
+    const url =
+      `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}` +
+      `&api_key=${cfg.HUNTER_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      // 429 = rate limit, 402 = quota exhausted — fall through to MX
+      console.warn(`[hunter-verify] HTTP ${res.status} for ${email} — falling back`);
+      return null;
+    }
+    const json = (await res.json()) as HunterVerifyResponse;
+    const result = json.data?.result ?? "unknown";
+    const score = json.data?.score ?? 0;
+    if (result === "undeliverable") return { ok: false, reason: `hunter:${result}(${score})` };
+    // "deliverable" / "risky" / "unknown" — pass (conservative: don't drop risky)
+    return { ok: true, reason: `hunter:${result}(${score})` };
+  } catch (err) {
+    console.warn(`[hunter-verify] error for ${email}: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Hunter.io — domain search (find emails we missed by scraping)
+// https://hunter.io/api-documentation#domain-search
+// ---------------------------------------------------------------------------
+
+interface HunterDomainEmail {
+  value: string;
+  type?: string;       // "personal" | "generic"
+  confidence?: number; // 0–100
+}
+interface HunterDomainData {
+  emails?: HunterDomainEmail[];
+  pattern?: string;
+}
+interface HunterDomainResponse {
+  data?: HunterDomainData;
+  errors?: Array<{ details?: string }>;
+}
+
 /**
- * Verify an email before we trust it for sending. Syntax → ZeroBounce (if key)
- * → free MX-record fallback. Conservative: only fails on clear signals, so we
- * don't drop good leads.
+ * Ask Hunter.io for known email addresses on a domain. Returns up to 5
+ * emails sorted by confidence, with generic (info@, contact@) first since
+ * those are the most useful for cold outreach to SMBs.
+ */
+export async function hunterDomainSearch(
+  cfg: AppConfig,
+  domain: string,
+): Promise<string[]> {
+  if (!cfg.HUNTER_API_KEY) return [];
+  try {
+    const url =
+      `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}` +
+      `&limit=5&api_key=${cfg.HUNTER_API_KEY}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.warn(`[hunter-domain] HTTP ${res.status} for ${domain}`);
+      return [];
+    }
+    const json = (await res.json()) as HunterDomainResponse;
+    const emails = json.data?.emails ?? [];
+    // Sort: generic first (info@, contact@ — best for SMB cold email), then by
+    // confidence descending.
+    return emails
+      .sort((a, b) => {
+        if (a.type === "generic" && b.type !== "generic") return -1;
+        if (a.type !== "generic" && b.type === "generic") return 1;
+        return (b.confidence ?? 0) - (a.confidence ?? 0);
+      })
+      .map((e) => e.value.toLowerCase())
+      .slice(0, 5);
+  } catch (err) {
+    console.warn(`[hunter-domain] error for ${domain}: ${(err as Error).message}`);
+    return [];
+  }
+}
+
+/**
+ * Verify an email before we trust it for sending.
+ * Chain: syntax → Hunter.io verify (SMTP-level) → ZeroBounce → MX fallback.
+ * Conservative: only fails on clear signals, so we don't drop good leads.
  */
 export async function verifyEmail(cfg: AppConfig, email: string): Promise<VerifyResult> {
   if (!EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
+
+  // Hunter.io verify — SMTP-level check, much better than MX-only
+  const hunter = await hunterVerify(cfg, email);
+  if (hunter) return hunter;
+
+  // ZeroBounce — paid fallback
   const zb = await zeroBounceCheck(cfg, email);
   if (zb) return zb;
+
+  // Free MX-record fallback (only confirms domain exists, not the mailbox)
   const domain = email.split("@")[1] ?? "";
   const mx = await domainHasMx(domain);
   return { ok: mx, reason: mx ? "mx-ok" : "no-mx" };
