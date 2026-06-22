@@ -26,6 +26,8 @@ import {
 import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
+import { passingSendingDomains, domainOf } from "./deliverability.js";
+import { isCorporateEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
 import { emitReply } from "../ops-emit.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -51,7 +53,21 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
   advanceWarmup(state);
   const cap = warmupCap(state, cfg);
-  const inboxes = gmailInboxes(cfg);
+  let inboxes = gmailInboxes(cfg);
+  // Deliverability gate — drop inboxes whose sending domain fails SPF/DKIM/DMARC
+  // (warmup is pointless if auth is broken; sending from one burns reputation).
+  if (cfg.DELIVERABILITY_GATE && !flags.mock && inboxes.length > 0) {
+    const { passing, report } = await passingSendingDomains(inboxes.map((b) => b.email));
+    for (const r of report) {
+      if (!r.pass)
+        console.warn(
+          `[deliverability] ${r.domain} FAIL (spf:${r.spf} dkim:${r.dkim} dmarc:${r.dmarc}) — its inboxes will NOT send until fixed`,
+        );
+    }
+    inboxes = inboxes.filter((b) => passing.has(domainOf(b.email)));
+    if (inboxes.length === 0)
+      console.warn("[deliverability] no sending domain passed — no first-touches will be sent this run");
+  }
   const combinedCap = cap * inboxes.length;
   const live = cfg.SENDING_ENABLED && !flags.dryRun;
   console.log(
@@ -100,7 +116,17 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
   const remaining = new Map(inboxes.map((b) => [b.email, inboxRemaining(state, cfg, b.email)]));
   const totalRoom = [...remaining.values()].reduce((a, b) => a + b, 0);
-  const firstTouches = selectFirstTouches(state, cfg, totalRoom);
+  let firstTouches = selectFirstTouches(state, cfg, totalRoom);
+  // Compliance gate (PECR) — only auto-send to clearly-incorporated entities.
+  if (cfg.SEND_CORPORATE_ONLY) {
+    const before = firstTouches.length;
+    firstTouches = firstTouches.filter((l) => isCorporateEntity(l.company));
+    const held = before - firstTouches.length;
+    if (held > 0)
+      console.log(
+        `[compliance] ${held} first-touch(es) held — not clearly incorporated (PECR: sole traders need consent). Set SEND_CORPORATE_ONLY=false to override.`,
+      );
+  }
   console.log(
     `[campaign] first-touches to send: ${firstTouches.length} (room left today: ${totalRoom})`,
   );

@@ -183,6 +183,20 @@ const schema = z.object({
   SEND_MIN_SCORE: z.coerce.number().default(9),
   // Days to wait before each follow-up if no reply (comma-separated).
   FOLLOWUP_GAP_DAYS: z.string().default("3,7"),
+  // Deliverability GATE (deliverability-audit skill, enforced in code): before
+  // sending, verify each sending domain has SPF+DKIM+DMARC; inboxes on a failing
+  // domain are skipped. Disable only for testing.
+  DELIVERABILITY_GATE: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  // UK PECR compliance (compliance-guard skill): only cold-email clearly-
+  // incorporated entities (Ltd/LLP/PLC) — sole traders/individuals need consent.
+  // The rest are held (not sent). Set false to override.
+  SEND_CORPORATE_ONLY: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
   OPT_OUT_TEXT: z
     .string()
     .default("Not relevant? Reply 'no' and I won't follow up."),
