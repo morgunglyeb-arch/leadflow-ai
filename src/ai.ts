@@ -88,7 +88,7 @@ LANGUAGE (strict):
 - Write "brief" ONLY in ${digName}, for OUR operator (not the prospect): 2-4 plain sentences — what the business does, the EXACT problem we'll solve (no hedging), the EXACT thing we'll build and sell them, and why the fit score. If ${digName} is Russian, write it entirely in Russian Cyrillic.
 
 Fields:
-- opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. A short sender self-intro is added automatically before this, so do NOT introduce yourself or say "I'm…"; no greeting line.
+- opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. Do NOT introduce yourself or say "I'm…" (no self-intro paragraph is used); no greeting line.
 - icebreaker: one short, specific observation about their business.
 - subject: <= 60 chars, plain, curiosity or benefit, no emojis, no ALL CAPS.
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
@@ -442,6 +442,7 @@ const CRITIQUE_RUBRIC = `You are a strict reviewer of a cold email a colleague d
 3. TIGHT: first email <= ~80 words, plain owner-language, no banned jargon, problem stated as fact (no hedging). Tighten if needed.
 4. GROUNDED: nothing invented — only the provided context. Remove anything unverifiable.
 5. SUBJECT <=60 chars, not spammy.
+6. HUMAN (anti-AI-tell): it must read like a busy person typed it, not marketing. Strip em-dashes, rule-of-three lists, negative parallelism ("not X, but Y"), and tell-words ("delve", "elevate", "seamless", "robust", "streamline", "leverage", "in today's fast-paced"). Kill any templated opener ("I hope this finds you", "I came across your"). Prefer contractions and plain words.
 Keep the language rules. Return the full corrected object via the emit_personalization tool (all fields), even fields you didn't change.`;
 
 async function selfCritique(
