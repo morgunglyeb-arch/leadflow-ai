@@ -65,24 +65,26 @@ export async function emitEvent(
   await post({ type, payload });
 }
 
-export interface InboxHealthFields {
-  warmup_day: number;
-  cap_per_inbox: number;
-  inboxes: Array<{ email: string; sent_today: number }>;
-  queued: number;
-  sent_total: number;
-  replied: number;
-  bounced: number;
-  opted_out: number;
-  flagged: number;
+export interface InboxHealthRow {
+  domain: string;
+  inbox: string;
+  warmup_day?: number;
+  sent?: number; // lifetime sends from this inbox (rate denominator)
+  bounces?: number;
+  replies?: number;
 }
 
 /**
- * Per-run deliverability snapshot for the Opero Ops `inbox_health` analytics.
+ * Per-inbox deliverability stats for the Opero Ops `inbox_health` analytics.
+ * Posts ONE row per inbox to the dedicated `/api/ingest/inbox-health` route
+ * (which computes bounce/reply rates + status and alerts on critical). The
+ * payload shape + `type:"inbox-health"` must match that route's contract.
  * Best-effort; a no-op unless the hub env vars are set.
  */
-export async function emitInboxHealth(fields: InboxHealthFields): Promise<void> {
-  await post({ type: "inbox_health", ...fields });
+export async function emitInboxHealth(rows: InboxHealthRow[]): Promise<void> {
+  for (const row of rows) {
+    await postTo("/api/ingest/inbox-health", { type: "inbox-health", ...row });
+  }
 }
 
 export interface ReplyFields {

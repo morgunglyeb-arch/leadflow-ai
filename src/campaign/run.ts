@@ -206,22 +206,22 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   const all = Object.values(state.leads);
   const flagged = all.filter((l) => l.flagged).length;
 
-  // Deliverability snapshot → Opero Ops inbox_health (best-effort, owner-only).
-  const todayStr = new Date().toISOString().slice(0, 10);
-  await emitInboxHealth({
-    warmup_day: state.warmup_day,
-    cap_per_inbox: cap,
-    inboxes: inboxes.map((b) => {
-      const rec = state.inbox_sent?.[b.email];
-      return { email: b.email, sent_today: rec?.date === todayStr ? rec.count : 0 };
+  // Per-inbox deliverability snapshot → Opero Ops inbox_health (best-effort).
+  // One row per inbox, from leads pinned to it; lifetime sent/bounces/replies so
+  // the hub can compute meaningful bounce/reply rates + status.
+  await emitInboxHealth(
+    inboxes.map((b) => {
+      const pinned = all.filter((l) => l.inbox === b.email);
+      return {
+        domain: domainOf(b.email),
+        inbox: b.email,
+        warmup_day: state.warmup_day,
+        sent: pinned.filter((l) => l.step >= 1).length,
+        bounces: pinned.filter((l) => l.status === "bounced").length,
+        replies: pinned.filter((l) => l.status === "replied" || l.status === "opted_out").length,
+      };
     }),
-    queued: all.filter((l) => l.status === "queued").length,
-    sent_total: all.filter((l) => ["sent", "followup_1", "followup_2"].includes(l.status)).length,
-    replied: all.filter((l) => l.status === "replied").length,
-    bounced: all.filter((l) => l.status === "bounced").length,
-    opted_out: all.filter((l) => l.status === "opted_out").length,
-    flagged,
-  });
+  );
 
   const needAction = all.filter(
     (l) => l.status === "replied" && l.reply?.sentiment === "interested",
