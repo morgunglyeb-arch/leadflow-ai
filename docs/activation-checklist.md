@@ -41,6 +41,22 @@ needs the Mac awake. `crontab -e` and add:
 ```
 Verify a pass by hand first: `npm run campaign -- --warmup` (with WARMUP_ENABLED=true).
 
+## 1.5 ⚠️ BLOCKER before any send — Companies House API key (free)
+The PECR gate (`SEND_CORPORATE_ONLY=true`, on by default) only auto-sends to
+clearly-incorporated entities. Most clinics trade under a plain name ("Balham
+Physio", "Dentaprime UK") with no "Ltd" in it, so the name heuristic alone
+**holds nearly all of them** — your funnel silently empties even with great leads.
+
+The fix is the Companies House register lookup, which confirms the real legal
+entity behind the trading name. It's free:
+1. Register at `developer.company-information.service.gov.uk` → create an
+   application → get an API key.
+2. Add to LeadFlow `.env`: `COMPANIES_HOUSE_API_KEY=...`
+
+With it set, "Balham Physio" → resolves to its registered company → emailable.
+Without it, either accept that only "...Ltd"-named clinics send, or (riskier
+under PECR) set `SEND_CORPORATE_ONLY=false`. Recommended: get the key.
+
 ## 2. opero-ops Vercel env (energize the analytics)
 `vercel.com/morgunglyeb-5974s-projects/opero-ops/settings/environment-variables`
 - `SENDING_DOMAINS=heyopero.com` (add `,opero-team.com,withopero.com` when Active).
