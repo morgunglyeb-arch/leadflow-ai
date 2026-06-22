@@ -149,17 +149,18 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
   const briefBlock = row.brief ? `\n> **Разбор:** ${row.brief}\n` : "";
 
   const greet = greeting(row.company, seedFrom(row.domain));
-  const days = [3, 10];
+  // Mirror the real cadence + opt-out so the preview == what actually sends.
+  const days = cfg.FOLLOWUP_GAP_DAYS.split(",").map((s) => Number.parseInt(s.trim(), 10));
   const followups = [row.followup_1, row.followup_2]
     .map((f, i) => {
       if (!f) return "";
-      return `\n---\n\n**Follow-up ${i + 1}** _(send ~${days[i]} days later if no reply — same thread, subject "Re: ${draft.subject}")_\n\n${greet}\n\n${f}\n\n— ${cfg.SENDER_SIGNATURE}`;
+      return `\n---\n\n**Follow-up ${i + 1}** _(send ~${days[i]} days later if no reply — same thread, subject "Re: ${draft.subject}")_\n\n${greet}\n\n${f}\n\n${cfg.OPT_OUT_TEXT}\n\n— ${cfg.SENDER_SIGNATURE}`;
     })
     .join("\n");
 
   const altSubject = row.subject_b ? `**Subject (B-variant):** ${row.subject_b}\n\n` : "";
   const demoBlock = row.demo
-    ? `\n💬 **Example to show them** (drop into a reply or the call): _${row.demo}_\n`
+    ? `\n💬 **Example to show them** (drop into your reply): _${row.demo}_\n`
     : "";
 
   return `# Draft — ${row.company}
@@ -173,6 +174,8 @@ ${briefBlock}${demoBlock}
 **Subject:** ${draft.subject}
 
 ${altSubject}${draft.body}
+
+${cfg.OPT_OUT_TEXT}
 ${followups}
 `;
 }
