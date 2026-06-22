@@ -22,7 +22,7 @@ export interface EmailSequence {
  * signature). Used by the autonomous campaign sender.
  */
 export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence {
-  const greet = greeting(row.company);
+  const greet = greeting(row.company, seedFrom(row.domain));
   const sig = `— ${cfg.SENDER_SIGNATURE}`;
   const initialDraft = assembleDraft(row, cfg);
   // append a one-line opt-out to the first touch (compliance + deliverability)
@@ -38,17 +38,40 @@ export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence 
 }
 
 /**
+ * Stable per-lead seed from the domain. The same lead always varies the same
+ * way, so a thread's follow-ups keep ONE consistent greeting, while different
+ * leads (and so an inbox's stream) don't all share a byte-identical skeleton.
+ */
+function seedFrom(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+/**
  * Greeting addresses the BUSINESS, not a person — the recipient often isn't the
  * named contact, so a wrong first name hurts. We use a tidy short company name.
+ * The template is varied deterministically per lead (`seed`) so the same phrase
+ * doesn't prefix every single send — a templated-mail / fingerprint tell that
+ * hurts deliverability when one inbox streams identical skeletons.
  */
-function greeting(company: string): string {
+function greeting(company: string, seed = 0): string {
   const short = company
     .split(/[-–—|,:]/)[0]
     ?.replace(/\b(ltd|limited|llp|inc|llc)\b\.?/gi, "")
     .replace(/\s{2,}/g, " ")
     .trim();
-  if (!short || short.length < 2) return "Hello,";
-  return `Hi ${short} team,`;
+  if (!short || short.length < 2) {
+    const bare = ["Hello,", "Hi there,", "Hi,"];
+    return bare[seed % bare.length]!;
+  }
+  const named = [
+    `Hi ${short} team,`,
+    `Hello ${short} team,`,
+    `Hi there at ${short},`,
+    `Hi ${short},`,
+  ];
+  return named[seed % named.length]!;
 }
 
 function capitalize(s: string): string {
@@ -68,7 +91,7 @@ function stripTrailingPunct(s: string): string {
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const subject = row.subject ?? `quick idea for ${row.company}`;
   const lines: string[] = [];
-  lines.push(greeting(row.company));
+  lines.push(greeting(row.company, seedFrom(row.domain)));
   lines.push("");
 
   // First touch = ONE idea, led by the most specific personalization we have.
@@ -125,7 +148,7 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
 
   const briefBlock = row.brief ? `\n> **Разбор:** ${row.brief}\n` : "";
 
-  const greet = greeting(row.company);
+  const greet = greeting(row.company, seedFrom(row.domain));
   const days = [3, 10];
   const followups = [row.followup_1, row.followup_2]
     .map((f, i) => {

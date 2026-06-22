@@ -234,15 +234,19 @@ const schema = z.object({
     .default("false")
     .transform((s) => s.toLowerCase() === "true"),
   // Peer-warmup volume per inbox: starts at WARMUP_DAILY, ramps linearly to
-  // WARMUP_DAILY_MAX over WARMUP_RAMP_DAYS (gentle, human-looking).
+  // WARMUP_DAILY_MAX over WARMUP_RAMP_DAYS (gentle, human-looking). Plateau kept
+  // at 8 (not 12) — the GTM safe protocol holds steady warmup traffic at 5–8/day
+  // "forever"; higher volume of bot-to-bot mail starts to look synthetic.
   WARMUP_DAILY: z.coerce.number().int().positive().default(2),
-  WARMUP_DAILY_MAX: z.coerce.number().int().positive().default(12),
+  WARMUP_DAILY_MAX: z.coerce.number().int().positive().default(8),
   WARMUP_RAMP_DAYS: z.coerce.number().int().positive().default(21),
-  // Fraction of received warmup mail an inbox replies to (two-way = real signal).
-  WARMUP_REPLY_RATE: z.coerce.number().min(0).max(1).default(0.4),
+  // Fraction of received warmup mail an inbox replies to. 0.33 ≈ a natural human
+  // reply rate; much higher reads as fake (GTM safe protocol: 30–35%).
+  WARMUP_REPLY_RATE: z.coerce.number().min(0).max(1).default(0.33),
   // While warmup is ON, hold COLD first-touches until warmup has run this many
   // days (gives every inbox a sending/receiving history before strangers see it).
-  WARMUP_COLD_AFTER_DAYS: z.coerce.number().int().min(0).default(7),
+  // 14 = cold sending only from week 3, per the GTM safe warmup protocol.
+  WARMUP_COLD_AFTER_DAYS: z.coerce.number().int().min(0).default(14),
   WARMUP_STATE_PATH: z.string().default("data/campaign/warmup.json"),
 });
 
