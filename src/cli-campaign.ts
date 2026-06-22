@@ -2,17 +2,21 @@ import { readFile } from "node:fs/promises";
 import { loadConfig } from "./config.js";
 import { authorizeInteractive, gmailInboxes } from "./campaign/gmail.js";
 import { runCampaign, type CampaignFlags } from "./campaign/run.js";
+import { runWarmup } from "./campaign/warmup.js";
 import { loadState } from "./campaign/store.js";
 import { emitError } from "./ops-emit.js";
 
-function parseFlags(argv: string[]): { mode: "run" | "auth" | "status"; flags: CampaignFlags } {
+type Mode = "run" | "auth" | "status" | "warmup";
+
+function parseFlags(argv: string[]): { mode: Mode; flags: CampaignFlags } {
   const flags: CampaignFlags = { mock: false, dryRun: false, topUp: false };
-  let mode: "run" | "auth" | "status" = "run";
+  let mode: Mode = "run";
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a) continue;
     if (a === "--auth") mode = "auth";
     else if (a === "--status") mode = "status";
+    else if (a === "--warmup") mode = "warmup";
     else if (a === "--mock") flags.mock = true;
     else if (a === "--dry-run" || a === "--dry") flags.dryRun = true;
     else if (a === "--top-up") flags.topUp = true;
@@ -34,6 +38,7 @@ Usage:
   npm run campaign -- --top-up --dry  Discover+enqueue, show what it WOULD send
   npm run campaign -- --top-up        Discover, send (needs SENDING_ENABLED=true + auth)
   npm run campaign -- --status        Show campaign state summary
+  npm run campaign -- --warmup        Run one peer-warmup pass (needs WARMUP_ENABLED=true + re-auth)
 
 The agent decides HOW MANY to send: today's warmup cap × leads above the
 quality bar (SEND_MIN_SCORE). It polls replies first (stops sequences on a
@@ -88,7 +93,13 @@ const isMain = import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const { mode, flags } = parseFlags(process.argv.slice(2));
   const run =
-    mode === "auth" ? doAuth() : mode === "status" ? doStatus() : runCampaign(loadConfig(), flags);
+    mode === "auth"
+      ? doAuth()
+      : mode === "status"
+        ? doStatus()
+        : mode === "warmup"
+          ? runWarmup(loadConfig(), { mock: flags.mock, dryRun: flags.dryRun })
+          : runCampaign(loadConfig(), flags);
   run.catch(async (err) => {
     console.error("[campaign] fatal:", err);
     await emitError(err);

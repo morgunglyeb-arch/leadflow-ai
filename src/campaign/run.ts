@@ -10,12 +10,14 @@ import {
 } from "./store.js";
 import {
   advanceWarmup,
+  coldRampReady,
   inboxRemaining,
   recordInboxSend,
   selectDueFollowups,
   selectFirstTouches,
   warmupCap,
 } from "./policy.js";
+import { warmupDay } from "./warmup.js";
 import {
   getThreadReply,
   sendEmail,
@@ -27,9 +29,11 @@ import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { passingSendingDomains, domainOf } from "./deliverability.js";
-import { isCorporateEntity } from "../compliance.js";
+import { isEmailableEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
-import { emitReply } from "../ops-emit.js";
+import { verifyEmail } from "../verify-email.js";
+import { spamLint } from "../spamlint.js";
+import { emitReply, emitEvent, emitInboxHealth } from "../ops-emit.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -116,11 +120,31 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
   const remaining = new Map(inboxes.map((b) => [b.email, inboxRemaining(state, cfg, b.email)]));
   const totalRoom = [...remaining.values()].reduce((a, b) => a + b, 0);
-  let firstTouches = selectFirstTouches(state, cfg, totalRoom);
+  // Peer-warmup cold-ramp gate — hold first-touches until warmup has matured
+  // (follow-ups to already-contacted leads continue regardless).
+  let coldAllowed = true;
+  if (cfg.WARMUP_ENABLED && !flags.mock) {
+    const wday = await warmupDay(cfg);
+    coldAllowed = coldRampReady(cfg, wday);
+    if (!coldAllowed)
+      console.log(
+        `[warmup] cold first-touches paused — warmup day ${wday} < ${cfg.WARMUP_COLD_AFTER_DAYS}; follow-ups continue.`,
+      );
+  }
+  let firstTouches = coldAllowed ? selectFirstTouches(state, cfg, totalRoom) : [];
   // Compliance gate (PECR) — only auto-send to clearly-incorporated entities.
+  // Prefer the flag resolved at enqueue (Companies House / heuristic); resolve +
+  // cache it on the lead for any older queued lead that predates the flag.
   if (cfg.SEND_CORPORATE_ONLY) {
     const before = firstTouches.length;
-    firstTouches = firstTouches.filter((l) => isCorporateEntity(l.company));
+    const kept: CampaignLead[] = [];
+    for (const l of firstTouches) {
+      if (l.is_ltd === undefined && !flags.mock) {
+        l.is_ltd = await isEmailableEntity(cfg, l.company);
+      }
+      if (l.is_ltd) kept.push(l);
+    }
+    firstTouches = kept;
     const held = before - firstTouches.length;
     if (held > 0)
       console.log(
@@ -166,8 +190,27 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   await writeRepliesToAction(cfg, state);
 
   await saveState(cfg.CAMPAIGN_STATE_PATH, state);
-  const flagged = Object.values(state.leads).filter((l) => l.flagged).length;
-  const needAction = Object.values(state.leads).filter(
+  const all = Object.values(state.leads);
+  const flagged = all.filter((l) => l.flagged).length;
+
+  // Deliverability snapshot → Opero Ops inbox_health (best-effort, owner-only).
+  const todayStr = new Date().toISOString().slice(0, 10);
+  await emitInboxHealth({
+    warmup_day: state.warmup_day,
+    cap_per_inbox: cap,
+    inboxes: inboxes.map((b) => {
+      const rec = state.inbox_sent?.[b.email];
+      return { email: b.email, sent_today: rec?.date === todayStr ? rec.count : 0 };
+    }),
+    queued: all.filter((l) => l.status === "queued").length,
+    sent_total: all.filter((l) => ["sent", "followup_1", "followup_2"].includes(l.status)).length,
+    replied: all.filter((l) => l.status === "replied").length,
+    bounced: all.filter((l) => l.status === "bounced").length,
+    opted_out: all.filter((l) => l.status === "opted_out").length,
+    flagged,
+  });
+
+  const needAction = all.filter(
     (l) => l.status === "replied" && l.reply?.sentiment === "interested",
   ).length;
   console.log(
@@ -281,6 +324,41 @@ async function sendStep(
 ): Promise<boolean> {
   const body = lead.emails[which];
   if (!body) return false;
+
+  // Spam gate (spam-doctor skill, enforced in code): a risky body hurts inbox
+  // placement for the whole sending domain — never auto-send it. Flag the lead
+  // for manual review and notify the operator instead.
+  const lint = spamLint(body);
+  if (lint.risky) {
+    lead.flagged = true;
+    logEvent(lead, "spam_flag", `${which}: ${lint.hits.join(", ")}`);
+    console.warn(
+      `[campaign] spam gate held ${which} → ${lead.company}: ${lint.hits.join(", ")} (flagged for review)`,
+    );
+    await emitEvent("spam_flag", {
+      company: lead.company,
+      email: lead.email,
+      step: which,
+      hits: lint.hits,
+      score: lint.score,
+    });
+    return false;
+  }
+
+  // C1: re-verify the address right before the FIRST touch — it may have gone
+  // dead since enrichment, and a hard bounce on a warming inbox is expensive.
+  // Held (flagged) not suppressed: a transient DNS/MX blip shouldn't burn a lead.
+  if (which === "initial" && live && cfg.EMAIL_VERIFY) {
+    const v = await verifyEmail(cfg, lead.email);
+    if (!v.ok) {
+      lead.flagged = true;
+      logEvent(lead, "verify_fail", v.reason);
+      console.warn(
+        `[campaign] held first-touch → ${lead.company} <${lead.email}> — failed re-verify (${v.reason})`,
+      );
+      return false;
+    }
+  }
 
   // A/B: on the first touch, randomly pick subject A or B and record it so the
   // learning loop can compare reply rates by variant.

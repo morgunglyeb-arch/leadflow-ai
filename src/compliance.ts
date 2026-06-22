@@ -11,6 +11,9 @@
  * certain), deliberately conservative: unknown → treat as NON-corporate (hold).
  */
 
+import type { AppConfig } from "./config.js";
+import { isRegisteredCompany } from "./companies-house.js";
+
 // Ltd / Limited / LLP / PLC / Inc / Welsh "Cyf"(yngedig). Word-boundary, case-insensitive.
 const CORPORATE_RE =
   /\b(ltd|ltd\.|limited|llp|plc|l\.?l\.?p|inc|inc\.|incorporated|cyf|cyfyngedig)\b/i;
@@ -19,4 +22,23 @@ const CORPORATE_RE =
 export function isCorporateEntity(company: string | undefined | null): boolean {
   if (!company) return false;
   return CORPORATE_RE.test(company);
+}
+
+/**
+ * The full emailability decision: prefer the official Companies House register
+ * (when COMPANIES_HOUSE_API_KEY is set), fall back to the name heuristic.
+ *
+ * - CH says ACTIVE company found            → emailable (true), even with no "Ltd" in the name.
+ * - CH searched, NO active match + REQUIRE_LTD → hold (false): looks like a sole trader/individual.
+ * - CH can't tell (no key / error / mock)   → fall back to the name heuristic.
+ */
+export async function isEmailableEntity(
+  cfg: AppConfig,
+  company: string | undefined | null,
+): Promise<boolean> {
+  if (!company) return false;
+  const ch = await isRegisteredCompany(cfg, company);
+  if (ch === true) return true;
+  if (ch === false && cfg.REQUIRE_LTD) return false;
+  return isCorporateEntity(company);
 }

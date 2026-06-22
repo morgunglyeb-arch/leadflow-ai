@@ -27,7 +27,7 @@ export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence 
   const initialDraft = assembleDraft(row, cfg);
   // append a one-line opt-out to the first touch (compliance + deliverability)
   const initial = `${initialDraft.body}\n\n${cfg.OPT_OUT_TEXT}`;
-  const fu = (text: string): string => `${greet}\n\n${text}\n\n${sig}`;
+  const fu = (text: string): string => `${greet}\n\n${text}\n\n${cfg.OPT_OUT_TEXT}\n\n${sig}`;
   return {
     ...(row.email ? { to: row.email } : {}),
     subject: initialDraft.subject,
@@ -126,7 +126,7 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
   const briefBlock = row.brief ? `\n> **Разбор:** ${row.brief}\n` : "";
 
   const greet = greeting(row.company);
-  const days = [3, 7];
+  const days = [3, 10];
   const followups = [row.followup_1, row.followup_2]
     .map((f, i) => {
       if (!f) return "";

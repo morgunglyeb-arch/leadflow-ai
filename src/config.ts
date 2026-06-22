@@ -141,7 +141,7 @@ const schema = z.object({
   CALL_TO_ACTION: z
     .string()
     .default(
-      "If any of these would be useful, just reply and I'll send a short example showing how it'd work for you — no call needed.",
+      "If that'd be useful, just reply and I'll send a short example of how it'd work for you. No call needed.",
     ),
 
   RESEND_API_KEY: z.string().optional(),
@@ -176,13 +176,13 @@ const schema = z.object({
   SEND_DAILY_CAP: z.coerce.number().int().positive().default(25),
   // Gentle warmup for a fresh inbox: day1=5, +2/day (the safe step — +3 ramps
   // too fast and costs ~+23% spam placement in month 1). ~3-4wk to full volume.
-  SEND_WARMUP_START: z.coerce.number().int().positive().default(5),
+  SEND_WARMUP_START: z.coerce.number().int().positive().default(10),
   SEND_WARMUP_STEP: z.coerce.number().int().positive().default(2),
   // Only send leads scoring at/above this ROI/quality bar (the rest queue for
   // your manual review). Higher = fewer, stronger sends.
   SEND_MIN_SCORE: z.coerce.number().default(9),
   // Days to wait before each follow-up if no reply (comma-separated).
-  FOLLOWUP_GAP_DAYS: z.string().default("3,7"),
+  FOLLOWUP_GAP_DAYS: z.string().default("3,10"),
   // Deliverability GATE (deliverability-audit skill, enforced in code): before
   // sending, verify each sending domain has SPF+DKIM+DMARC; inboxes on a failing
   // domain are skipped. Disable only for testing.
@@ -194,6 +194,14 @@ const schema = z.object({
   // incorporated entities (Ltd/LLP/PLC) — sole traders/individuals need consent.
   // The rest are held (not sent). Set false to override.
   SEND_CORPORATE_ONLY: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  // Strengthens SEND_CORPORATE_ONLY with the Companies House register (needs
+  // COMPANIES_HOUSE_API_KEY). When true, a name that the register searches but
+  // finds NO active company for is held as a likely sole trader/individual.
+  // When false (or no API key), we fall back to the trading-name heuristic only.
+  REQUIRE_LTD: z
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
@@ -212,6 +220,25 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
+
+  // --- Peer warmup (free, in-house — our own inboxes email each other) ------
+  // Master switch. OFF by default: warmup needs the gmail.modify scope, so all
+  // inboxes must be RE-authorized (npm run campaign -- --auth) before enabling.
+  WARMUP_ENABLED: z
+    .string()
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
+  // Peer-warmup volume per inbox: starts at WARMUP_DAILY, ramps linearly to
+  // WARMUP_DAILY_MAX over WARMUP_RAMP_DAYS (gentle, human-looking).
+  WARMUP_DAILY: z.coerce.number().int().positive().default(2),
+  WARMUP_DAILY_MAX: z.coerce.number().int().positive().default(12),
+  WARMUP_RAMP_DAYS: z.coerce.number().int().positive().default(21),
+  // Fraction of received warmup mail an inbox replies to (two-way = real signal).
+  WARMUP_REPLY_RATE: z.coerce.number().min(0).max(1).default(0.4),
+  // While warmup is ON, hold COLD first-touches until warmup has run this many
+  // days (gives every inbox a sending/receiving history before strangers see it).
+  WARMUP_COLD_AFTER_DAYS: z.coerce.number().int().min(0).default(7),
+  WARMUP_STATE_PATH: z.string().default("data/campaign/warmup.json"),
 });
 
 export type AppConfig = z.infer<typeof schema>;

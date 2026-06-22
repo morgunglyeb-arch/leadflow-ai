@@ -52,8 +52,8 @@ WHO WE TARGET (ICP — this matters):
 CHANNEL REALISM (very important — pitch only what pays off for THEM):
 - A social link (instagram, telegram, facebook in the footer) usually means a MARKETING presence, NOT that customers book or enquire there. Do NOT assume people book via Instagram/Telegram. Only pitch automating a social channel if there's REAL evidence customers use it to enquire/book — e.g. "DM us to book", a WhatsApp click-to-chat button, or an industry where DM-booking is genuinely normal (beauty, aesthetics, barbers, salons, nails, tattoo, restaurants).
 - Match the pitch to how customers in THAT industry actually contact the business:
-  • Dental / medical / physio / opticians / vets / legal / accountants / trades (plumbers, electricians, roofers, HVAC): customers book by PHONE and via the website (form or online booking). The money channel is the phone. The highest-value, realistic gap is almost always missed / after-hours phone calls and slow replies to web enquiries → pitch missed-call text-back and instant web-enquiry replies, NOT an Instagram booking bot.
-  • Beauty / aesthetics / salons / barbers / restaurants: Instagram & WhatsApp DMs ARE often a real booking channel → a social-DM assistant can fit.
+  • Dental / medical / physio / chiro / osteo / private GP / opticians / vets / fertility / dental hygienist / legal / accountants / trades (plumbers, electricians, roofers, HVAC): customers book by PHONE and via the website (form or online booking). The money channel is the phone. This holds EVEN IF the clinic has an active Instagram/Facebook — a social presence is marketing, not the booking channel; do NOT pivot a clinic to an Instagram/DM angle. The highest-value, realistic gap is almost always missed / after-hours phone calls and slow replies to web enquiries → pitch missed-call text-back and instant web-enquiry replies, NOT an Instagram booking bot.
+  • Beauty / aesthetics / med spas / salons / barbers / restaurants: Instagram & WhatsApp DMs ARE often a real booking channel → a social-DM assistant can fit. (Note: these are NOT our cold-email targets — we reach them as an inbound/site service. If you are drafting a cold email, the lead is a clinic/trade/professional from the line above; default to the phone/web gap.)
   • Ecommerce: website chat, email, returns/order questions.
 - The problem must be one that costs them REAL money and where the fix clearly pays for itself. If the only "gap" is a channel their customers don't actually use to book, that's a weak pitch — pick the phone/web enquiry gap instead, or lower the fit_score.
 - whatsapp signal = a real click-to-chat channel (people do message businesses on WhatsApp). instagram/telegram signals alone = treat as marketing unless evidence says otherwise.
@@ -597,6 +597,13 @@ Sound like a real person typing a quick reply on their phone — natural and a l
 Keep it short (<=80 words), warm, plain language — no jargon ("workflow/API/agentic/leverage/solution"). Answer their actual question honestly (e.g. a rough price range, how it works); if you don't know, say you'll send a quick example or the details.
 
 NEVER propose a call, meeting or "quick chat" — the sender does not take live calls. The only ask is a reply, or offering to SEND a short recorded example/video (async). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat".
+
+COMMON OBJECTIONS — answer the one they actually raised, briefly and without pushiness:
+- "How much / what's the price?": give an honest ballpark in plain terms (it depends on what they want, most setups are a small one-off to get going plus a low monthly to keep it running), and offer to send a short example tailored to them so the price has context. Don't quote a hard figure you can't stand behind.
+- "We already have a system / receptionist / booking tool": acknowledge it genuinely, don't argue. Point at the gap that tool usually leaves (e.g. after-hours and missed calls still go unanswered; web enquiries still wait) and offer to show a quick example of just that piece — it sits alongside what they have, doesn't replace it.
+- "Send me more info / not now / busy": keep it easy — say you'll send a short example they can look at whenever, no pressure, and leave the door open. Never guilt-trip or chase.
+- "Not interested / remove me": one short, gracious line confirming you won't follow up. Nothing else.
+Pick the single best fit; never dump all four.
 
 Write in ${lang}. Output ONLY the reply body — no subject, no signature. Greet by the real name or skip the greeting; never use bracketed placeholders like [name].`;
   const user = [

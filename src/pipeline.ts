@@ -12,6 +12,7 @@ import {
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
 import { verifyEmail } from "./verify-email.js";
+import { isCorporateEntity, isEmailableEntity } from "./compliance.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
 
 /** A row for a lead we dropped before pitching (no email / disqualified). */
@@ -113,9 +114,16 @@ export async function processLeads(
           provider = r.provider;
         }
 
+        // PECR emailability — resolve once here (Companies House when keyed, else
+        // the name heuristic; cached) so the campaign send gate stays cheap.
+        const isLtd = opts.mock
+          ? isCorporateEntity(lead.company)
+          : await isEmailableEntity(cfg, lead.company);
+
         const row: OutputRow = {
           company: lead.company,
           domain: lead.domain,
+          is_ltd: isLtd,
           discovery_source: lead.discovery_source,
           ...(lead.discovery_query !== undefined ? { discovery_query: lead.discovery_query } : {}),
           ...(lead.name !== undefined ? { name: lead.name } : {}),

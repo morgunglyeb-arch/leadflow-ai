@@ -36,6 +36,7 @@ export interface CampaignLead {
   variant?: "A" | "B"; // which subject was actually sent (for learning)
   score: number; // ROI/quality score at enqueue time
   flagged?: boolean; // spam-risk → held back from auto-send for manual review
+  is_ltd?: boolean; // PECR: clearly-incorporated entity (heuristic / Companies House)
   history: Array<{ at: string; event: string; detail?: string }>;
   reply?: ReplyRecord;
   // the generated copy, frozen at enqueue so sending is deterministic
@@ -107,6 +108,7 @@ export function enqueueLeads(
       step: 0,
       score: scoreOf(r),
       ...(spam.risky ? { flagged: true } : {}),
+      ...(r.is_ltd !== undefined ? { is_ltd: r.is_ltd } : {}),
       ...(seq.subject ? { subject: seq.subject } : {}),
       ...(r.subject_b ? { subjectB: r.subject_b } : {}),
       history: [

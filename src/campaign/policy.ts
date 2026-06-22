@@ -78,6 +78,17 @@ export function selectDueFollowups(state: CampaignState, cfg: AppConfig): Campai
   return due;
 }
 
+/**
+ * Cold-send readiness gate. When peer-warmup is ON, hold COLD first-touches
+ * until warmup has run `WARMUP_COLD_AFTER_DAYS` days, so every inbox has a real
+ * sending/receiving history before a stranger ever sees it. When warmup is OFF
+ * this is a no-op (returns true) — the cold path is unchanged.
+ */
+export function coldRampReady(cfg: AppConfig, warmupDay: number): boolean {
+  if (!cfg.WARMUP_ENABLED) return true;
+  return warmupDay >= cfg.WARMUP_COLD_AFTER_DAYS;
+}
+
 /** Advance the warmup day at most once per calendar day. */
 export function advanceWarmup(state: CampaignState): void {
   const today = new Date().toISOString().slice(0, 10);

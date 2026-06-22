@@ -65,6 +65,26 @@ export async function emitEvent(
   await post({ type, payload });
 }
 
+export interface InboxHealthFields {
+  warmup_day: number;
+  cap_per_inbox: number;
+  inboxes: Array<{ email: string; sent_today: number }>;
+  queued: number;
+  sent_total: number;
+  replied: number;
+  bounced: number;
+  opted_out: number;
+  flagged: number;
+}
+
+/**
+ * Per-run deliverability snapshot for the Opero Ops `inbox_health` analytics.
+ * Best-effort; a no-op unless the hub env vars are set.
+ */
+export async function emitInboxHealth(fields: InboxHealthFields): Promise<void> {
+  await post({ type: "inbox_health", ...fields });
+}
+
 export interface ReplyFields {
   company: string;
   sentiment: string;

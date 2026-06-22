@@ -8,9 +8,12 @@ type OAuth2Client = InstanceType<typeof google.auth.OAuth2>;
 
 const LOOPBACK_PORT = 42813;
 
+// gmail.modify lets peer-warmup rescue messages from Spam and mark them
+// read/important (it supersedes readonly). Existing send+readonly tokens keep
+// working for the cold path; re-auth is only needed to enable warmup.
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.send",
-  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.modify",
 ];
 
 /** One sending mailbox: its address and the OAuth token file backing it. */

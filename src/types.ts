@@ -76,4 +76,7 @@ export type OutputRow = DiscoveredLead & {
   market_price?: string;
   // Plain-words list of automations the business ALREADY has (don't re-pitch).
   already_automated?: string;
+  // PECR emailability: true = clearly an incorporated entity (name heuristic or
+  // Companies House register). Undefined = not resolved (e.g. mock/skipped).
+  is_ltd?: boolean;
 } & Partial<Personalized>;
