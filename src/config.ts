@@ -124,18 +124,19 @@ const schema = z.object({
     .transform((s) => s.toLowerCase() === "true"),
 
   // Sender identity used when assembling draft emails
-  SENDER_NAME: z.string().default("Glyeb"),
-  // One-line self-intro that positions you (prepended before the pitch so the
-  // prospect knows who's writing). Keep it short and credible — no fake claims.
+  // Brand-only identity (no personal name shown to prospects — public brand is
+  // "Opero"). Used as the sign-off/sender the reply-assistant references.
+  SENDER_NAME: z.string().default("Opero"),
+  // One-line self-intro (operator-digest only now — not prepended to the cold
+  // email body). Studio "we" voice, brand-only, no personal name.
   SENDER_INTRO: z
     .string()
     .default(
-      "I'm Glyeb, a business-automation specialist — I help local businesses stop losing customers to slow, manual admin.",
+      "We're Opero — we help local businesses stop losing customers to slow, manual admin.",
     ),
-  // Shown to the prospect. NO GitHub link (off-brand + a trust/spam risk for a
-  // clinic owner). Set the full branded signature incl. the live domain via
-  // .env once the brand domain is connected, e.g. "Glyeb, Opero · opero.studio".
-  SENDER_SIGNATURE: z.string().default("Glyeb, Opero"),
+  // Shown to the prospect. Brand-only + the live brand domain (text, builds
+  // trust without a clickable CTA link in the body). NO personal name, no GitHub.
+  SENDER_SIGNATURE: z.string().default("Opero · opero-studio.com"),
   // No calls (you don't do live English calls). Reply-based, async CTA.
   CALL_TO_ACTION: z
     .string()

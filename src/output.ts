@@ -175,7 +175,7 @@ export async function sendTestEmail(
     "",
     row.icebreaker ? row.icebreaker : "",
     "",
-    "— Glyeb",
+    `— ${cfg.SENDER_SIGNATURE}`,
   ].filter((l) => l !== undefined);
   const text = lines.join("\n");
   try {
