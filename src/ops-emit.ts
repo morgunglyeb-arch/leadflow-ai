@@ -111,6 +111,7 @@ export interface DraftPayload {
   reason?: string; // why this business was chosen (plain language)
   subject?: string;
   message: string;
+  message_ru?: string; // faithful Russian translation, for the owner's review
   score?: number;
   dedup_key?: string;
 }

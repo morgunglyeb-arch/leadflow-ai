@@ -184,6 +184,7 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
         ...(reason ? { reason } : {}),
         subject,
         message: body,
+        ...(row.email_translation ? { message_ru: row.email_translation } : {}),
         score: Math.round(roiScore(row)),
         dedup_key: (row.domain || row.email || row.company).toLowerCase(),
       });
