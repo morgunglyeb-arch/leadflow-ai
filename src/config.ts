@@ -12,6 +12,9 @@ const schema = z.object({
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   GROQ_API_KEY: z.string().optional(),
+  // Multiple free Groq keys (comma/space separated) to ROTATE across on 429 —
+  // same trick as OPENAI_API_KEYS. Falls back to the single GROQ_API_KEY.
+  GROQ_API_KEYS: z.string().optional(),
   GROQ_MODEL: z.string().default("openai/gpt-oss-120b"),
 
   // Generic OpenAI-compatible provider (used when LLM_PROVIDER=openai)
@@ -317,8 +320,8 @@ export function assertLLMReady(cfg: AppConfig): void {
   if (cfg.LLM_PROVIDER === "anthropic" && !cfg.ANTHROPIC_API_KEY) {
     throw new Error("LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set.");
   }
-  if (cfg.LLM_PROVIDER === "groq" && !cfg.GROQ_API_KEY) {
-    throw new Error("LLM_PROVIDER=groq but GROQ_API_KEY is not set.");
+  if (cfg.LLM_PROVIDER === "groq" && !cfg.GROQ_API_KEY && !cfg.GROQ_API_KEYS) {
+    throw new Error("LLM_PROVIDER=groq but neither GROQ_API_KEYS nor GROQ_API_KEY is set.");
   }
   if (cfg.LLM_PROVIDER === "openai" && !cfg.OPENAI_API_KEY) {
     throw new Error("LLM_PROVIDER=openai but OPENAI_API_KEY is not set.");

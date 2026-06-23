@@ -483,10 +483,23 @@ function openaiKeys(cfg: AppConfig): (string | undefined)[] {
   return [cfg.OPENAI_API_KEY];
 }
 
+/**
+ * Keys for Groq. Prefers GROQ_API_KEYS (comma/space separated) for rotation on
+ * 429; falls back to the single GROQ_API_KEY. Lets us pool several free keys.
+ */
+function groqKeys(cfg: AppConfig): (string | undefined)[] {
+  const multi = (cfg.GROQ_API_KEYS ?? "")
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (multi.length) return multi;
+  return [cfg.GROQ_API_KEY];
+}
+
 function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
   if (cfg.LLM_PROVIDER === "groq") {
     return callOpenAIRaw(cfg, system, `${userContent}\n\n${JSON_KEYS_HINT}`, {
-      apiKeys: [cfg.GROQ_API_KEY],
+      apiKeys: groqKeys(cfg),
       baseURL: "https://api.groq.com/openai/v1",
       model: cfg.GROQ_MODEL,
     });
@@ -557,7 +570,7 @@ export async function personalize(
     let personalized =
       cfg.LLM_PROVIDER === "groq"
         ? await callOpenAICompatible(cfg, input, {
-            apiKeys: [cfg.GROQ_API_KEY],
+            apiKeys: groqKeys(cfg),
             baseURL: "https://api.groq.com/openai/v1",
             model: cfg.GROQ_MODEL,
           })
@@ -608,7 +621,7 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
   const isGroq = cfg.LLM_PROVIDER === "groq";
   const baseURL = isGroq ? "https://api.groq.com/openai/v1" : cfg.OPENAI_BASE_URL;
   const model = isGroq ? cfg.GROQ_MODEL : cfg.OPENAI_MODEL;
-  const keys = isGroq ? [cfg.GROQ_API_KEY] : openaiKeys(cfg);
+  const keys = isGroq ? groqKeys(cfg) : openaiKeys(cfg);
   const messages = [
     { role: "system" as const, content: system },
     { role: "user" as const, content: user },
