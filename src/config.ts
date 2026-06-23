@@ -143,6 +143,21 @@ const schema = z.object({
     .default(
       "If that'd be useful, just reply and I'll send a short example of how it'd work for you. No call needed.",
     ),
+  // One-line "who we are" so every email plainly says what we do. Sits after the
+  // personalized hook (never first — the hook earns the read). Plain, no jargon.
+  STUDIO_INTRO: z
+    .string()
+    .default(
+      "We're Opero, a studio that sets up done-for-you automations for small businesses, so the repetitive admin runs itself.",
+    ),
+  // Heading for the short "here's what we could set up" menu of services.
+  SERVICES_INTRO: z.string().default("A few things we could set up for you:"),
+  // Show the services menu in the first email (owner wants prospects to see the
+  // range up front). false = lean single-pitch email (menu moves to follow-ups).
+  SHOW_SERVICES_MENU: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
 
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
@@ -216,9 +231,18 @@ const schema = z.object({
 
   // Never-contact list (domains/emails); opt-outs & bounces are auto-added.
   SUPPRESSION_PATH: z.string().default("data/campaign/suppression.txt"),
-  // Only send during these local hours (24h), and jitter between sends so the
-  // pattern looks human and protects deliverability.
-  SEND_WINDOW: z.string().default("9-18"),
+  // Send only in the highest-open windows, interpreted in the PROSPECT's timezone
+  // (SEND_TZ), not the machine's. 2025/2026 data: mid-morning ~9-11 is the open-
+  // rate peak, post-lunch ~13-15 a strong second; mapping to the recipient's local
+  // time is the single biggest timing lever. Comma-separated 24h ranges (a-b, end
+  // exclusive). Jitter between sends so the pattern looks human (deliverability).
+  SEND_WINDOW: z.string().default("8-11,13-16"),
+  // IANA timezone the SEND_WINDOW + SEND_DAYS are read in. Our prospects are UK,
+  // so default to London — the operator's machine can run anywhere.
+  SEND_TZ: z.string().default("Europe/London"),
+  // Weekdays we send on (0=Sun … 6=Sat). Tue/Wed/Thu consistently top reply rates;
+  // Fri/weekends underperform and Mon is noisy. Comma-separated.
+  SEND_DAYS: z.string().default("2,3,4"),
   SEND_JITTER_SEC: z.coerce.number().int().min(0).max(600).default(45),
   // When a lead replies "interested", draft a suggested response for you.
   REPLY_ASSIST: z

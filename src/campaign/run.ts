@@ -39,11 +39,45 @@ import { dirname } from "node:path";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/** Current hour (0-23) and weekday (0=Sun..6=Sat) in the given IANA timezone. */
+function nowIn(tz: string): { hour: number; weekday: number } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hour: "2-digit",
+      hour12: false,
+      weekday: "short",
+    }).formatToParts(new Date());
+    const hourStr = parts.find((p) => p.type === "hour")?.value ?? "0";
+    const wkStr = parts.find((p) => p.type === "weekday")?.value ?? "";
+    const wkMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    // "24" can appear at midnight in some environments — normalise to 0.
+    const hour = Number.parseInt(hourStr, 10) % 24;
+    return { hour, weekday: wkMap[wkStr] ?? new Date().getDay() };
+  } catch {
+    const d = new Date();
+    return { hour: d.getHours(), weekday: d.getDay() };
+  }
+}
+
+/**
+ * True when NOW (in the prospect's timezone, SEND_TZ) falls on an allowed weekday
+ * AND inside one of the SEND_WINDOW hour ranges — so cold mail lands in the
+ * recipient's highest-open windows, not whenever the operator's machine fires.
+ */
 function inSendWindow(cfg: AppConfig): boolean {
-  const [a, b] = cfg.SEND_WINDOW.split("-").map((s) => Number.parseInt(s.trim(), 10));
-  if (a === undefined || b === undefined || Number.isNaN(a) || Number.isNaN(b)) return true;
-  const h = new Date().getHours();
-  return h >= a && h < b;
+  const { hour, weekday } = nowIn(cfg.SEND_TZ);
+
+  const days = cfg.SEND_DAYS.split(",")
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => !Number.isNaN(n));
+  if (days.length > 0 && !days.includes(weekday)) return false;
+
+  const ranges = cfg.SEND_WINDOW.split(",")
+    .map((r) => r.split("-").map((s) => Number.parseInt(s.trim(), 10)))
+    .filter(([a, b]) => a !== undefined && b !== undefined && !Number.isNaN(a) && !Number.isNaN(b));
+  if (ranges.length === 0) return true; // misconfigured window → don't block
+  return ranges.some(([a, b]) => hour >= (a as number) && hour < (b as number));
 }
 
 export interface CampaignFlags {
@@ -124,7 +158,9 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   //    (each inbox limited to its own warmup cap), up to the combined cap.
   const sendableNow = live && inSendWindow(cfg);
   if (live && !sendableNow) {
-    console.log(`[campaign] outside send window (${cfg.SEND_WINDOW}) — skipping sends this run`);
+    console.log(
+      `[campaign] outside send window (${cfg.SEND_WINDOW}h on days ${cfg.SEND_DAYS}, ${cfg.SEND_TZ}) — skipping sends this run`,
+    );
   }
   // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
   const remaining = new Map(inboxes.map((b) => [b.email, inboxRemaining(state, cfg, b.email)]));

@@ -94,11 +94,11 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   lines.push(greeting(row.company, seedFrom(row.domain)));
   lines.push("");
 
-  // First touch = ONE idea, led by the most specific personalization we have.
-  // Deliberately NO self-intro paragraph, NO bullet "menu", NO inline demo:
-  // those read as mass-mail and bury the hook (and trip spam filters). The
-  // breadth/menu belongs in a follow-up; the demo is the open loop the CTA
-  // promises ("reply and I'll send a short example").
+  // Body shape (owner spec): personalized hook FIRST (earns the read), then a
+  // one-line "who we are" so it's clear we're an automation studio, then the one
+  // concrete offer, then a short menu of what else we could set up, then one soft
+  // ask, then the Opero + site signature. The hook must stay first — leading with
+  // the self-intro reads as mass-mail and buries the reason they'd reply.
   const observation = [row.icebreaker, row.opener]
     .map((s) => s?.trim())
     .filter((s): s is string => Boolean(s))
@@ -108,14 +108,29 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
     lines.push("");
   }
 
-  // One concrete, done-for-you offer line — a single idea, never a list.
+  // Who we are + the one concrete, done-for-you offer, together as one short para.
   const offer = row.automation
     ? `${capitalize(stripTrailingPunct(row.automation))}.`
     : row.services?.[0]
       ? `${capitalize(stripTrailingPunct(row.services[0]))}.`
       : "";
-  if (offer) {
-    lines.push(offer);
+  const intro = (cfg.STUDIO_INTRO ?? "").trim();
+  if (intro || offer) {
+    lines.push([intro, offer].filter(Boolean).join(" "));
+    lines.push("");
+  }
+
+  // Short menu of suitable automations so the owner sees the range up front.
+  // Kept to 3 concrete, plain items; we drop the one already used as the offer
+  // line so we don't repeat ourselves.
+  const services = (row.services ?? [])
+    .map((s) => stripTrailingPunct(s))
+    .filter(Boolean)
+    .filter((s) => !offer || capitalize(s) + "." !== offer)
+    .slice(0, 3);
+  if (cfg.SHOW_SERVICES_MENU && services.length >= 2) {
+    lines.push(cfg.SERVICES_INTRO ?? "A few things we could set up for you:");
+    for (const s of services) lines.push(`• ${capitalize(s)}`);
     lines.push("");
   }
 
