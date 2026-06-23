@@ -488,12 +488,13 @@ function openaiKeys(cfg: AppConfig): (string | undefined)[] {
  * 429; falls back to the single GROQ_API_KEY. Lets us pool several free keys.
  */
 function groqKeys(cfg: AppConfig): (string | undefined)[] {
-  const multi = (cfg.GROQ_API_KEYS ?? "")
-    .split(/[\s,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (multi.length) return multi;
-  return [cfg.GROQ_API_KEY];
+  // Groq keys are `gsk_` + alphanumerics (no dots), so extract every token
+  // regardless of how they're separated (commas, spaces, stray periods…) — the
+  // owner pastes them by hand and the delimiters vary. Dedup, preserve order.
+  const raw = `${cfg.GROQ_API_KEYS ?? ""} ${cfg.GROQ_API_KEY ?? ""}`;
+  const found = raw.match(/gsk_[A-Za-z0-9]+/g);
+  if (found && found.length) return [...new Set(found)];
+  return cfg.GROQ_API_KEY ? [cfg.GROQ_API_KEY] : [];
 }
 
 function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
