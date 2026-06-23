@@ -258,8 +258,11 @@ function buildUserMessage(input: AiInput): string {
   const { lead, enrichment, ourOffer, icpNote } = input;
   const outName = LANG_NAME[input.outreachLang] ?? "English";
   const digName = LANG_NAME[input.digestLang] ?? "Russian";
+  // Cap the per-request context so a single call stays well under the tightest
+  // free-tier budget (Groq = 8000 tokens/min). System prompt ≈2.5k tokens; these
+  // caps keep the whole request ≈5k, leaving headroom. ~4 chars ≈ 1 token.
   const context = enrichment.ok && enrichment.summary_text
-    ? enrichment.summary_text
+    ? clampStr(enrichment.summary_text, 4500)
     : "(no website context available — write a generic, clean opener and set fit_score <= 2)";
   const signals = enrichment.signals.length > 0 ? enrichment.signals.join(", ") : "(none)";
   const already = existingAutomations(enrichment.signals);
@@ -284,10 +287,10 @@ function buildUserMessage(input: AiInput): string {
     context,
     "",
     input.reviewsText
-      ? `REAL GOOGLE REVIEWS (use to spot what customers value and any pain like slow replies / hard to book; reference something specific and TRUE, never quote a made-up review):\n${input.reviewsText}\n`
+      ? `REAL GOOGLE REVIEWS (use to spot what customers value and any pain like slow replies / hard to book; reference something specific and TRUE, never quote a made-up review):\n${clampStr(input.reviewsText, 1500)}\n`
       : null,
     input.webContext
-      ? `WEB SEARCH CONTEXT (recent news, events, mentions — use naturally if relevant, never fabricate):\n${input.webContext}\n`
+      ? `WEB SEARCH CONTEXT (recent news, events, mentions — use naturally if relevant, never fabricate):\n${clampStr(input.webContext, 1000)}\n`
       : null,
     `DETECTED SIGNALS (how they contact customers / book): ${signals}`,
     already.length > 0
