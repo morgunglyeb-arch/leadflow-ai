@@ -140,11 +140,13 @@ const schema = z.object({
   // Shown to the prospect. Brand-only + the live brand domain (text, builds
   // trust without a clickable CTA link in the body). NO personal name, no GitHub.
   SENDER_SIGNATURE: z.string().default("Opero · opero-studio.com"),
-  // No calls (you don't do live English calls). Reply-based, async CTA.
+  // No calls (you don't do live English calls). Sales-y CTA that names the site
+  // in PLAIN TEXT ({site}, same bare domain as the signature — not a tracked
+  // link, so deliverability is unaffected) and gives a no-friction reply option.
   CALL_TO_ACTION: z
     .string()
     .default(
-      "If that'd be useful, just reply and I'll send a short example of how it'd work for you. No call needed.",
+      "Want to see where you could save time or money? Type your line of work into {site} and it'll show the automations that fit your business. Or just reply and I'll send a quick example.",
     ),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.
@@ -179,10 +181,12 @@ const schema = z.object({
   // angle than the pitch, and the link lives in-thread where it's lower-risk.
   // Display the bare domain (no scheme) so it reads natural and isn't a tracked
   // anchor. {site} is replaced with SITE_URL.
+  // Off by default now that the first-email CTA carries the site invite — keeps
+  // follow-up #1 as a different angle (the AI nudge) instead of repeating it.
   SITE_CTA_ENABLED: z
     .string()
-    .default("true")
-    .transform((s) => s.toLowerCase() !== "false"),
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
   SITE_URL: z.string().default("opero-studio.com"),
   SITE_CTA_LINE: z
     .string()

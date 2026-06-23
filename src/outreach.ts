@@ -168,7 +168,7 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
     }
   }
 
-  lines.push(cfg.CALL_TO_ACTION);
+  lines.push((cfg.CALL_TO_ACTION ?? "").replace("{site}", cfg.SITE_URL ?? ""));
   lines.push("");
   lines.push(`— ${cfg.SENDER_SIGNATURE}`);
 
