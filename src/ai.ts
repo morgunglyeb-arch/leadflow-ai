@@ -478,12 +478,13 @@ function callOpenAICompatible(
  * (comma/space separated) for rotation; falls back to the single OPENAI_API_KEY.
  */
 function openaiKeys(cfg: AppConfig): (string | undefined)[] {
-  const multi = (cfg.OPENAI_API_KEYS ?? "")
-    .split(/[\s,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (multi.length) return multi;
-  return [cfg.OPENAI_API_KEY];
+  // Gemini keys look like `AQ.Ab8…` (one dot after AQ, then alnum/_/-). Extract
+  // every token so any separator the owner pastes by hand works — commas,
+  // spaces, or stray trailing periods between keys. Dedup, preserve order.
+  const raw = `${cfg.OPENAI_API_KEYS ?? ""} ${cfg.OPENAI_API_KEY ?? ""}`;
+  const found = raw.match(/AQ\.[A-Za-z0-9_-]+/g);
+  if (found && found.length) return [...new Set(found)];
+  return cfg.OPENAI_API_KEY ? [cfg.OPENAI_API_KEY] : [];
 }
 
 /**
