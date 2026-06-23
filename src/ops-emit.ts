@@ -102,3 +102,24 @@ export interface ReplyFields {
 export async function emitReply(fields: ReplyFields): Promise<void> {
   await post({ type: "reply", ...fields });
 }
+
+export interface DraftPayload {
+  business?: string;
+  website?: string;
+  email?: string;
+  industry?: string;
+  reason?: string; // why this business was chosen (plain language)
+  subject?: string;
+  message: string;
+  score?: number;
+  dedup_key?: string;
+}
+
+/**
+ * Push ONE pre-generated outreach message to the hub's "Рассылка" review tab
+ * (`/api/ingest/draft`), so the owner can check it on the phone and send it by
+ * hand. Idempotent by dedup_key on the hub. Best-effort; no-op without the env.
+ */
+export async function emitDraft(d: DraftPayload): Promise<void> {
+  await postTo("/api/ingest/draft", { ...d });
+}

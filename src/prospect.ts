@@ -9,7 +9,7 @@ import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { matchVertical, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
-import { emitRunEnd, emitRunStart } from "./ops-emit.js";
+import { emitDraft, emitRunEnd, emitRunStart } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
 
 const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
@@ -119,11 +119,47 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
   const runId = await emitRunStart("prospect");
   try {
     const rows = await runProspectingCore(cfg, flags);
+    // Push each qualified lead's pre-generated message to the hub's "Рассылка"
+    // review tab so the owner can check + send it by hand. Skip mock data.
+    if (!flags.mock) await emitDrafts(cfg, rows);
     await emitRunEnd(runId, { status: "done", qualified: rows.length, sent: 0 });
     return rows;
   } catch (err) {
     await emitRunEnd(runId, { status: "failed" });
     throw err;
+  }
+}
+
+/** Build a review-draft per qualified lead (site · email · why · message) and
+ * emit it to Opero Ops. Best-effort: one failure never breaks the run. */
+async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
+  for (const row of rows) {
+    try {
+      const { subject, body } = assembleDraft(row, cfg);
+      if (!body.trim()) continue;
+      const website = row.domain
+        ? /^https?:\/\//.test(row.domain)
+          ? row.domain
+          : `https://${row.domain}`
+        : undefined;
+      const proc = (row.process ?? "").trim();
+      const reason = [row.reason, proc && proc !== "unclear from site" ? proc : ""]
+        .filter(Boolean)
+        .join(" · ");
+      await emitDraft({
+        business: row.company,
+        ...(website ? { website } : {}),
+        ...(row.email ? { email: row.email } : {}),
+        ...(row.discovery_query ? { industry: row.discovery_query } : {}),
+        ...(reason ? { reason } : {}),
+        subject,
+        message: body,
+        score: Math.round(roiScore(row)),
+        dedup_key: (row.domain || row.email || row.company).toLowerCase(),
+      });
+    } catch (err) {
+      console.warn(`[prospect] emitDraft failed for ${row.company}: ${(err as Error).message}`);
+    }
   }
 }
 
