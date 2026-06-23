@@ -172,10 +172,15 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
           ? row.domain
           : `https://${row.domain}`
         : undefined;
+      // "Why this business" is operator-facing → prefer the Russian `brief`
+      // (digest lang). Fall back to the English reason/process only if absent,
+      // so the Mini App shows the explanation in the owner's language.
       const proc = (row.process ?? "").trim();
-      const reason = [row.reason, proc && proc !== "unclear from site" ? proc : ""]
-        .filter(Boolean)
-        .join(" · ");
+      const reason =
+        (row.brief ?? "").trim() ||
+        [row.reason, proc && proc !== "unclear from site" ? proc : ""]
+          .filter(Boolean)
+          .join(" · ");
       await emitDraft({
         business: row.company,
         ...(website ? { website } : {}),
