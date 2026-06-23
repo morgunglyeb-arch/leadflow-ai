@@ -690,35 +690,36 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
       .join("\n")
       .trim();
   }
-  const isGroq = cfg.LLM_PROVIDER === "groq";
-  const baseURL = isGroq ? "https://api.groq.com/openai/v1" : cfg.OPENAI_BASE_URL;
-  const model = isGroq ? cfg.GROQ_MODEL : cfg.OPENAI_MODEL;
-  const keys = isGroq ? groqKeys(cfg) : openaiKeys(cfg);
   const messages = [
     { role: "system" as const, content: system },
     { role: "user" as const, content: user },
   ];
-  // Retry 429s with key rotation, same as the structured path — otherwise on a
-  // rate-limited free tier every translation silently fails and the digest /
-  // Mini App lose the Russian text.
-  const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
+  // Same resilience as the structured path: rotate keys on ANY key error and
+  // fall through the free provider chain (Gemini ↔ Groq). Otherwise, when one
+  // provider is down (rate-limited / restricted), every translation silently
+  // fails and the digest + Mini App lose the Russian text.
+  const chain = freeProviderChain(cfg);
   let lastErr: unknown;
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const apiKey = keys[attempt % keys.length];
-    const client = new OpenAI({ apiKey, baseURL });
-    try {
-      const res = await client.chat.completions.create({ model, messages });
-      return (res.choices[0]?.message?.content ?? "").trim();
-    } catch (err) {
-      lastErr = err;
-      if (isRateLimit(err) && attempt < maxAttempts - 1) {
-        if ((attempt + 1) % keys.length === 0) await sleep(retryDelayMs(err, attempt));
-        continue;
+  for (const p of chain) {
+    const keys = p.apiKeys.length ? p.apiKeys : [undefined];
+    const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const client = new OpenAI({ apiKey: keys[attempt % keys.length], baseURL: p.baseURL });
+      try {
+        const res = await client.chat.completions.create({ model: p.model, messages });
+        return (res.choices[0]?.message?.content ?? "").trim();
+      } catch (err) {
+        lastErr = err;
+        if (isKeyError(err) && attempt < maxAttempts - 1) {
+          if (isRateLimit(err) && (attempt + 1) % keys.length === 0)
+            await sleep(retryDelayMs(err, attempt));
+          continue;
+        }
+        break; // non-key error or keys exhausted → fall through to next provider
       }
-      throw err;
     }
   }
-  throw lastErr;
+  throw lastErr ?? new Error("no free provider available for generateText");
 }
 
 /**
