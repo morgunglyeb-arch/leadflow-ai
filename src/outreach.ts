@@ -89,8 +89,6 @@ function stripTrailingPunct(s: string): string {
   return s.trim().replace(/[.!;,\s]+$/, "");
 }
 
-const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
-
 /**
  * Assemble a full, ready-to-review cold email from the AI fields. The pitch
  * (process → automation → benefit) is the body's spine; nothing here invents
@@ -141,21 +139,14 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
     .filter((s) => !offer || capitalize(s) + "." !== offer)
     .slice(0, 3);
   const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
-  const tailWords = wordCount(cfg.CALL_TO_ACTION) + wordCount(cfg.SENDER_SIGNATURE);
+  // The menu is a REQUIRED part of every email (owner-locked format) — always
+  // show it (up to 3 bullets) when we have services. NO word-cap gating: an
+  // earlier cap silently dropped the menu whenever the hook/offer ran long,
+  // which is most leads — that's the "I don't see the menu" bug.
   if (cfg.SHOW_SERVICES_MENU && services.length >= 2) {
-    const fitted: string[] = [];
-    let used = wordCount(lines.join(" ")) + tailWords + wordCount(servicesIntro);
-    for (const s of services) {
-      const item = `• ${capitalize(s)}`;
-      if (used + wordCount(item) > cfg.MAX_BODY_WORDS) break;
-      fitted.push(item);
-      used += wordCount(item);
-    }
-    if (fitted.length >= 2) {
-      lines.push(servicesIntro);
-      for (const item of fitted) lines.push(item);
-      lines.push("");
-    }
+    lines.push(servicesIntro);
+    for (const s of services) lines.push(`• ${capitalize(s)}`);
+    lines.push("");
   }
 
   lines.push((cfg.CALL_TO_ACTION ?? "").replace("{site}", cfg.SITE_URL ?? ""));

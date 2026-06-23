@@ -163,10 +163,6 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
-  // Soft ceiling on first-email body words. Reply rates peak at 50-125 words and
-  // fall off past ~150; the menu is only filled up to this cap so a verbose offer
-  // can't push the email out of the high-reply zone.
-  MAX_BODY_WORDS: z.coerce.number().int().positive().default(135),
 
   // Site self-serve CTA. The FIRST email stays link-free (deliverability on a
   // warming domain); follow-up #1 invites them to the site tool — a different

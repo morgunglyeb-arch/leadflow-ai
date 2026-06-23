@@ -10,7 +10,6 @@ const cfg = {
   STUDIO_INTRO: "We're Opero, a studio that sets up automations for businesses.",
   SERVICES_INTRO: "A few things we could set up for you:",
   SHOW_SERVICES_MENU: true,
-  MAX_BODY_WORDS: 135,
 } as unknown as AppConfig;
 
 const row = (domain: string): OutputRow =>
