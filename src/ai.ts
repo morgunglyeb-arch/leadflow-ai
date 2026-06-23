@@ -399,6 +399,24 @@ function isRateLimit(err: unknown): boolean {
 }
 
 /**
+ * Any error that means "this key/provider can't serve us right now" — so we
+ * should rotate to the next key (and eventually the next provider) rather than
+ * give up. Covers rate limits (429), dead/invalid keys (401), exhausted
+ * quota/credit (402/403), and provider outages (5xx, overloaded). The whole
+ * point: a single bad key must never dead-end the run.
+ */
+function isKeyError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  const status = e?.status;
+  if (status === 429 || status === 401 || status === 402 || status === 403 || status === 408)
+    return true;
+  if (typeof status === "number" && status >= 500) return true;
+  return /\b(429|401|402|403|5\d\d)\b|rate limit|quota|credit|insufficient|exhausted|overloaded|unavailable|invalid api key|too large/i.test(
+    e?.message ?? "",
+  );
+}
+
+/**
  * One call against any OpenAI-compatible endpoint (Groq, Gemini, Cerebras,
  * OpenRouter, OpenAI…). Retries transient 429s, honoring the provider's
  * "try again in Xs" hint when present.
@@ -445,15 +463,18 @@ async function callOpenAIRaw(
       return PersonalizedSchema.parse(coerceToSchema(parsed));
     } catch (err) {
       lastErr = err;
-      if (isRateLimit(err) && attempt < maxAttempts - 1) {
-        // Sleep only after we've just tried the last key in a cycle.
+      // Rotate to the next key on ANY key/provider error (rate limit, dead key,
+      // exhausted quota, outage) — not just 429. A single bad key never stops us.
+      if (isKeyError(err) && attempt < maxAttempts - 1) {
         const cycledAllKeys = (attempt + 1) % keys.length === 0;
-        if (cycledAllKeys) {
+        // Only BACK OFF for real rate limits (429). Dead/invalid keys (401/402)
+        // won't recover by waiting, so just skip to the next key immediately.
+        if (cycledAllKeys && isRateLimit(err)) {
           const delay = retryDelayMs(err, attempt);
           console.warn(`[ai] all keys rate-limited, retrying in ${(delay / 1000).toFixed(1)}s…`);
           await sleep(delay);
         } else {
-          console.warn("[ai] key rate-limited, rotating to next key…");
+          console.warn(`[ai] key error (${(err as { status?: number }).status ?? "?"}), rotating…`);
         }
         continue;
       }
@@ -499,6 +520,37 @@ function groqKeys(cfg: AppConfig): (string | undefined)[] {
   const found = raw.match(/gsk_[A-Za-z0-9]+/g);
   if (found && found.length) return [...new Set(found)];
   return cfg.GROQ_API_KEY ? [cfg.GROQ_API_KEY] : [];
+}
+
+interface OAProvider {
+  name: "groq" | "openai";
+  apiKeys: (string | undefined)[];
+  baseURL: string;
+  model: string;
+}
+
+/**
+ * The FREE OpenAI-compatible providers to try, in order, with keys. When the
+ * current provider exhausts every key (all rate-limited / dead / out of quota),
+ * we fall through to the next provider so the run never dead-ends. Anthropic is
+ * deliberately NOT in this chain (it costs money — owner's call only). Only
+ * providers that actually have a key are included.
+ */
+function freeProviderChain(cfg: AppConfig): OAProvider[] {
+  const gemini: OAProvider = {
+    name: "openai",
+    apiKeys: openaiKeys(cfg),
+    baseURL: cfg.OPENAI_BASE_URL,
+    model: cfg.OPENAI_MODEL,
+  };
+  const groq: OAProvider = {
+    name: "groq",
+    apiKeys: groqKeys(cfg),
+    baseURL: "https://api.groq.com/openai/v1",
+    model: cfg.GROQ_MODEL,
+  };
+  const ordered = cfg.LLM_PROVIDER === "groq" ? [groq, gemini] : [gemini, groq];
+  return ordered.filter((p) => p.apiKeys.some(Boolean));
 }
 
 function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
@@ -569,23 +621,38 @@ export async function personalize(
     ...(webContext ? { webContext } : {}),
     ...(wt ? { winnersText: wt } : {}),
   };
-  const provider: PersonalizationResult["provider"] =
+  let provider: PersonalizationResult["provider"] =
     cfg.LLM_PROVIDER === "groq" ? "groq" : cfg.LLM_PROVIDER === "openai" ? "openai" : "anthropic";
   try {
-    let personalized =
-      cfg.LLM_PROVIDER === "groq"
-        ? await callOpenAICompatible(cfg, input, {
-            apiKeys: groqKeys(cfg),
-            baseURL: "https://api.groq.com/openai/v1",
-            model: cfg.GROQ_MODEL,
-          })
-        : cfg.LLM_PROVIDER === "openai"
-          ? await callOpenAICompatible(cfg, input, {
-              apiKeys: openaiKeys(cfg),
-              baseURL: cfg.OPENAI_BASE_URL,
-              model: cfg.OPENAI_MODEL,
-            })
-          : await callAnthropic(cfg, input);
+    let personalized: Personalized;
+    if (cfg.LLM_PROVIDER === "anthropic") {
+      personalized = await callAnthropic(cfg, input);
+    } else {
+      // Try each free provider in order; the first one with a working key wins.
+      // If a provider exhausts ALL its keys, fall through to the next provider
+      // (Gemini ↔ Groq) so a key/quota wall never dead-ends the run.
+      const chain = freeProviderChain(cfg);
+      let got: Personalized | undefined;
+      let lastErr: unknown;
+      for (const p of chain) {
+        try {
+          got = await callOpenAICompatible(cfg, input, {
+            apiKeys: p.apiKeys,
+            baseURL: p.baseURL,
+            model: p.model,
+          });
+          provider = p.name;
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(
+            `[ai] provider ${p.name} exhausted for ${lead.domain} (${(err as Error).message.slice(0, 80)}), trying next…`,
+          );
+        }
+      }
+      if (!got) throw lastErr ?? new Error("no free provider available");
+      personalized = got;
+    }
 
     // Second pass: review against the rubric and rewrite weak/off-channel drafts.
     if (cfg.SELF_CRITIQUE) {
