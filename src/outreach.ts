@@ -83,13 +83,28 @@ function stripTrailingPunct(s: string): string {
   return s.trim().replace(/[.!;,\s]+$/, "");
 }
 
+const wordCount = (s: string): number => s.trim().split(/\s+/).filter(Boolean).length;
+
+/**
+ * Which body variant a lead gets. With AB_TEST_MENU on, it's a deterministic
+ * 50/50 split by domain (so the same lead is always the same variant, and the
+ * split is reproducible). Off → SHOW_SERVICES_MENU decides for everyone.
+ */
+export function bodyVariant(domain: string, cfg: AppConfig): "long" | "short" {
+  if (!cfg.AB_TEST_MENU) return cfg.SHOW_SERVICES_MENU ? "long" : "short";
+  return seedFrom(domain) % 2 === 0 ? "long" : "short";
+}
+
 /**
  * Assemble a full, ready-to-review cold email from the AI fields. The pitch
  * (process → automation → benefit) is the body's spine; nothing here invents
  * facts — it only arranges what the model already grounded in the site text.
+ * Sets `row.ab_variant` so the long/short experiment can be attributed later.
  */
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const subject = row.subject ?? `quick idea for ${row.company}`;
+  const variant = bodyVariant(row.domain, cfg);
+  row.ab_variant = variant;
   const lines: string[] = [];
   lines.push(greeting(row.company, seedFrom(row.domain)));
   lines.push("");
@@ -120,18 +135,31 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
     lines.push("");
   }
 
-  // Short menu of suitable automations so the owner sees the range up front.
-  // Kept to 3 concrete, plain items; we drop the one already used as the offer
-  // line so we don't repeat ourselves.
+  // Short menu of suitable automations so the owner sees the range up front —
+  // only on the "long" variant. Kept to 3 concrete, plain items; we drop the one
+  // already used as the offer line. Items are added only while the body stays
+  // under MAX_BODY_WORDS, so a verbose offer can't push us out of the reply zone.
   const services = (row.services ?? [])
     .map((s) => stripTrailingPunct(s))
     .filter(Boolean)
     .filter((s) => !offer || capitalize(s) + "." !== offer)
     .slice(0, 3);
-  if (cfg.SHOW_SERVICES_MENU && services.length >= 2) {
-    lines.push(cfg.SERVICES_INTRO ?? "A few things we could set up for you:");
-    for (const s of services) lines.push(`• ${capitalize(s)}`);
-    lines.push("");
+  const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
+  const tailWords = wordCount(cfg.CALL_TO_ACTION) + wordCount(cfg.SENDER_SIGNATURE);
+  if (variant === "long" && services.length >= 2) {
+    const fitted: string[] = [];
+    let used = wordCount(lines.join(" ")) + tailWords + wordCount(servicesIntro);
+    for (const s of services) {
+      const item = `• ${capitalize(s)}`;
+      if (used + wordCount(item) > cfg.MAX_BODY_WORDS) break;
+      fitted.push(item);
+      used += wordCount(item);
+    }
+    if (fitted.length >= 2) {
+      lines.push(servicesIntro);
+      for (const item of fitted) lines.push(item);
+      lines.push("");
+    }
   }
 
   lines.push(cfg.CALL_TO_ACTION);
@@ -154,7 +182,7 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
       ? `**To:** ${draft.to}${row.email_source === "site" ? " _(found on site)_" : ""}`
       : "**To:** _(no email — find before sending)_",
     row.phone ? `**Phone:** ${row.phone}` : "",
-    `**Fit:** ${row.fit_score ?? "?"} / 5 · **Status:** ${row.status}`,
+    `**Fit:** ${row.fit_score ?? "?"} / 5 · **Status:** ${row.status}${row.ab_variant ? ` · **A/B:** ${row.ab_variant}` : ""}`,
     `**Source:** ${row.discovery_source}${row.discovery_query ? ` · "${row.discovery_query}"` : ""}`,
     row.signals ? `**Signals:** ${row.signals}` : "",
   ]

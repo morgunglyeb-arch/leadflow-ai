@@ -158,6 +158,18 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
+  // A/B test the body length: half the leads get the long (menu) version, half
+  // get the short (no-menu) version, split deterministically per domain so we
+  // can later attribute replies and let DATA pick the winner (experiment-runner
+  // house rule). When false, SHOW_SERVICES_MENU decides for everyone.
+  AB_TEST_MENU: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  // Soft ceiling on first-email body words. Reply rates peak at 50-125 words and
+  // fall off past ~150; the menu is only filled up to this cap so a verbose offer
+  // can't push the email out of the high-reply zone.
+  MAX_BODY_WORDS: z.coerce.number().int().positive().default(135),
 
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),

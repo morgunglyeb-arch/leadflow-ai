@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "./config";
 import type { OutputRow } from "./types";
-import { assembleSequence } from "./outreach";
+import { assembleSequence, assembleDraft, bodyVariant } from "./outreach";
 
 const cfg = {
   SENDER_SIGNATURE: "Opero · opero-studio.com",
@@ -10,6 +10,8 @@ const cfg = {
   STUDIO_INTRO: "We're Opero, a studio that sets up automations for small businesses.",
   SERVICES_INTRO: "A few things we could set up for you:",
   SHOW_SERVICES_MENU: true,
+  AB_TEST_MENU: false, // deterministic for tests: SHOW_SERVICES_MENU decides
+  MAX_BODY_WORDS: 135,
 } as unknown as AppConfig;
 
 const row = (domain: string): OutputRow =>
@@ -70,5 +72,37 @@ describe("assembleSequence greeting variation (anti-fingerprint)", () => {
     // 'Auto text-back to every missed call' stays (different wording), but no
     // bullet should be a verbatim repeat of the offer sentence.
     expect(seq.initial).not.toContain("• Missed-call text-back");
+  });
+});
+
+describe("A/B body variant (long=menu vs short=no menu)", () => {
+  const abCfg = { ...cfg, AB_TEST_MENU: true } as unknown as AppConfig;
+
+  it("детерминирован по домену", () => {
+    expect(bodyVariant("brightsmile.co.uk", abCfg)).toBe(bodyVariant("brightsmile.co.uk", abCfg));
+  });
+
+  it("сплит даёт оба варианта по разным доменам", () => {
+    const domains = Array.from({ length: 30 }, (_, i) => `clinic-${i}.co.uk`);
+    const variants = new Set(domains.map((d) => bodyVariant(d, abCfg)));
+    expect(variants.has("long")).toBe(true);
+    expect(variants.has("short")).toBe(true);
+  });
+
+  it("short-вариант НЕ содержит меню; long — содержит", () => {
+    const long = Array.from({ length: 40 }, (_, i) => `c-${i}.co.uk`).find(
+      (d) => bodyVariant(d, abCfg) === "long",
+    )!;
+    const short = Array.from({ length: 40 }, (_, i) => `c-${i}.co.uk`).find(
+      (d) => bodyVariant(d, abCfg) === "short",
+    )!;
+    expect(assembleDraft(row(long), abCfg).body).toContain(abCfg.SERVICES_INTRO);
+    expect(assembleDraft(row(short), abCfg).body).not.toContain(abCfg.SERVICES_INTRO);
+  });
+
+  it("assembleDraft проставляет row.ab_variant", () => {
+    const r = row("brightsmile.co.uk");
+    assembleDraft(r, abCfg);
+    expect(["long", "short"]).toContain(r.ab_variant);
   });
 });
