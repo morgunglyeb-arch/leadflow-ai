@@ -286,16 +286,18 @@ async function runProspectingCore(cfg: AppConfig, flags: ProspectFlags): Promise
   // 4. final set: qualified, highest ROI first, capped to target
   const rows = qualified.sort((a, b) => roiScore(b) - roiScore(a)).slice(0, target);
 
+  // 4b. enrich the final set with operator-only digest extras (market price,
+  //     what they already have, and a translation of the outgoing email).
+  //     MUST run before the dry-run return — dry runs still emit drafts to the
+  //     hub, and those need the Russian translation (message_ru).
+  await attachDigestExtras(cfg, rows, concurrency);
+
   if (flags.dry) {
     console.log("\n--- DRY RUN OUTPUT ---\n");
     printTable(rows);
     console.log("\n--- END ---\n");
     return rows;
   }
-
-  // 4b. enrich the final set with operator-only digest extras (market price,
-  //     what they already have, and a translation of the outgoing email).
-  await attachDigestExtras(cfg, rows, concurrency);
 
   // 5. write enriched CSV + draft queue (drafts for review — no auto-send)
   await finalizeOutput(cfg, rows, {

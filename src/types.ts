@@ -79,7 +79,4 @@ export type OutputRow = DiscoveredLead & {
   // PECR emailability: true = clearly an incorporated entity (name heuristic or
   // Companies House register). Undefined = not resolved (e.g. mock/skipped).
   is_ltd?: boolean;
-  // A/B body experiment: "long" = with the services menu, "short" = without.
-  // Decided deterministically per domain so replies can be attributed later.
-  ab_variant?: "long" | "short";
 } & Partial<Personalized>;
