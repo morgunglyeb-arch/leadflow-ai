@@ -605,18 +605,34 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
       .trim();
   }
   const isGroq = cfg.LLM_PROVIDER === "groq";
-  const client = new OpenAI({
-    apiKey: isGroq ? cfg.GROQ_API_KEY : cfg.OPENAI_API_KEY,
-    baseURL: isGroq ? "https://api.groq.com/openai/v1" : cfg.OPENAI_BASE_URL,
-  });
-  const res = await client.chat.completions.create({
-    model: isGroq ? cfg.GROQ_MODEL : cfg.OPENAI_MODEL,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  return (res.choices[0]?.message?.content ?? "").trim();
+  const baseURL = isGroq ? "https://api.groq.com/openai/v1" : cfg.OPENAI_BASE_URL;
+  const model = isGroq ? cfg.GROQ_MODEL : cfg.OPENAI_MODEL;
+  const keys = isGroq ? [cfg.GROQ_API_KEY] : openaiKeys(cfg);
+  const messages = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user },
+  ];
+  // Retry 429s with key rotation, same as the structured path — otherwise on a
+  // rate-limited free tier every translation silently fails and the digest /
+  // Mini App lose the Russian text.
+  const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const apiKey = keys[attempt % keys.length];
+    const client = new OpenAI({ apiKey, baseURL });
+    try {
+      const res = await client.chat.completions.create({ model, messages });
+      return (res.choices[0]?.message?.content ?? "").trim();
+    } catch (err) {
+      lastErr = err;
+      if (isRateLimit(err) && attempt < maxAttempts - 1) {
+        if ((attempt + 1) % keys.length === 0) await sleep(retryDelayMs(err, attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 /**
