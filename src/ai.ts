@@ -26,6 +26,51 @@ export const PersonalizedSchema = z.object({
 
 const LANG_NAME: Record<string, string> = { en: "English", uk: "Ukrainian", ru: "Russian" };
 
+/** Max length per string field, mirroring PersonalizedSchema. */
+const FIELD_MAX: Record<string, number> = {
+  opener: 400,
+  icebreaker: 280,
+  subject: 120,
+  reason: 280,
+  process: 240,
+  automation: 280,
+  est_benefit: 240,
+  brief: 700,
+  followup_1: 500,
+  followup_2: 500,
+  subject_b: 120,
+  demo: 320,
+};
+
+/** Trim a string to `max`, cutting at the last word boundary so we don't end mid-word. */
+function clampStr(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > max - 40 ? cut.slice(0, lastSpace) : cut).trimEnd();
+}
+
+/**
+ * Clamp model output to the schema's field limits BEFORE Zod parse. A model that
+ * runs a field one char over its max (common with reason/automation) would
+ * otherwise throw and drop a real lead to the generic fallback. We'd rather keep
+ * the (good) personalization and trim the overflow.
+ */
+function coerceToSchema(raw: unknown): unknown {
+  if (typeof raw !== "object" || raw === null) return raw;
+  const obj = { ...(raw as Record<string, unknown>) };
+  for (const [key, max] of Object.entries(FIELD_MAX)) {
+    if (typeof obj[key] === "string") obj[key] = clampStr(obj[key] as string, max);
+  }
+  if (Array.isArray(obj.services)) {
+    obj.services = (obj.services as unknown[])
+      .filter((x): x is string => typeof x === "string")
+      .slice(0, 4)
+      .map((x) => clampStr(x, 100));
+  }
+  return obj;
+}
+
 function buildSystemPrompt(outreachLang: string, digestLang: string): string {
   const outName = LANG_NAME[outreachLang] ?? "English";
   const digName = LANG_NAME[digestLang] ?? "Russian";
@@ -63,6 +108,7 @@ CHANNEL REALISM (very important — pitch only what pays off for THEM):
 ECONOMICS (make it obviously worth their money):
 - Frame the gap as lost MONEY, not lost convenience, using the INDUSTRY FACTS ticket size. E.g. for a dental implant clinic: "with implant cases worth thousands, even one missed enquiry a week is serious money walking to a competitor." For a plumber: "every missed emergency call is a £100–£500 job gone to the next number."
 - Use the ticket size qualitatively ("cases worth thousands", "jobs worth hundreds") — do NOT invent precise totals, percentages, or hours saved. The point: one or two recovered customers pays for the whole thing.
+- LOSS framing beats gain framing — people feel a loss about twice as hard as an equal gain. Frame around what they're LOSING right now ("the calls going unanswered after 5pm are booking with the next clinic on Google") rather than a generic upside ("get more bookings"). Name the leak, not the dream.
 
 WRITING FOR A NON-TECHNICAL OWNER (critical):
 - The owner does NOT know what "automation", "AI agent", "workflow" or "integration" means. Write so a busy shop/clinic owner instantly gets it.
@@ -70,6 +116,22 @@ WRITING FOR A NON-TECHNICAL OWNER (critical):
 - Describe what it DOES in concrete terms, e.g. "a helper that answers every WhatsApp message and books the slot for you, even after hours" — not "an AI workflow".
 - Lead with the pain and the result (missed calls = lost customers; never miss a booking again), not the technology. No flattery clichés, no "I hope this finds you well", "I came across your".
 - The email must make sense and feel worth a reply on its own — it should sell itself.
+
+STRUCTURE (the shape that gets replies — proven on small-business cold email):
+- Order: (1) a specific opening line about THEM, (2) the exact problem it's costing them, (3) the one thing we'd set up to fix it, in plain words, (4) one soft yes/no ask. Pain first, then the fix — never lead with us or the tech.
+- 4-5 short lines, lots of white space, reads on a phone in ~15 seconds. Under ~80 words. But NOT a one-liner — an email under ~40 words reads templated and gets ignored; say enough to make the case real.
+
+OPENING LINE (decides if they read on):
+- Show you actually looked. The pattern that works: "Saw [one real, specific thing about their business] — [the concrete implication for them]." Convey RESEARCH, not hope.
+- BANNED openers (instantly read as a mass-mail and binned): "Loved your post…", "Congrats on…", "I hope you're well", "I came across your website", "As a [role], you…". Empty flattery is worse than no personalization.
+
+THE ASK — exactly ONE soft, binary question (this is the single biggest reply lever):
+- One CTA only. Make it a low-friction yes/no they can answer in one word — e.g. "Want me to send a 2-minute example built for {Business}?" or "Is missing calls after hours something you'd want fixed?"
+- A reply-or-interest ask beats asking for a meeting by ~2.5x, and a soft ask beats a hard pitch ~3x. Never stack two asks. (Calls are already banned below — the ask is a reply or a sent example, never a call.)
+
+TRUST WITHOUT CASE STUDIES (we're new — no testimonials to lean on):
+- Earn it by being SPECIFIC about their exact situation (proves real research) and by REMOVING THEIR RISK: offer to show a short example/video built for them first, so they see it work before deciding anything. No obligation.
+- NEVER invent proof — no fake client counts, percentages, "trusted by 100s", or made-up results. Specificity + a free no-risk look is the credibility.
 
 NEVER PROPOSE A CALL OR MEETING. The sender does not take live calls. The only ask is a REPLY (e.g. "reply and I'll send a short example/video"). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat". Offering to SEND a short recorded video or example is fine (it's async).
 
@@ -92,7 +154,7 @@ LANGUAGE (strict):
 Fields:
 - opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. Do NOT introduce yourself or say "I'm…" (no self-intro paragraph is used); no greeting line.
 - icebreaker: one short, specific observation about their business.
-- subject: <= 60 chars, plain, curiosity or benefit, no emojis, no ALL CAPS.
+- subject: <= 50 chars and <= 6 words, lowercase, written like a quick note to a colleague — NOT a marketing headline. Short, specific subjects (often 3-4 words) get the most replies. No emojis, no ALL CAPS, no spammy words ("free", "guarantee", "limited"), no fake "Re:"/"Fwd:".
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
 - process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. If no specific gap is visible, use the sector-typical manual task (see INDUSTRY FACTS) rather than "unclear from site".
@@ -101,7 +163,7 @@ Fields:
 - brief: see LANGUAGE above.
 - followup_1, followup_2: see FOLLOW-UPS above (offer to SEND an example/video; never a call).
 - services: see "SHOW A FEW SERVICES" above.
-- subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=60 chars, plain, no emojis/ALL CAPS.
+- subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=50 chars and <=6 words, lowercase, conversational like a note to a colleague, no emojis/ALL CAPS/spam words.
 - demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi, sorry we missed your call at Smile Dental — reply here and we'll get you booked in." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
 
 Output via the emit_personalization tool only.`;
@@ -306,7 +368,7 @@ async function callAnthropicRaw(
   if (!toolUse || toolUse.type !== "tool_use") {
     throw new Error("Anthropic response did not contain tool_use block.");
   }
-  return PersonalizedSchema.parse(toolUse.input);
+  return PersonalizedSchema.parse(coerceToSchema(toolUse.input));
 }
 
 function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personalized> {
@@ -339,7 +401,7 @@ function isRateLimit(err: unknown): boolean {
  */
 const JSON_KEYS_HINT =
   "Return ONLY a JSON object with keys: opener (string), icebreaker (string), " +
-  "subject (string <=60 chars), fit_score (integer 1-5), reason (string), " +
+  "subject (string <=50 chars, lowercase), fit_score (integer 1-5), reason (string), " +
   "process (string), automation (string), est_benefit (string), brief (string), " +
   "followup_1 (string), followup_2 (string), subject_b (string), demo (string), " +
   "services (array of 2-4 short strings).";
@@ -376,7 +438,7 @@ async function callOpenAIRaw(
       } catch (err) {
         throw new Error(`response was not valid JSON: ${(err as Error).message}`);
       }
-      return PersonalizedSchema.parse(parsed);
+      return PersonalizedSchema.parse(coerceToSchema(parsed));
     } catch (err) {
       lastErr = err;
       if (isRateLimit(err) && attempt < maxAttempts - 1) {
@@ -441,9 +503,9 @@ function providerCall(cfg: AppConfig, system: string, userContent: string): Prom
 const CRITIQUE_RUBRIC = `You are a strict reviewer of a cold email a colleague drafted. Improve it ONLY where it fails a check; otherwise keep it essentially as-is. Checks:
 1. CHANNEL FIT: does the pitch match how this industry actually books (see INDUSTRY FACTS)? If it pitches a channel customers don't book through (e.g. an Instagram booking bot for a dentist), REWRITE it to the real money channel (usually phone/web for clinics, trades, legal).
 2. MONEY: is the cost framed in real money using the ticket size (qualitatively)? If not, add it.
-3. TIGHT: first email <= ~80 words, plain owner-language, no banned jargon, problem stated as fact (no hedging). Tighten if needed.
-4. GROUNDED: nothing invented — only the provided context. Remove anything unverifiable.
-5. SUBJECT <=60 chars, not spammy.
+3. TIGHT: first email ~40-80 words, 4-5 short lines, plain owner-language, no banned jargon, problem stated as fact (no hedging). Pain before fix. Tighten if bloated; if it's a thin one-liner, add the missing piece (the cost or the fix). Exactly ONE soft yes/no ask — never a call, never two asks.
+4. GROUNDED: nothing invented — only the provided context. No fabricated proof (client counts, %, "trusted by…"). Remove anything unverifiable.
+5. OPENING: a specific, researched first line ("Saw [real fact] — [implication]"), NOT flattery ("loved your post", "congrats"). SUBJECT <=50 chars, <=6 words, lowercase, not spammy.
 6. HUMAN (anti-AI-tell): it must read like a busy person typed it, not marketing. Strip em-dashes, rule-of-three lists, negative parallelism ("not X, but Y"), and tell-words ("delve", "elevate", "seamless", "robust", "streamline", "leverage", "in today's fast-paced"). Kill any templated opener ("I hope this finds you", "I came across your"). Prefer contractions and plain words.
 Keep the language rules. Return the full corrected object via the emit_personalization tool (all fields), even fields you didn't change.`;
 
