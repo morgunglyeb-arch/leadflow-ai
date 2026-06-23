@@ -37,7 +37,7 @@ const schema = z.object({
   OUR_OFFER: z
     .string()
     .default(
-      "AI automation for small businesses: we set up systems that handle the manual work for them — missed-call text-back, lead capture and follow-up, reporting, customer triage.",
+      "AI automation for businesses: we set up systems that handle the manual work for them — missed-call text-back, lead capture and follow-up, reporting, customer triage.",
     ),
 
   // Language of the cold email sent TO the prospect (their language).
@@ -148,7 +148,7 @@ const schema = z.object({
   STUDIO_INTRO: z
     .string()
     .default(
-      "We're Opero, a studio that sets up done-for-you automations for small businesses, so the repetitive admin runs itself.",
+      "We're Opero, a studio that sets up done-for-you automations for businesses, so the repetitive admin runs itself.",
     ),
   // Heading for the short "here's what we could set up" menu of services.
   SERVICES_INTRO: z.string().default("A few things we could set up for you:"),

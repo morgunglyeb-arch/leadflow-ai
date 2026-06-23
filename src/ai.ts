@@ -114,6 +114,7 @@ WRITING FOR A NON-TECHNICAL OWNER (critical):
 - The owner does NOT know what "automation", "AI agent", "workflow" or "integration" means. Write so a busy shop/clinic owner instantly gets it.
 - BANNED words in opener/subject/automation/est_benefit/followups: agentic, workflow, pipeline, LLM, GPT, API, integration, "AI-driven", TypeScript, "solution", "leverage", "streamline", "synergy".
 - Describe what it DOES in concrete terms, e.g. "a helper that answers every WhatsApp message and books the slot for you, even after hours" — not "an AI workflow".
+- Never call the prospect or their company "small" / "a small business" in the email — it can read as belittling. Say "your business", "your practice/clinic", or "businesses like yours". (The small/independent filter is OUR internal targeting, never client-facing wording.)
 - Lead with the pain and the result (missed calls = lost customers; never miss a booking again), not the technology. No flattery clichés, no "I hope this finds you well", "I came across your".
 - The email must make sense and feel worth a reply on its own — it should sell itself.
 
