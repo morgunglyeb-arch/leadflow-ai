@@ -171,6 +171,22 @@ const schema = z.object({
   // can't push the email out of the high-reply zone.
   MAX_BODY_WORDS: z.coerce.number().int().positive().default(135),
 
+  // Site self-serve CTA. The FIRST email stays link-free (deliverability on a
+  // warming domain); follow-up #1 invites them to the site tool — a different
+  // angle than the pitch, and the link lives in-thread where it's lower-risk.
+  // Display the bare domain (no scheme) so it reads natural and isn't a tracked
+  // anchor. {site} is replaced with SITE_URL.
+  SITE_CTA_ENABLED: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  SITE_URL: z.string().default("opero-studio.com"),
+  SITE_CTA_LINE: z
+    .string()
+    .default(
+      "Following up on my note. If replying isn't your thing, there's a faster way: go to {site}, type in your line of work, and you'll see the automations that fit your business and where they'd save you time or money. Takes about 20 seconds.",
+    ),
+
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
   EMAIL_TEST_TO: z.string().optional(),

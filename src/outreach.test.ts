@@ -106,3 +106,24 @@ describe("A/B body variant (long=menu vs short=no menu)", () => {
     expect(["long", "short"]).toContain(r.ab_variant);
   });
 });
+
+describe("site-CTA в follow-up #1 (ссылка НЕ в первом письме)", () => {
+  const siteCfg = {
+    ...cfg,
+    SITE_CTA_ENABLED: true,
+    SITE_URL: "opero-studio.com",
+    SITE_CTA_LINE: "Faster way: go to {site}, type your trade, see what fits.",
+  } as unknown as AppConfig;
+
+  it("первое письмо без ссылки на сайт", () => {
+    const seq = assembleSequence(row("brightsmile.co.uk"), siteCfg);
+    expect(seq.initial).not.toContain("opero-studio.com/"); // no site link in touch 1
+    expect(seq.initial).not.toContain("go to opero-studio.com");
+  });
+
+  it("follow-up #1 = приглашение на сайт-движок со ссылкой", () => {
+    const seq = assembleSequence(row("brightsmile.co.uk"), siteCfg);
+    expect(seq.followup_1).toContain("opero-studio.com");
+    expect(seq.followup_1).toContain("type your trade");
+  });
+});
