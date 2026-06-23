@@ -62,10 +62,29 @@ export interface ProspectFlags {
   minFit?: number;
 }
 
-/** A lead worth selling automation to: has an email AND a real automation gap. */
+// The things WE sell — having 3+ already in place means a business is past our
+// ICP (a small business NOT yet automated), so there's nothing left to sell.
+const SELLABLE_SIGNALS = [
+  "has_chatbot",
+  "online_booking",
+  "has_crm",
+  "has_review_tool",
+  "has_textback",
+  "social_bot",
+] as const;
+
+/** A lead worth selling automation to: small/independent, has an email AND a
+ * real automation gap, and isn't already automated to the hilt. */
 function isQualified(row: OutputRow, cfg: AppConfig, minFit: number): boolean {
   if (row.status === "skipped") return false;
   if (cfg.REQUIRE_EMAIL && !row.email) return false;
+  const sig = new Set((row.signals ?? "").split("|").filter(Boolean));
+  // SIZE GATE — a franchise/chain gatekeeps the owner; not our ICP (the email
+  // won't reach a decision-maker, and procurement kills the sale).
+  if (sig.has("franchise")) return false;
+  // ALREADY-AUTOMATED GATE — 3+ of the things we sell already in place = past
+  // our ICP, nothing left to pitch.
+  if (SELLABLE_SIGNALS.filter((k) => sig.has(k)).length >= 3) return false;
   if (cfg.REQUIRE_AUTOMATION) {
     const p = (row.process ?? "").trim().toLowerCase();
     if (!p || p === "unclear from site") return false;
@@ -99,12 +118,23 @@ export function roiScore(row: OutputRow): number {
   // buy-signals: motivated + has budget
   if (sig.has("hiring_reception")) s += 2;
   if (sig.has("expanding")) s += 1;
-  // de-prioritize low-budget / hard-to-close
+  // ICP core: SMALL, INDEPENDENT, owner-reachable — reward the absence of any
+  // chain/franchise markers (the email actually lands on the decision-maker).
+  if (!sig.has("multi_location") && !sig.has("franchise")) s += 2;
+  // de-prioritize low-budget / hard-to-close / too big
   if (sig.has("diy_site")) s -= 3;
   if (sig.has("multi_location")) s -= 2;
+  if (sig.has("franchise")) s -= 5; // also hard-excluded in isQualified
   // ICP fit: we want SMALL businesses NOT yet automated. Each automation they
   // already run is one less thing to sell AND a signal they're past our ICP.
-  for (const k of ["has_chatbot", "has_crm", "has_review_tool", "has_textback", "online_booking"]) {
+  for (const k of [
+    "has_chatbot",
+    "has_crm",
+    "has_review_tool",
+    "has_textback",
+    "online_booking",
+    "social_bot",
+  ]) {
     if (sig.has(k)) s -= 2;
   }
   return s;

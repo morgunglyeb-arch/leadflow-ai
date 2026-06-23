@@ -73,6 +73,23 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   // targeting de-prioritizers: DIY site (no budget) / chain (procurement)
   { key: "diy_site", pattern: /(wix\.com|wixsite|squarespace|weebly|godaddy|\.wordpress\.com)/i },
   { key: "multi_location", pattern: /(our locations|our clinics|our branches|find your nearest|locations across|nationwide|branches across)/i },
+  // STRONG size marker → a franchise/chain won't let a cold email reach the
+  // owner (gatekept) and procurement kills the sale. Hard-excluded downstream;
+  // distinct from the softer `multi_location`. (ICP: small independent only.)
+  {
+    key: "franchise",
+    pattern:
+      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|\d{2,}\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
+  },
+  // DM-bot footprint: an Instagram/Messenger auto-responder is already in place,
+  // so don't pitch a chat assistant for THAT channel — pitch what it doesn't
+  // cover (missed phone calls, reactivation, reviews). Honest heuristic: a
+  // social DM bot is only inferable from footprints, never 100% certain.
+  {
+    key: "social_bot",
+    pattern:
+      /(m\.me\/[\w.]+\?ref=|powered by manychat|messenger bot|instagram automation|auto[- ]?reply (?:on |in )?(?:instagram|messenger|whatsapp)|typically replies (?:instantly|in minutes|within minutes))/i,
+  },
 ];
 
 export function detectSignals(text: string): string[] {
@@ -99,6 +116,7 @@ const ALREADY_AUTOMATED: Record<string, string> = {
   has_crm: "a CRM / marketing-automation tool",
   has_textback: "missed-call text-back / auto-SMS",
   live_chat: "a live-chat widget",
+  social_bot: "an auto-responder in their social DMs (Instagram/Messenger)",
 };
 
 /**
