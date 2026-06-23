@@ -146,7 +146,7 @@ const schema = z.object({
   CALL_TO_ACTION: z
     .string()
     .default(
-      "Want to see where you could save time or money? Type your line of work into {site} and it'll show the automations that fit your business. Or just reply and I'll send a quick example.",
+      "Want to see where you could save time or money? Go to {site}, type in your line of work, and it'll show the automations that fit your business. Or just reply to this email and we'll advise you.",
     ),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.

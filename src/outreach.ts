@@ -90,6 +90,22 @@ function stripTrailingPunct(s: string): string {
 }
 
 /**
+ * Anti-duplicate guard. The email has exactly ONE call-to-action (the final CTA
+ * line: "go to the site, or reply and we'll advise you"). The model sometimes
+ * also tacks an ask onto the OFFER sentence ("…and I can send you a demo, just
+ * reply yes"), which double-asks. Cut any such trailing ask clause from a line
+ * so the only ask is the CTA. Deterministic, so it runs even with self-critique
+ * off — this is the "no dupes in future" safety net.
+ */
+function stripEmbeddedAsk(s: string): string {
+  const cut = s.replace(
+    /[\s,;:—–-]+(?:and\s+|so\s+|then\s+)?(?:just\s+)?(?:reply|respond|get in touch|let me know|message me|i['’]?(?:ll| can| will)\s+send|i can send you|happy to send|we(?:'| a)?ll send|send(?:ing)?\s+you\s+a\s+(?:short\s+|quick\s+)?(?:demo|example|video|sample))\b.*$/i,
+    "",
+  );
+  return cut.trim();
+}
+
+/**
  * Assemble a full, ready-to-review cold email from the AI fields. The pitch
  * (process → automation → benefit) is the body's spine; nothing here invents
  * facts — it only arranges what the model already grounded in the site text.
@@ -117,11 +133,9 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   }
 
   // Who we are + the one concrete, done-for-you offer, together as one short para.
-  const offer = row.automation
-    ? `${capitalize(stripTrailingPunct(row.automation))}.`
-    : row.services?.[0]
-      ? `${capitalize(stripTrailingPunct(row.services[0]))}.`
-      : "";
+  // Strip any ask the model embedded in the offer — the only ask is the CTA.
+  const offerSrc = row.automation || row.services?.[0] || "";
+  const offer = offerSrc ? `${capitalize(stripTrailingPunct(stripEmbeddedAsk(offerSrc)))}.` : "";
   const intro = (cfg.STUDIO_INTRO ?? "").trim();
   if (intro || offer) {
     lines.push([intro, offer].filter(Boolean).join(" "));
