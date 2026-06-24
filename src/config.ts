@@ -27,6 +27,14 @@ const schema = z.object({
     .default("https://generativelanguage.googleapis.com/v1beta/openai/"),
   OPENAI_MODEL: z.string().default("gemini-2.0-flash"),
 
+  // OpenRouter — a 3rd free fallback in the chain (one key → many free models).
+  // Used automatically when Gemini hits its daily quota and Groq is down. Keys
+  // look like `sk-or-v1-…`; OPENROUTER_API_KEYS rotates several. Pick any free
+  // model (suffix `:free`) that supports JSON output.
+  OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_API_KEYS: z.string().optional(),
+  OPENROUTER_MODEL: z.string().default("deepseek/deepseek-chat-v3-0324:free"),
+
   // Retry transient 429s (rate limits) before giving up to fallback
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 

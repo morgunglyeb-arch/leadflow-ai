@@ -66,7 +66,7 @@ export type OutputRow = DiscoveredLead & {
   enriched: boolean;
   enrichment_source: Enrichment["source"];
   signals: string;
-  ai_provider: "anthropic" | "groq" | "openai" | "fallback";
+  ai_provider: "anthropic" | "groq" | "openai" | "openrouter" | "fallback";
   status: LeadStatus;
   email_source: "provided" | "site" | "none";
   // --- operator-only digest extras (never sent to the prospect) ---

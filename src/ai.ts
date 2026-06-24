@@ -523,8 +523,17 @@ function groqKeys(cfg: AppConfig): (string | undefined)[] {
   return cfg.GROQ_API_KEY ? [cfg.GROQ_API_KEY] : [];
 }
 
+function openrouterKeys(cfg: AppConfig): (string | undefined)[] {
+  // OpenRouter keys are `sk-or-v1-` + alphanumerics. Extract every token so any
+  // separator the owner pastes works. Dedup, preserve order.
+  const raw = `${cfg.OPENROUTER_API_KEYS ?? ""} ${cfg.OPENROUTER_API_KEY ?? ""}`;
+  const found = raw.match(/sk-or-v1-[A-Za-z0-9]+/g);
+  if (found && found.length) return [...new Set(found)];
+  return cfg.OPENROUTER_API_KEY ? [cfg.OPENROUTER_API_KEY] : [];
+}
+
 interface OAProvider {
-  name: "groq" | "openai";
+  name: "groq" | "openai" | "openrouter";
   apiKeys: (string | undefined)[];
   baseURL: string;
   model: string;
@@ -567,7 +576,16 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
     baseURL: "https://api.groq.com/openai/v1",
     model: cfg.GROQ_MODEL,
   };
-  const ordered = cfg.LLM_PROVIDER === "groq" ? [groq, gemini] : [gemini, groq];
+  const openrouter: OAProvider = {
+    name: "openrouter",
+    apiKeys: openrouterKeys(cfg),
+    baseURL: "https://openrouter.ai/api/v1",
+    model: cfg.OPENROUTER_MODEL,
+  };
+  // Primary two ordered by LLM_PROVIDER; OpenRouter is the final free fallback
+  // (kicks in when Gemini is at its daily quota and Groq is down/banned).
+  const ordered =
+    cfg.LLM_PROVIDER === "groq" ? [groq, gemini, openrouter] : [gemini, groq, openrouter];
   return ordered.filter((p) => p.apiKeys.some(Boolean) && !deadProviders.has(p.name));
 }
 
@@ -612,7 +630,7 @@ async function selfCritique(
 
 export interface PersonalizationResult {
   personalized: Personalized;
-  provider: "anthropic" | "groq" | "openai" | "fallback";
+  provider: "anthropic" | "groq" | "openai" | "openrouter" | "fallback";
 }
 
 export async function personalize(

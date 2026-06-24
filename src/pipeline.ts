@@ -112,7 +112,7 @@ export async function processLeads(
         }
 
         let personalized;
-        let provider: "anthropic" | "groq" | "openai" | "fallback";
+        let provider: "anthropic" | "groq" | "openai" | "openrouter" | "fallback";
         if (!opts.llmReady) {
           personalized = fallbackPersonalization(lead, enrichment, cfg.DIGEST_LANG);
           provider = "fallback";
