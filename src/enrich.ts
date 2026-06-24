@@ -79,7 +79,7 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   {
     key: "franchise",
     pattern:
-      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|\d{2,}\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
+      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|(?:[3-9]|\d{2,})\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
   },
   // DM-bot footprint: an Instagram/Messenger auto-responder is already in place,
   // so don't pitch a chat assistant for THAT channel — pitch what it doesn't
@@ -92,11 +92,36 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   },
 ];
 
+// A real UK postcode (outward + inward), e.g. "W1G 8YP", "WD6 3BS".
+const UK_POSTCODE = /\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/gi;
+// Enumerated site markers, e.g. "Location 2", "Location 3", "Branch 4".
+const SITE_MARKER = /\b(?:location|branch|clinic|site)\s*([2-9])\b/gi;
+
+/**
+ * A MULTI-SITE network (3+ locations) — beyond our ICP. Owner rule: small AND
+ * MEDIUM independents are fine (1–2 sites), but a 3+ site chain gatekeeps the
+ * owner (generic "office@", procurement, affiliate partners) so the cold email
+ * never reaches a decision-maker. Detected two ways, either is sufficient:
+ *   - an enumerated "Location/Branch 3+" marker (implies ≥3 sites), or
+ *   - 3+ DISTINCT full UK postcodes on the site (separate physical premises).
+ * Threshold is 3 on purpose — 2-site medium businesses still qualify.
+ */
+export function detectMultiSite(text: string): boolean {
+  let maxSite = 0;
+  for (const m of text.matchAll(SITE_MARKER)) maxSite = Math.max(maxSite, Number(m[1]));
+  if (maxSite >= 3) return true;
+  const codes = new Set(
+    [...text.matchAll(UK_POSTCODE)].map((m) => m[0].toUpperCase().replace(/\s+/g, "")),
+  );
+  return codes.size >= 3;
+}
+
 export function detectSignals(text: string): string[] {
   const hits = new Set<string>();
   for (const { key, pattern } of SIGNAL_RULES) {
     if (pattern.test(text)) hits.add(key);
   }
+  if (detectMultiSite(text)) hits.add("multi_site");
   return [...hits];
 }
 

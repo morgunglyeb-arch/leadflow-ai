@@ -79,9 +79,11 @@ function isQualified(row: OutputRow, cfg: AppConfig, minFit: number): boolean {
   if (row.status === "skipped") return false;
   if (cfg.REQUIRE_EMAIL && !row.email) return false;
   const sig = new Set((row.signals ?? "").split("|").filter(Boolean));
-  // SIZE GATE — a franchise/chain gatekeeps the owner; not our ICP (the email
-  // won't reach a decision-maker, and procurement kills the sale).
-  if (sig.has("franchise")) return false;
+  // SIZE GATE — a franchise/chain/multi-site network gatekeeps the owner; not
+  // our ICP (the email won't reach a decision-maker, and procurement kills the
+  // sale). `multi_site` = 3+ locations/postcodes (e.g. a clinic with Location
+  // 1/2/3); 1–2-site small/medium independents still qualify.
+  if (sig.has("franchise") || sig.has("multi_site")) return false;
   // ALREADY-AUTOMATED GATE — 3+ of the things we sell already in place = past
   // our ICP, nothing left to pitch.
   if (SELLABLE_SIGNALS.filter((k) => sig.has(k)).length >= 3) return false;
