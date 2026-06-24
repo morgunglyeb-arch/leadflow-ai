@@ -33,7 +33,7 @@ const schema = z.object({
   // model (suffix `:free`) that supports JSON output.
   OPENROUTER_API_KEY: z.string().optional(),
   OPENROUTER_API_KEYS: z.string().optional(),
-  OPENROUTER_MODEL: z.string().default("deepseek/deepseek-chat-v3-0324:free"),
+  OPENROUTER_MODEL: z.string().default("openai/gpt-oss-120b:free"),
 
   // Retry transient 429s (rate limits) before giving up to fallback
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
