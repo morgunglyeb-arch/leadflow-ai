@@ -58,18 +58,57 @@ interface HunterVerifyResponse {
   errors?: Array<{ details?: string }>;
 }
 
-async function hunterVerify(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
-  if (!cfg.HUNTER_API_KEY) return null;
-  try {
-    const url =
-      `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}` +
-      `&api_key=${cfg.HUNTER_API_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      // 429 = rate limit, 402 = quota exhausted — fall through to MX
-      console.warn(`[hunter-verify] HTTP ${res.status} for ${email} — falling back`);
+/**
+ * All Hunter keys (HUNTER_API_KEYS + legacy HUNTER_API_KEY), tolerantly parsed:
+ * Hunter keys are 40-hex, so we regex-extract them regardless of separator
+ * (commas/spaces/newlines) and dedupe. Lets the owner paste several keys.
+ */
+export function hunterKeys(cfg: AppConfig): string[] {
+  const raw = `${cfg.HUNTER_API_KEYS ?? ""} ${cfg.HUNTER_API_KEY ?? ""}`;
+  const found = raw.match(/[a-f0-9]{40}/gi) ?? [];
+  return [...new Set(found.map((k) => k.toLowerCase()))];
+}
+
+/**
+ * Fetch a Hunter endpoint, rotating to the NEXT key on a rate-limit/quota/auth
+ * error (429/402/401/403) so one key's free 25/mo cap never dead-ends the lookup
+ * — the same "never stop on a limit" resilience as the LLM key pool.
+ */
+async function hunterFetch(
+  cfg: AppConfig,
+  buildUrl: (key: string) => string,
+  label: string,
+): Promise<Response | null> {
+  const keys = hunterKeys(cfg);
+  if (keys.length === 0) return null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const res = await fetch(buildUrl(keys[i] as string));
+      if (res.ok) return res;
+      const rotatable = res.status === 429 || res.status === 402 || res.status === 401 || res.status === 403;
+      if (rotatable && i < keys.length - 1) {
+        console.warn(`[hunter] HTTP ${res.status} on ${label} (key ${i + 1}/${keys.length}) — rotating`);
+        continue;
+      }
+      console.warn(`[hunter] HTTP ${res.status} on ${label}`);
       return null;
+    } catch (err) {
+      console.warn(`[hunter] error on ${label} (key ${i + 1}/${keys.length}): ${(err as Error).message}`);
+      if (i === keys.length - 1) return null;
     }
+  }
+  return null;
+}
+
+async function hunterVerify(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
+  const res = await hunterFetch(
+    cfg,
+    (key) =>
+      `https://api.hunter.io/v2/email-verifier?email=${encodeURIComponent(email)}&api_key=${key}`,
+    `verify ${email}`,
+  );
+  if (!res) return null;
+  try {
     const json = (await res.json()) as HunterVerifyResponse;
     const result = json.data?.result ?? "unknown";
     const score = json.data?.score ?? 0;
@@ -110,16 +149,14 @@ export async function hunterDomainSearch(
   cfg: AppConfig,
   domain: string,
 ): Promise<string[]> {
-  if (!cfg.HUNTER_API_KEY) return [];
+  const res = await hunterFetch(
+    cfg,
+    (key) =>
+      `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&limit=5&api_key=${key}`,
+    `domain ${domain}`,
+  );
+  if (!res) return [];
   try {
-    const url =
-      `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}` +
-      `&limit=5&api_key=${cfg.HUNTER_API_KEY}`;
-    const res = await fetch(url);
-    if (!res.ok) {
-      console.warn(`[hunter-domain] HTTP ${res.status} for ${domain}`);
-      return [];
-    }
     const json = (await res.json()) as HunterDomainResponse;
     const emails = json.data?.emails ?? [];
     // Sort: generic first (info@, contact@ — best for SMB cold email), then by

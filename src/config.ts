@@ -89,6 +89,9 @@ const schema = z.object({
   // Domain search finds emails we missed; verify checks if a specific address
   // is deliverable (SMTP-level, much better than MX-only).
   HUNTER_API_KEY: z.string().optional(),
+  // Multiple Hunter keys (any separator) → rotate on 429/quota so email lookup
+  // never dead-ends on one key's free 25/mo limit. Legacy HUNTER_API_KEY still works.
+  HUNTER_API_KEYS: z.string().optional(),
 
   // Firecrawl — JS-rendering web scraper (free: 500 credits/mo, keyless: rate-limited)
   // When set, enrichment uses Firecrawl to crawl sites (handles SPA, anti-bot,
