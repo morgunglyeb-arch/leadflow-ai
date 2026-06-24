@@ -417,6 +417,21 @@ function isKeyError(err: unknown): boolean {
 }
 
 /**
+ * A PERSISTENT provider failure — daily quota exhausted, org restricted/banned,
+ * invalid/forbidden key, out of credit, or a per-DAY cap. These won't recover
+ * within the run, so the provider is circuit-broken (skipped for the rest of it).
+ * A plain per-MINUTE 429 rate-limit is NOT persistent (clears in seconds) — we
+ * let the next lead retry instead of killing the provider for the whole run.
+ */
+function isPersistentProviderError(err: unknown): boolean {
+  const e = err as { status?: number; message?: string };
+  if (e?.status === 401 || e?.status === 402 || e?.status === 403) return true;
+  return /quota|exceeded your current|organization has been restricted|per[- ]?day|insufficient|out of credit|billing|account.*(suspend|restrict)/i.test(
+    e?.message ?? "",
+  );
+}
+
+/**
  * One call against any OpenAI-compatible endpoint (Groq, Gemini, Cerebras,
  * OpenRouter, OpenAI…). Retries transient 429s, honoring the provider's
  * "try again in Xs" hint when present.
@@ -681,10 +696,16 @@ export async function personalize(
           break;
         } catch (err) {
           lastErr = err;
-          deadProviders.add(p.name); // circuit-break: don't retry this pool per-lead
-          console.warn(
-            `[ai] provider ${p.name} exhausted for ${lead.domain} (${(err as Error).message.slice(0, 80)}) — skipping it for the rest of this run`,
-          );
+          if (isPersistentProviderError(err)) {
+            deadProviders.add(p.name); // quota/ban → skip for the rest of the run
+            console.warn(
+              `[ai] provider ${p.name} down for ${lead.domain} (${(err as Error).message.slice(0, 80)}) — skipping it for the rest of this run`,
+            );
+          } else {
+            console.warn(
+              `[ai] provider ${p.name} failed for ${lead.domain} (${(err as Error).message.slice(0, 80)}), trying next…`,
+            );
+          }
         }
       }
       if (!got) throw lastErr ?? new Error("no free provider available");
@@ -756,8 +777,9 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
         break; // non-key error or keys exhausted → fall through to next provider
       }
     }
-    // provider's whole key pool failed → circuit-break it for the rest of the run
-    deadProviders.add(p.name);
+    // circuit-break ONLY on a persistent failure (quota/ban) — a transient
+    // per-minute rate-limit must not kill the provider for the whole run.
+    if (isPersistentProviderError(lastErr)) deadProviders.add(p.name);
   }
   throw lastErr ?? new Error("no free provider available for generateText");
 }
