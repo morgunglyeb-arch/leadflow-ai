@@ -18,6 +18,21 @@ export interface EmailSequence {
 }
 
 /**
+ * The ONE curated list of automations shown to every clinic (owner-locked
+ * 2026-06-24). The model kept inventing weak/generic menu items, so the menu is
+ * now fixed + strong; only the HOOK above it is personalised per clinic. The
+ * first item is the headline "agent" offer — there is no separate offer sentence.
+ * Edit this list to change what every clinic is offered.
+ */
+export const CLINIC_MENU: string[] = [
+  "An AI agent that takes bookings and answers patients 24/7",
+  "Win back patients who haven't been in for a while",
+  "Auto-fill last-minute cancellations from a waitlist",
+  "Chase unbooked treatment plans until patients book",
+  "A weekly report: bookings, no-shows, and who's due a recall",
+];
+
+/**
  * Full sendable bodies for the 3-touch sequence (greeting + content + opt-out +
  * signature). Used by the autonomous campaign sender.
  */
@@ -81,36 +96,10 @@ function greeting(company: string, seed = 0): string {
   return named[seed % named.length]!;
 }
 
-function capitalize(s: string): string {
-  const t = s.trim();
-  return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-function stripTrailingPunct(s: string): string {
-  return s.trim().replace(/[.!;,\s]+$/, "");
-}
-
 /**
- * Anti-duplicate guard. The email has exactly ONE call-to-action (the final CTA
- * line: "go to the site, or reply and we'll advise you"). The model sometimes
- * also tacks an ask onto the OFFER sentence ("…and I can send you a demo, just
- * reply yes"), which double-asks. Cut any such trailing ask clause from a line
- * so the only ask is the CTA. Deterministic, so it runs even with self-critique
- * off — this is the "no dupes in future" safety net.
- */
-function stripEmbeddedAsk(s: string): string {
-  const cut = s.replace(
-    /[\s,;:—–-]+(?:and\s+|so\s+|then\s+)?(?:just\s+)?(?:reply|respond|get in touch|let me know|message me|i['’]?(?:ll| can| will)\s+send|i can send you|happy to send|we(?:'| a)?ll send|send(?:ing)?\s+you\s+a\s+(?:short\s+|quick\s+)?(?:demo|example|video|sample))\b.*$/i,
-    "",
-  );
-  return cut.trim();
-}
-
-/**
- * Assemble a full, ready-to-review cold email from the AI fields. The pitch
- * (process → automation → benefit) is the body's spine; nothing here invents
- * facts — it only arranges what the model already grounded in the site text.
- * One unified format for every lead: hook → who-we-are + offer → services menu
+ * Assemble a full, ready-to-review cold email. The model only personalises the
+ * HOOK (icebreaker + opener); the rest is fixed owner-locked copy.
+ * One unified format for every lead: hook → who-we-are → ONE curated menu
  * → sales-y site CTA → signature.
  */
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
@@ -120,9 +109,9 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   lines.push("");
 
   // Body shape (owner spec): personalized hook FIRST (earns the read), then a
-  // one-line "who we are" so it's clear we're an automation studio, then the one
-  // concrete offer, then a short menu of what else we could set up, then one soft
-  // ask, then the Opero + site signature. The hook must stay first — leading with
+  // one-line "who we are" (no per-lead offer sentence), then the ONE curated menu
+  // (CLINIC_MENU — its first item IS the headline agent offer), then the CTA, then
+  // the Opero + site signature + opt-out. The hook must stay first — leading with
   // the self-intro reads as mass-mail and buries the reason they'd reply.
   const observation = [row.icebreaker, row.opener]
     .map((s) => s?.trim())
@@ -133,35 +122,22 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
     lines.push("");
   }
 
-  // Who we are + the one concrete, done-for-you offer, together as one short para.
-  // Strip any ask the model embedded in the offer — the only ask is the CTA.
-  const offerSrc = row.automation || row.services?.[0] || "";
-  const offer = offerSrc ? `${capitalize(stripTrailingPunct(stripEmbeddedAsk(offerSrc)))}.` : "";
+  // Who we are — JUST the studio intro, NO per-lead offer sentence (owner spec
+  // 2026-06-24): the offer is now the FIRST item of the single curated list
+  // below, so the email reads as one list, not "offer paragraph + menu".
   const intro = (cfg.STUDIO_INTRO ?? "").trim();
-  if (intro || offer) {
-    lines.push([intro, offer].filter(Boolean).join(" "));
+  if (intro) {
+    lines.push(intro);
     lines.push("");
   }
 
-  // Short menu of suitable automations so the owner sees the range up front.
-  // Kept to 3 concrete, plain items; we drop the one already used as the offer
-  // line. Items are added only while the body stays under MAX_BODY_WORDS, so a
-  // verbose offer can't push the email out of the high-reply zone (keeps every
-  // email roughly the same length).
-  const cleaned = (row.services ?? []).map((s) => stripTrailingPunct(s)).filter(Boolean);
-  let services = cleaned.filter((s) => !offer || capitalize(s) + "." !== offer).slice(0, 4);
-  // The menu is REQUIRED (locked format). If dropping the offer-duplicate left <2
-  // items, fall back to the raw services (≥2 by schema) so the menu never silently
-  // disappears — a missing menu breaks the format harder than a near-offer item.
-  if (services.length < 2) services = cleaned.slice(0, 4);
+  // ONE curated list (CLINIC_MENU) — fixed, strong, owner-locked. Not model-
+  // generated (the model kept inventing weak/generic items). The hook above is
+  // what's personalised; this list is the consistent high-value offering.
   const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
-  // The menu is a REQUIRED part of every email (owner-locked format) — always
-  // show it (up to 3 bullets) when we have services. NO word-cap gating: an
-  // earlier cap silently dropped the menu whenever the hook/offer ran long,
-  // which is most leads — that's the "I don't see the menu" bug.
-  if (cfg.SHOW_SERVICES_MENU && services.length >= 2) {
+  if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU.length > 0) {
     lines.push(servicesIntro);
-    for (const s of services) lines.push(`• ${capitalize(s)}`);
+    for (const s of CLINIC_MENU) lines.push(`• ${s}`);
     lines.push("");
   }
 
