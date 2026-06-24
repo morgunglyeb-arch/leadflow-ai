@@ -200,7 +200,7 @@ const TOOL_SCHEMA = {
     services: {
       type: "array",
       items: { type: "string", maxLength: 100 },
-      minItems: 2,
+      minItems: 4,
       maxItems: 4,
     },
   },
