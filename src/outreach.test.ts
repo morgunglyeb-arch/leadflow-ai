@@ -73,6 +73,35 @@ describe("assembleSequence greeting variation (anti-fingerprint)", () => {
   });
 });
 
+describe("opt-out в карточке ревью (== реальному письму)", () => {
+  it("assembleDraft заканчивается строкой opt-out — карточка байт-в-байт равна письму", () => {
+    const body = assembleDraft(row("brightsmile.co.uk"), cfg).body;
+    expect(body).toContain(cfg.OPT_OUT_TEXT);
+    expect(body.trim().endsWith(cfg.OPT_OUT_TEXT)).toBe(true);
+  });
+
+  it("initial содержит opt-out ровно ОДИН раз (нет дубля после фикса)", () => {
+    const seq = assembleSequence(row("brightsmile.co.uk"), cfg);
+    const occurrences = seq.initial.split(cfg.OPT_OUT_TEXT).length - 1;
+    expect(occurrences).toBe(1);
+  });
+});
+
+describe("страховка меню ≥2 (не пропадает при дедупе vs offer)", () => {
+  it("если дедуп offer оставил бы <2 пунктов — меню всё равно рендерится с ≥2", () => {
+    const r = {
+      ...row("x.co.uk"),
+      // offer == services[0] verbatim → naive dedup would leave a single bullet
+      automation: "Auto text-back to every missed call",
+      services: ["Auto text-back to every missed call", "Instant replies to website enquiries"],
+    } as unknown as OutputRow;
+    const body = assembleDraft(r, cfg).body;
+    expect(body).toContain(cfg.SERVICES_INTRO);
+    const bullets = body.split("\n").filter((l) => l.startsWith("• "));
+    expect(bullets.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe("единый формат: меню есть у всех (нет короткого режима)", () => {
   it("меню присутствует на разных доменах (одинаковый формат для всех)", () => {
     for (const d of ["a.co.uk", "b.co.uk", "c.co.uk", "d.co.uk", "e.co.uk"]) {

@@ -25,8 +25,9 @@ export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence 
   const greet = greeting(row.company, seedFrom(row.domain));
   const sig = `— ${cfg.SENDER_SIGNATURE}`;
   const initialDraft = assembleDraft(row, cfg);
-  // append a one-line opt-out to the first touch (compliance + deliverability)
-  const initial = `${initialDraft.body}\n\n${cfg.OPT_OUT_TEXT}`;
+  // assembleDraft already ends with the opt-out line (locked format) — use it as-is
+  // so the sent email and the «Рассылка» review card are byte-identical (no dup).
+  const initial = initialDraft.body;
   const fu = (text: string): string => `${greet}\n\n${text}\n\n${cfg.OPT_OUT_TEXT}\n\n${sig}`;
   // Follow-up #1 = the site self-serve invite (link kept OUT of the first touch).
   // Falls back to the AI-written nudge when the site CTA is disabled.
@@ -147,11 +148,12 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   // line. Items are added only while the body stays under MAX_BODY_WORDS, so a
   // verbose offer can't push the email out of the high-reply zone (keeps every
   // email roughly the same length).
-  const services = (row.services ?? [])
-    .map((s) => stripTrailingPunct(s))
-    .filter(Boolean)
-    .filter((s) => !offer || capitalize(s) + "." !== offer)
-    .slice(0, 3);
+  const cleaned = (row.services ?? []).map((s) => stripTrailingPunct(s)).filter(Boolean);
+  let services = cleaned.filter((s) => !offer || capitalize(s) + "." !== offer).slice(0, 3);
+  // The menu is REQUIRED (locked format). If dropping the offer-duplicate left <2
+  // items, fall back to the raw services (≥2 by schema) so the menu never silently
+  // disappears — a missing menu breaks the format harder than a near-offer item.
+  if (services.length < 2) services = cleaned.slice(0, 3);
   const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
   // The menu is a REQUIRED part of every email (owner-locked format) — always
   // show it (up to 3 bullets) when we have services. NO word-cap gating: an
@@ -166,6 +168,15 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   lines.push((cfg.CALL_TO_ACTION ?? "").replace("{site}", cfg.SITE_URL ?? ""));
   lines.push("");
   lines.push(`— ${cfg.SENDER_SIGNATURE}`);
+  // Opt-out is part of the LOCKED format and a PECR/CAN-SPAM requirement. It must
+  // live HERE (not only on the autonomous send path) because the «Рассылка» review
+  // card is `assembleDraft` output verbatim, and the operator copy-pastes it by
+  // hand — so the card must equal the real, compliant email byte-for-byte.
+  const optOut = (cfg.OPT_OUT_TEXT ?? "").trim();
+  if (optOut) {
+    lines.push("");
+    lines.push(optOut);
+  }
 
   return {
     ...(row.email ? { to: row.email } : {}),
@@ -222,8 +233,6 @@ ${briefBlock}${demoBlock}
 **Subject:** ${draft.subject}
 
 ${altSubject}${draft.body}
-
-${cfg.OPT_OUT_TEXT}
 ${followups}
 `;
 }
