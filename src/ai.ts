@@ -536,6 +536,15 @@ interface OAProvider {
  * deliberately NOT in this chain (it costs money — owner's call only). Only
  * providers that actually have a key are included.
  */
+/**
+ * Per-RUN circuit breaker. Once a provider has exhausted its WHOLE key pool
+ * (daily quota / org restriction — not a one-off blip), stop trying it for every
+ * subsequent lead: re-trying N dead keys × every lead burns ~N wasted requests
+ * per lead against the SAME (often shared-project) quota, accelerating the wall
+ * and grinding the run. Module-level, so it resets each process (one CLI run).
+ */
+const deadProviders = new Set<string>();
+
 function freeProviderChain(cfg: AppConfig): OAProvider[] {
   const gemini: OAProvider = {
     name: "openai",
@@ -550,7 +559,7 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
     model: cfg.GROQ_MODEL,
   };
   const ordered = cfg.LLM_PROVIDER === "groq" ? [groq, gemini] : [gemini, groq];
-  return ordered.filter((p) => p.apiKeys.some(Boolean));
+  return ordered.filter((p) => p.apiKeys.some(Boolean) && !deadProviders.has(p.name));
 }
 
 function providerCall(cfg: AppConfig, system: string, userContent: string): Promise<Personalized> {
@@ -645,8 +654,9 @@ export async function personalize(
           break;
         } catch (err) {
           lastErr = err;
+          deadProviders.add(p.name); // circuit-break: don't retry this pool per-lead
           console.warn(
-            `[ai] provider ${p.name} exhausted for ${lead.domain} (${(err as Error).message.slice(0, 80)}), trying next…`,
+            `[ai] provider ${p.name} exhausted for ${lead.domain} (${(err as Error).message.slice(0, 80)}) — skipping it for the rest of this run`,
           );
         }
       }
@@ -718,6 +728,8 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
         break; // non-key error or keys exhausted → fall through to next provider
       }
     }
+    // provider's whole key pool failed → circuit-break it for the rest of the run
+    deadProviders.add(p.name);
   }
   throw lastErr ?? new Error("no free provider available for generateText");
 }
