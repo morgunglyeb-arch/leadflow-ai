@@ -64,8 +64,13 @@ export function expandQueries(icp: IcpConfig): ExpandedQuery[] {
       if (cities.length > 0) {
         // One query per (vertical × city). discoverLeads shuffles these so each
         // run samples DIFFERENT towns (we only fill ~maxLeads per run).
+        // ANCHOR THE COUNTRY: many UK town names also exist in the US (Washington,
+        // Lincoln, Boston, Newark, Plymouth…). Without ", United Kingdom" Maps
+        // ranks by global prominence and returns the US namesake. Reuse `location`
+        // as the country pin so a city query stays in-country.
         for (const city of cities) {
-          out.push({ market: seg.market, query: q, full: `${q} in ${city}` });
+          const full = icp.location ? `${q} in ${city}, ${icp.location}` : `${q} in ${city}`;
+          out.push({ market: seg.market, query: q, full });
         }
       } else {
         const full = icp.location ? `${q} in ${icp.location}` : q;

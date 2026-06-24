@@ -17,14 +17,19 @@ describe("expandQueries — geo by city", () => {
     ]);
   });
 
-  it("с cities: кросс-произведение вертикаль × город", () => {
+  it("с cities: кросс-произведение вертикаль × город, с привязкой к стране (location)", () => {
     const q = expandQueries(base({ cities: ["Carlisle", "Hereford"] }));
     expect(q.map((x) => x.full)).toEqual([
-      "dental clinics in Carlisle",
-      "dental clinics in Hereford",
-      "opticians in Carlisle",
-      "opticians in Hereford",
+      "dental clinics in Carlisle, United Kingdom",
+      "dental clinics in Hereford, United Kingdom",
+      "opticians in Carlisle, United Kingdom",
+      "opticians in Hereford, United Kingdom",
     ]);
+  });
+
+  it("привязка к стране отсекает ambiguous US-тёзки (Washington UK ≠ Washington DC)", () => {
+    const q = expandQueries(base({ cities: ["Washington"] }));
+    expect(q[0]?.full).toBe("dental clinics in Washington, United Kingdom");
   });
 
   it("пустой/пробельный город игнорируется → fallback на location", () => {
