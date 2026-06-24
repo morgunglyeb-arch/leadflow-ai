@@ -247,7 +247,10 @@ async function processInbox(
     .filter((e) => e.toLowerCase() !== box.email.toLowerCase())
     .map((e) => `from:${e}`)
     .join(" OR ");
-  const q = `(${fromQuery}) is:unread newer_than:3d`;
+  // CRITICAL: Gmail search EXCLUDES Spam/Trash by default — so without an explicit
+  // scope the rescue never sees the peer mail that landed in spam (the whole point
+  // of warmup). `(in:inbox OR in:spam)` makes it find + rescue spam-foldered mail.
+  const q = `(${fromQuery}) is:unread newer_than:3d (in:inbox OR in:spam)`;
   const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 25 });
   const messages = list.data.messages ?? [];
 
