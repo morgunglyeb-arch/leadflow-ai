@@ -9,7 +9,7 @@ import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { matchVertical, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
-import { emitDraft, emitRunEnd, emitRunStart } from "./ops-emit.js";
+import { emitDraft, emitEvent, emitRunEnd, emitRunStart } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
 
 const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
@@ -281,6 +281,23 @@ async function runProspectingCore(cfg: AppConfig, flags: ProspectFlags): Promise
       `[prospect] pool exhausted: only ${qualified.length} qualified leads found ` +
         `(wanted ${target}). Add more ICP queries or raise OVERFETCH for more.`,
     );
+  }
+
+  // LLM-EXHAUSTION ALARM — keys were configured (llmReady) but (almost) every
+  // lead fell back to the no-LLM opener → the provider pool is exhausted/blocked
+  // and fallback leads get disqualified, so the run silently yields ~0 quality
+  // drafts. Never dead-end on a limit in silence: ping the operator's phone.
+  const fellBack = allRows.filter((r) => r.ai_provider === "fallback").length;
+  if (llmReady && allRows.length >= 3 && fellBack / allRows.length >= 0.8) {
+    console.warn(
+      `[prospect] ⚠️ LLM pool exhausted — ${fellBack}/${allRows.length} leads used the fallback opener.`,
+    );
+    await emitEvent("llm_exhausted", {
+      processed: allRows.length,
+      fell_back: fellBack,
+      provider: cfg.LLM_PROVIDER,
+      note: "All LLM providers/keys exhausted or blocked — run produced low-quality fallback drafts. Rotate or replenish keys.",
+    });
   }
 
   // 4. final set: qualified, highest ROI first, capped to target

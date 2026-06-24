@@ -16,6 +16,7 @@ import { dirname } from "node:path";
 import { google } from "googleapis";
 import type { AppConfig } from "../config.js";
 import { getGmailClient, gmailInboxes, type Inbox } from "./gmail.js";
+import { emitInboxHealth } from "../ops-emit.js";
 
 export interface WarmupState {
   day: number; // 1-based; ramps the daily volume
@@ -207,6 +208,18 @@ export async function runWarmup(cfg: AppConfig, flags: WarmupFlags): Promise<voi
 
   await saveWarmupState(cfg.WARMUP_STATE_PATH, state);
   console.log(`[warmup] done — sent ${sent}, rescued ${rescued}, replied ${replied}.`);
+
+  // Per-inbox heartbeat → Opero Ops `inbox_health`. The cold send path only emits
+  // once real sending starts, so without this the analytics are blind during the
+  // exact warmup ramp where deliverability problems surface first. Best-effort.
+  await emitInboxHealth(
+    inboxes.map((b) => ({
+      domain: b.email.split("@")[1] ?? "",
+      inbox: b.email,
+      warmup_day: state.day,
+      sent: warmupSentToday(state, b.email),
+    })),
+  );
 }
 
 async function sendWarmup(
