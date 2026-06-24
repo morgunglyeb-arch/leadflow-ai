@@ -73,6 +73,18 @@ const SELLABLE_SIGNALS = [
   "social_bot",
 ] as const;
 
+// Known UK national chains/groups — anti-ICP (procurement, no owner to reach).
+// Catches brands that slip the structural `multi_site` check because a single
+// glossy branch page lists no 3rd postcode (e.g. CREATE Fertility, Specsavers,
+// Vets4Pets that leaked before). Matched on the business NAME / domain, so an
+// independent that merely mentions "Bupa-registered" on its site isn't caught.
+const KNOWN_CHAINS =
+  /\b(specsavers|vision express|optical express|boots opticians?|scrivens opticians?|hakim group|vets ?4 ?pets|pets at home|medivet|cvs vets|ivc evidensia|independent vetcare|vetpartners|companion care|goddard veterinary|white ?cross vets|my ?dentist|portman dental|rodericks dental|dental partners|together dental|colosseum dental|damira dental|nuffield health|spire healthcare|spire hospital|hca healthcare|circle health|practice plus|create fertility|london women'?s clinic|care fertility|fertility partnership|bourn hall)\b/i;
+
+export function isKnownChain(company: string, domain: string): boolean {
+  return KNOWN_CHAINS.test(company) || KNOWN_CHAINS.test(domain.replace(/[.\-_]/g, " "));
+}
+
 /** A lead worth selling automation to: small/independent, has an email AND a
  * real automation gap, and isn't already automated to the hilt. */
 function isQualified(row: OutputRow, cfg: AppConfig, minFit: number): boolean {
@@ -84,6 +96,7 @@ function isQualified(row: OutputRow, cfg: AppConfig, minFit: number): boolean {
   // sale). `multi_site` = 3+ locations/postcodes (e.g. a clinic with Location
   // 1/2/3); 1–2-site small/medium independents still qualify.
   if (sig.has("franchise") || sig.has("multi_site")) return false;
+  if (isKnownChain(row.company ?? "", row.domain ?? "")) return false;
   // ALREADY-AUTOMATED GATE — 3+ of the things we sell already in place = past
   // our ICP, nothing left to pitch.
   if (SELLABLE_SIGNALS.filter((k) => sig.has(k)).length >= 3) return false;

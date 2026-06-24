@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OutputRow } from "./types";
-import { roiScore } from "./prospect";
+import { isKnownChain, roiScore } from "./prospect";
 
 const mk = (over: Partial<OutputRow>): OutputRow =>
   ({ company: "X", domain: "x.co.uk", fit_score: 5, ...over }) as unknown as OutputRow;
@@ -30,5 +30,22 @@ describe("roiScore — ранг независимости, не размера"
     const personal = mk({ email: "john@a.co.uk", reviews: 100 });
     const generic = mk({ email: "reception@a.co.uk", reviews: 100 });
     expect(roiScore(personal)).toBeGreaterThan(roiScore(generic));
+  });
+});
+
+describe("isKnownChain — national UK brands (anti-ICP)", () => {
+  it("ловит сети по названию (то, что пропускал multi_site)", () => {
+    expect(isKnownChain("CREATE Fertility Southampton", "createfertility.co.uk")).toBe(true);
+    expect(isKnownChain("Specsavers Opticians", "specsavers.co.uk")).toBe(true);
+    expect(isKnownChain("Vets4Pets Bridgwater", "vets4pets.com")).toBe(true);
+    expect(isKnownChain("London Women's Clinic Cambridge", "londonwomensclinic.com")).toBe(true);
+  });
+  it("ловит сеть по домену (односложные бренды) даже при чистом названии", () => {
+    expect(isKnownChain("The Optical Place", "specsavers.co.uk")).toBe(true);
+    expect(isKnownChain("Town Vets", "medivet.co.uk")).toBe(true);
+  });
+  it("НЕ ловит независимых (упоминание бренда на сайте ≠ имя)", () => {
+    expect(isKnownChain("Orrell Opticians", "orrellopticians.co.uk")).toBe(false);
+    expect(isKnownChain("Bright Smile Dental", "brightsmile.co.uk")).toBe(false);
   });
 });

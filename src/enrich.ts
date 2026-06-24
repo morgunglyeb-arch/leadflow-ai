@@ -86,7 +86,7 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   {
     key: "franchise",
     pattern:
-      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|(?:[3-9]|\d{2,})\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
+      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|our network of|(?:clinics|practices|centres|surgeries|branches) (?:nationwide|across the country)|(?:[3-9]|\d{2,})\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
   },
   // DM-bot footprint: an Instagram/Messenger auto-responder is already in place,
   // so don't pitch a chat assistant for THAT channel — pitch what it doesn't
