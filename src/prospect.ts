@@ -97,6 +97,10 @@ function isQualified(row: OutputRow, cfg: AppConfig, minFit: number): boolean {
   // 1/2/3); 1–2-site small/medium independents still qualify.
   if (sig.has("franchise") || sig.has("multi_site")) return false;
   if (isKnownChain(row.company ?? "", row.domain ?? "")) return false;
+  // REVIEW-COUNT BAND — drop too-few (no volume/weak proof) and too-many (large
+  // operation past our ICP). Only when the count is actually known.
+  const rv = row.reviews;
+  if (typeof rv === "number" && (rv < cfg.REVIEWS_MIN || rv > cfg.REVIEWS_MAX)) return false;
   // ALREADY-AUTOMATED GATE — 3+ of the things we sell already in place = past
   // our ICP, nothing left to pitch.
   if (SELLABLE_SIGNALS.filter((k) => sig.has(k)).length >= 3) return false;

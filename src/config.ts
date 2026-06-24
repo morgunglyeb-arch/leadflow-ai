@@ -71,6 +71,11 @@ const schema = z.object({
   // Only keep leads at/above this fit score (1-5). The operator wants strong
   // leads only — default 4 ("strictly 4 and above").
   MIN_FIT: z.coerce.number().int().min(1).max(5).default(4),
+  // Review-count band (Google reviews). Too FEW = no real patient volume / weak
+  // social proof ("5-star from 4 reviews" reads thin); too MANY = a large
+  // operation past our ICP. Only applied when the review count is known.
+  REVIEWS_MIN: z.coerce.number().int().min(0).default(20),
+  REVIEWS_MAX: z.coerce.number().int().positive().default(1000),
 
   // Qualification: only keep leads worth selling automation to.
   REQUIRE_EMAIL: z
