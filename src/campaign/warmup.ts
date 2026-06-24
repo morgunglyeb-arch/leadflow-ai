@@ -16,7 +16,7 @@ import { dirname } from "node:path";
 import { google } from "googleapis";
 import type { AppConfig } from "../config.js";
 import { getGmailClient, gmailInboxes, type Inbox } from "./gmail.js";
-import { emitInboxHealth } from "../ops-emit.js";
+import { emitEvent, emitInboxHealth } from "../ops-emit.js";
 
 export interface WarmupState {
   day: number; // 1-based; ramps the daily volume
@@ -220,6 +220,15 @@ export async function runWarmup(cfg: AppConfig, flags: WarmupFlags): Promise<voi
       sent: warmupSentToday(state, b.email),
     })),
   );
+
+  // Daily morning summary → owner's Telegram (via Opero Ops). Best-effort.
+  await emitEvent("warmup", {
+    day: state.day,
+    inboxes: inboxes.length,
+    sent,
+    rescued,
+    replied,
+  });
 }
 
 async function sendWarmup(
