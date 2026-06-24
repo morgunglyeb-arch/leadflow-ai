@@ -27,6 +27,13 @@ const SIGNAL_RULES: Array<{ key: string; pattern: RegExp }> = [
   // buy-signals: motivated to fix ops
   { key: "hiring_reception", pattern: /\b(receptionist|front desk|front of house|reception team|call handler)\b/i },
   { key: "expanding", pattern: /\b(we'?re expanding|now open|new (branch|clinic|location)|grand opening|opening soon)\b/i },
+  // ICP POSITIVE — explicit owner-run / independent / established language. A
+  // strong "small independent, owner at the helm" marker → rewarded in roiScore.
+  {
+    key: "owner_run",
+    pattern:
+      /(family[- ](?:run|owned)|husband (?:and|&) wife|independent(?:ly[- ]owned)? (?:practice|clinic|dental|surgery)|locally[- ]owned|owner[- ]run|established (?:in )?(?:18|19|20)\d{2}|founded (?:in )?(?:18|19|20)\d{2}|since (?:18|19|20)\d{2}|Dr\.? [A-Z][\w'-]+'s (?:practice|clinic|surgery|dental))/i,
+  },
 ];
 
 // Channel rules run on RAW HTML — they look for links/attributes (href, tel:,

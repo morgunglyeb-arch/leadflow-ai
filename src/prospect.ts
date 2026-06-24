@@ -114,9 +114,21 @@ export function roiScore(row: OutputRow): number {
   if (sig.has("phone_booking") && !sig.has("online_booking")) s += 2;
   if (/plumb|electric|roof|hvac|boiler|locksmith|emergency|drain/i.test(row.discovery_query ?? "")) s += 2;
   if (sig.has("whatsapp")) s += 1; // real click-to-chat channel (not just a social link)
+  // SIZE no longer earns points — we target small/independent, not the biggest.
+  // A very high review count is a soft "looks large" signal → gently DOWN-rank
+  // (NOT a hard ceiling: it only lowers priority, never excludes — the structural
+  // fix for "Maps surfaces the giants" is narrow-geo discovery, not a cutoff).
   const reviews = row.reviews ?? 0;
-  if (reviews > 1000) s += 2;
-  else if (reviews > 300) s += 1;
+  if (reviews > 800) s -= 2;
+  // OWNER-REACHABILITY — a personal/named inbox (drsmith@, john@) lands on the
+  // decision-maker; a generic desk inbox (info@/reception@) is still deliverable
+  // but gatekept → mild penalty, not an exclude.
+  const localpart = (row.email ?? "").split("@")[0]?.toLowerCase() ?? "";
+  const GENERIC_INBOX =
+    /^(info|office|reception|service|services|admin|hello|hi|contact|contactus|enquir(?:y|ies)|mail|team|clinic|practice|appointments?|bookings?|reservations|frontdesk|hr|careers|jobs|no-?reply|donotreply)$/;
+  if (localpart) s += GENERIC_INBOX.test(localpart) ? -1 : 2;
+  // INDEPENDENCE — explicit owner-run/established language = our ideal ICP.
+  if (sig.has("owner_run")) s += 2;
   // buy-signals: motivated + has budget
   if (sig.has("hiring_reception")) s += 2;
   if (sig.has("expanding")) s += 1;

@@ -24,3 +24,19 @@ describe("detectMultiSite", () => {
     expect(detectMultiSite(text)).toBe(false);
   });
 });
+
+describe("owner_run signal (ICP-positive independence)", () => {
+  it("flags family-run / established / Dr X's practice language", () => {
+    expect(detectSignals("A family-run dental practice in town.")).toContain("owner_run");
+    expect(detectSignals("Established in 1998, we look after local families.")).toContain(
+      "owner_run",
+    );
+    expect(detectSignals("Welcome to Dr Smith's practice.")).toContain("owner_run");
+  });
+
+  it("does NOT flag a generic corporate clinic description", () => {
+    expect(detectSignals("A modern clinic offering implants and whitening.")).not.toContain(
+      "owner_run",
+    );
+  });
+});
