@@ -67,6 +67,9 @@ export type OutputRow = DiscoveredLead & {
   enrichment_source: Enrichment["source"];
   signals: string;
   ai_provider: "anthropic" | "groq" | "openai" | "openrouter" | "fallback";
+  // weekday numbers (0=Sun..6=Sat) the business is open, parsed from its site;
+  // the sender uses these so cold mail lands on the business's own working days.
+  working_days?: string;
   status: LeadStatus;
   email_source: "provided" | "site" | "none";
   // --- operator-only digest extras (never sent to the prospect) ---

@@ -123,6 +123,36 @@ export function detectMultiSite(text: string): boolean {
   return codes.size >= 3;
 }
 
+const DAY_NUM: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+
+/**
+ * Which weekdays the business is OPEN, parsed from its own site (owner rule:
+ * send on the business's working days — "Google Maps lies", read the website).
+ * Returns a comma-list of weekday numbers (0=Sun..6=Sat), or "" when unclear so
+ * the sender falls back to the global SEND_DAYS. Heuristic, range-first then
+ * per-day; a weekend-working clinic (e.g. "Monday – Sunday 8am-7pm") → all 7.
+ */
+export function detectWorkingDays(text: string): string {
+  const t = (text || "").toLowerCase();
+  if (!t) return "";
+  if (
+    /\b(7 days a week|seven days a week|open (?:7|seven) days|open daily|every day|mon(?:day)?\s*[-–—]+\s*sun(?:day)?|monday\s+to\s+sunday)\b/.test(
+      t,
+    )
+  )
+    return "0,1,2,3,4,5,6";
+  if (/\bmon(?:day)?\s*(?:[-–—]+|\s+to\s+)\s*sat(?:urday)?\b/.test(t)) return "1,2,3,4,5,6";
+  if (/\bmon(?:day)?\s*(?:[-–—]+|\s+to\s+)\s*fri(?:day)?\b|\bweekdays?\b/.test(t)) return "1,2,3,4,5";
+  // Per-day: a day name followed (within ~30 chars) by an opening time, not "closed".
+  const days = new Set<number>();
+  for (const [name, n] of Object.entries(DAY_NUM)) {
+    const open = new RegExp(`\\b${name}\\w*\\b[^\\n]{0,30}?\\d{1,2}\\s*(?:am|pm|[:.]\\d{2})`, "i");
+    const closed = new RegExp(`\\b${name}\\w*\\b[^\\n]{0,15}?closed`, "i");
+    if (open.test(t) && !closed.test(t)) days.add(n);
+  }
+  return days.size >= 2 ? [...days].sort((a, b) => a - b).join(",") : "";
+}
+
 export function detectSignals(text: string): string[] {
   const hits = new Set<string>();
   for (const { key, pattern } of SIGNAL_RULES) {

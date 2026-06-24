@@ -1,6 +1,6 @@
 import type { AppConfig } from "./config.js";
 import { emailTestReady, sheetsOutputReady } from "./config.js";
-import { enrichLead } from "./enrich.js";
+import { detectWorkingDays, enrichLead } from "./enrich.js";
 import { personalize, fallbackPersonalization } from "./ai.js";
 import { pLimit } from "./pLimit.js";
 import {
@@ -163,6 +163,9 @@ export async function processLeads(
           enriched: enrichment.ok,
           enrichment_source: enrichment.source,
           signals: enrichment.signals.join("|"),
+          ...(detectWorkingDays(enrichment.summary_text)
+            ? { working_days: detectWorkingDays(enrichment.summary_text) }
+            : {}),
           ai_provider: provider,
           status: "draft",
           opener: personalized.opener,

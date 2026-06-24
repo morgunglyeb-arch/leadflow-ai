@@ -61,23 +61,33 @@ function nowIn(tz: string): { hour: number; weekday: number } {
 }
 
 /**
- * True when NOW (in the prospect's timezone, SEND_TZ) falls on an allowed weekday
- * AND inside one of the SEND_WINDOW hour ranges — so cold mail lands in the
- * recipient's highest-open windows, not whenever the operator's machine fires.
+ * True when NOW (in the prospect's timezone) is inside a SEND_WINDOW hour range
+ * — the time-of-day gate, shared by all leads. The day-of-week gate is per-lead
+ * (see isWorkingDayNow) so cold mail lands on the business's OWN working days.
  */
-function inSendWindow(cfg: AppConfig): boolean {
-  const { hour, weekday } = nowIn(cfg.SEND_TZ);
-
-  const days = cfg.SEND_DAYS.split(",")
-    .map((s) => Number.parseInt(s.trim(), 10))
-    .filter((n) => !Number.isNaN(n));
-  if (days.length > 0 && !days.includes(weekday)) return false;
-
+function inSendHours(cfg: AppConfig): boolean {
+  const { hour } = nowIn(cfg.SEND_TZ);
   const ranges = cfg.SEND_WINDOW.split(",")
     .map((r) => r.split("-").map((s) => Number.parseInt(s.trim(), 10)))
     .filter(([a, b]) => a !== undefined && b !== undefined && !Number.isNaN(a) && !Number.isNaN(b));
   if (ranges.length === 0) return true; // misconfigured window → don't block
   return ranges.some(([a, b]) => hour >= (a as number) && hour < (b as number));
+}
+
+/**
+ * True when TODAY (prospect tz) is a working day for THIS lead. Uses the days
+ * parsed from the business's own website (owner rule: "Maps lies, read the
+ * site"); falls back to the global SEND_DAYS when the site didn't tell us.
+ */
+function isWorkingDayNow(cfg: AppConfig, workingDays?: string): boolean {
+  const { weekday } = nowIn(cfg.SEND_TZ);
+  const spec = (workingDays && workingDays.trim()) || cfg.SEND_DAYS;
+  const days = spec
+    .split(",")
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => !Number.isNaN(n));
+  if (days.length === 0) return true; // unconfigured → don't block
+  return days.includes(weekday);
 }
 
 export interface CampaignFlags {
@@ -156,10 +166,11 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
 
   // 3) SEND first touches — strongest queued leads, rotated across inboxes
   //    (each inbox limited to its own warmup cap), up to the combined cap.
-  const sendableNow = live && inSendWindow(cfg);
+  // Hours gate is global; the working-DAY gate is applied per-lead at send time.
+  const sendableNow = live && inSendHours(cfg);
   if (live && !sendableNow) {
     console.log(
-      `[campaign] outside send window (${cfg.SEND_WINDOW}h on days ${cfg.SEND_DAYS}, ${cfg.SEND_TZ}) — skipping sends this run`,
+      `[campaign] outside send hours (${cfg.SEND_WINDOW}h, ${cfg.SEND_TZ}) — skipping sends this run`,
     );
   }
   // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
@@ -216,7 +227,9 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       }
     }
     if (!chosen) break; // all inboxes hit their cap
-    const sent = await sendStep(cfg, lead, "initial", sendableNow, chosen);
+    // gate this lead to ITS own working days (from its website), not a global list
+    const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
+    const sent = await sendStep(cfg, lead, "initial", sendLead, chosen);
     if (sent) {
       recordInboxSend(state, chosen.email);
       remaining.set(chosen.email, (remaining.get(chosen.email) ?? 1) - 1);
@@ -230,8 +243,9 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   console.log(`[campaign] follow-ups due: ${followups.length}`);
   for (const lead of followups) {
     const which = lead.step === 1 ? "followup_1" : "followup_2";
-    await sendStep(cfg, lead, which, sendableNow, inboxByEmail(cfg, lead.inbox));
-    if (sendableNow) await sleep(jitterMs(cfg));
+    const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
+    await sendStep(cfg, lead, which, sendLead, inboxByEmail(cfg, lead.inbox));
+    if (sendLead) await sleep(jitterMs(cfg));
   }
 
   // 5) LEARN + write replies-to-action for the operator
