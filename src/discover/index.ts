@@ -49,6 +49,18 @@ export function sanitizeCompany(name: string): string {
     .slice(0, 80);
 }
 
+/** Fisher–Yates shuffle (copy). Used to rotate geo-by-city queries per run. */
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const ai = a[i] as T;
+    a[i] = a[j] as T;
+    a[j] = ai;
+  }
+  return a;
+}
+
 /** Drop leads with no domain and collapse duplicates by normalized domain. */
 export function dedupeLeads(leads: DiscoveredLead[]): DiscoveredLead[] {
   const seen = new Set<string>();
@@ -83,7 +95,11 @@ export async function discoverLeads(
   const perQuery = Math.max(2, Math.ceil(maxLeads / queries.length));
   const all: DiscoveredLead[] = [];
 
-  for (const q of queries) {
+  // With geo-by-city there are far more queries than we fill in one run, so we
+  // hit only the FRONT of the list — shuffle it so each run samples different
+  // towns (and so we take just a few leads per city, not 12 from one giant city).
+  const ordered = icp.cities?.length ? shuffle(queries) : queries;
+  for (const q of ordered) {
     if (all.length >= maxLeads) break;
     const remaining = Math.min(perQuery, maxLeads - all.length);
     try {

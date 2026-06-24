@@ -11,6 +11,12 @@ const IcpSegmentSchema = z.object({
 
 export const IcpConfigSchema = z.object({
   location: z.string().default(""),
+  // Geo-by-city: when set, discovery searches each vertical in THESE specific
+  // towns/boroughs (curated to ~50k–1M population, big metros split into
+  // boroughs) instead of one nationwide `location` query. Reason: Google Maps
+  // ranks by prominence, so a nationwide query surfaces the country's BIGGEST
+  // clinics (anti-ICP); a local query returns the town's actual independents.
+  cities: z.array(z.string()).optional(),
   segments: z.array(IcpSegmentSchema).min(1),
   max_leads: z.number().int().positive().optional(),
   // free-text note injected into the pitch prompt for extra targeting context
@@ -52,10 +58,19 @@ export async function loadIcpConfig(path: string): Promise<IcpConfig> {
 
 export function expandQueries(icp: IcpConfig): ExpandedQuery[] {
   const out: ExpandedQuery[] = [];
+  const cities = (icp.cities ?? []).map((c) => c.trim()).filter(Boolean);
   for (const seg of icp.segments) {
     for (const q of seg.queries) {
-      const full = icp.location ? `${q} in ${icp.location}` : q;
-      out.push({ market: seg.market, query: q, full });
+      if (cities.length > 0) {
+        // One query per (vertical × city). discoverLeads shuffles these so each
+        // run samples DIFFERENT towns (we only fill ~maxLeads per run).
+        for (const city of cities) {
+          out.push({ market: seg.market, query: q, full: `${q} in ${city}` });
+        }
+      } else {
+        const full = icp.location ? `${q} in ${icp.location}` : q;
+        out.push({ market: seg.market, query: q, full });
+      }
     }
   }
   return out;
