@@ -443,9 +443,10 @@ async function callOpenAIRaw(
   // Try every key on a 429 before sleeping: a different key may have quota.
   // Only once we've cycled through all keys do we back off and retry.
   const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
+  const start = keyCursor++; // round-robin: each call begins at the next key
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const apiKey = keys[attempt % keys.length];
+    const apiKey = keys[(start + attempt) % keys.length];
     const client = new OpenAI({ apiKey, baseURL: opts.baseURL });
     try {
       const res = await client.chat.completions.create({
@@ -544,6 +545,14 @@ interface OAProvider {
  * and grinding the run. Module-level, so it resets each process (one CLI run).
  */
 const deadProviders = new Set<string>();
+
+/**
+ * Round-robin cursor across a provider's key pool. Rotation used to always start
+ * at key[0], so key[0]'s project absorbed every successful call and hit its daily
+ * free quota first while the other keys idled. Starting each call at the next key
+ * spreads load evenly → N separate free projects give ~N× the daily headroom.
+ */
+let keyCursor = 0;
 
 function freeProviderChain(cfg: AppConfig): OAProvider[] {
   const gemini: OAProvider = {
@@ -713,8 +722,9 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
   for (const p of chain) {
     const keys = p.apiKeys.length ? p.apiKeys : [undefined];
     const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
+    const start = keyCursor++; // round-robin start so keys deplete evenly
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      const client = new OpenAI({ apiKey: keys[attempt % keys.length], baseURL: p.baseURL });
+      const client = new OpenAI({ apiKey: keys[(start + attempt) % keys.length], baseURL: p.baseURL });
       try {
         const res = await client.chat.completions.create({ model: p.model, messages });
         return (res.choices[0]?.message?.content ?? "").trim();
