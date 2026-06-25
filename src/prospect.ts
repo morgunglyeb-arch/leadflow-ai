@@ -4,7 +4,7 @@ import { discoverLeads } from "./discover/index.js";
 import { loadExistingKeys } from "./output.js";
 import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
 import { sendDigest, writeDigestFile } from "./digest.js";
-import { assembleDraft } from "./outreach.js";
+import { assembleDraft, assembleDraftRu } from "./outreach.js";
 import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { deriveOwnerEmail } from "./owner-email.js";
@@ -14,6 +14,25 @@ import { emitDraft, emitEvent, emitRunEnd, emitRunStart } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
 
 const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
+
+/** Owner-facing review translation. For DIGEST_LANG=ru the LOCKED parts (intro,
+ * menu, CTA, opt-out) use the fixed RU copy and ONLY the personalised hook is
+ * translated — so the curated menu can't be mistranslated ("chase"→"преследование")
+ * and we don't re-translate fixed copy per lead. Other digest languages fall back
+ * to a whole-body translation. No-op when digest lang == outreach lang. */
+async function buildReviewRu(cfg: AppConfig, row: OutputRow): Promise<string | undefined> {
+  if (cfg.DIGEST_LANG === cfg.OUTREACH_LANG) return undefined;
+  const targetLang = DIGEST_LANG_NAME[cfg.DIGEST_LANG] ?? "Russian";
+  if (cfg.DIGEST_LANG === "ru") {
+    const hookEn = [row.icebreaker, row.opener]
+      .map((s) => s?.trim())
+      .filter((s): s is string => Boolean(s))
+      .join(" ");
+    const hookRu = hookEn ? (await translate(cfg, hookEn, targetLang)) || "" : "";
+    return assembleDraftRu(row, cfg, hookRu);
+  }
+  return (await translate(cfg, assembleDraft(row, cfg).body, targetLang)) || undefined;
+}
 
 /**
  * Attach operator-only digest extras to the FINAL leads: the market price to
@@ -27,7 +46,6 @@ export async function attachDigestExtras(
   concurrency: number,
 ): Promise<void> {
   const limit = pLimit(Math.max(1, Math.min(concurrency, 4)));
-  const targetLang = DIGEST_LANG_NAME[cfg.DIGEST_LANG] ?? "Russian";
   await Promise.all(
     rows.map((row) =>
       limit(async () => {
@@ -40,13 +58,9 @@ export async function attachDigestExtras(
         const already = existingAutomations((row.signals ?? "").split("|").filter(Boolean));
         if (already.length > 0) row.already_automated = already.join(", ");
 
-        // Translate the exact email the operator would send (only if the digest
-        // language differs from the outreach language).
-        if (cfg.DIGEST_LANG !== cfg.OUTREACH_LANG && row.opener) {
-          const body = assembleDraft(row, cfg).body;
-          const tr = await translate(cfg, body, targetLang);
-          if (tr) row.email_translation = tr;
-        }
+        // Owner-facing RU review (fixed menu RU + translated hook; see buildReviewRu).
+        const ru = await buildReviewRu(cfg, row);
+        if (ru) row.email_translation = ru;
       }),
     ),
   );
@@ -290,10 +304,7 @@ export async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<voi
       // If the row already carries a translation we reuse it; otherwise translate
       // the exact body we're about to send. (No-op when DIGEST_LANG == OUTREACH_LANG.)
       let messageRu = row.email_translation;
-      if (!messageRu && cfg.DIGEST_LANG !== cfg.OUTREACH_LANG) {
-        const targetLang = DIGEST_LANG_NAME[cfg.DIGEST_LANG] ?? "Russian";
-        messageRu = (await translate(cfg, body, targetLang)) || undefined;
-      }
+      if (!messageRu) messageRu = await buildReviewRu(cfg, row);
       await emitDraft({
         business: row.company,
         ...(website ? { website } : {}),

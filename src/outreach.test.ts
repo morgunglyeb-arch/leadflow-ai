@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "./config";
 import type { OutputRow } from "./types";
-import { assembleSequence, assembleDraft, CLINIC_MENU } from "./outreach";
+import { assembleSequence, assembleDraft, assembleDraftRu, CLINIC_MENU, CLINIC_MENU_RU } from "./outreach";
 
 const cfg = {
   SENDER_SIGNATURE: "Opero · opero-studio.com",
@@ -62,6 +62,18 @@ describe("assembleSequence greeting variation (anti-fingerprint)", () => {
     expect(seq.initial).toContain(cfg.SERVICES_INTRO);
     expect(seq.initial).toContain(`• ${CLINIC_MENU[0]}`); // headline agent offer
     expect(seq.initial).toContain(`— ${cfg.SENDER_SIGNATURE}`);
+  });
+});
+
+describe("RU review body — fixed menu RU, hook translated separately", () => {
+  it("uses the FIXED CLINIC_MENU_RU (not an LLM mistranslation) + the passed hook", () => {
+    const ru = assembleDraftRu(row("brightsmile.co.uk"), cfg, "Заметил, что вы продвигаете импланты.");
+    expect(ru).toContain(`• ${CLINIC_MENU_RU[0]}`);
+    expect(ru).toContain("Дожимаем неоплаченные планы лечения до записи");
+    expect(ru).toContain("Заметил, что вы продвигаете импланты."); // translated hook spliced in
+    expect(ru).toContain(`— ${cfg.SENDER_SIGNATURE}`);
+    expect(ru).not.toMatch(/преследовани/i); // the bad "chase"→stalking translation
+    expect(ru).not.toContain(CLINIC_MENU[3]); // not the English menu line
   });
 });
 

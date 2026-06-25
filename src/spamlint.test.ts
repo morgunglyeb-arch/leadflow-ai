@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { spamLint } from "./spamlint";
 
+describe("spamLint — AI-tell safety nets (hook dup + flattery)", () => {
+  it("flags a repeated 4-word phrase (the icebreaker+opener dup bug)", () => {
+    const dup =
+      "Saw your impressive 4.9 rating from 164 reviews. Strand Dental has an impressive 4.9 rating from 164 reviews — every plan is gold.";
+    expect(spamLint(dup).hits).toContain("repeated phrase (hook dup)");
+  });
+  it("flags opening that praises the rating/review count", () => {
+    expect(spamLint("Saw your fantastic 82 five-star reviews").hits).toContain(
+      "flattery-on-reviews opener",
+    );
+  });
+  it("clean, varied hook is not flagged for dup/flattery", () => {
+    const clean =
+      "Your site pushes Invisalign and free consults hard. Those consults that don't book on the day usually go cold and nobody chases them.";
+    const hits = spamLint(clean).hits;
+    expect(hits).not.toContain("repeated phrase (hook dup)");
+    expect(hits).not.toContain("flattery-on-reviews opener");
+  });
+});
+
 describe("spamLint", () => {
   it("ловит классические спам-триггеры и помечает risky", () => {
     const r = spamLint("FREE!! ACT NOW — guaranteed income, click here");

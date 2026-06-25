@@ -33,6 +33,60 @@ export const CLINIC_MENU: string[] = [
 ];
 
 /**
+ * FIXED Russian rendering of CLINIC_MENU for the owner-facing review card. The
+ * menu is locked, so its translation is locked too — translating these terse
+ * bullets through the LLM per-lead produced wrong words ("chase"→"преследование"/
+ * stalking). Keep 1:1 aligned with CLINIC_MENU above.
+ */
+export const CLINIC_MENU_RU: string[] = [
+  "ИИ-агент, который принимает записи и отвечает пациентам 24/7",
+  "Возвращаем пациентов, которые давно не были",
+  "Заполняем освободившиеся окна из листа ожидания",
+  "Дожимаем неоплаченные планы лечения до записи",
+  "Еженедельный отчёт: записи, неявки и кому пора на повторный приём",
+];
+
+// FIXED Russian copy for the other LOCKED parts of the email, for the owner's
+// review card. Owner-facing only (never sent). Keep aligned with the English
+// STUDIO_INTRO / SERVICES_INTRO / CALL_TO_ACTION / OPT_OUT if those ever change.
+const STUDIO_INTRO_RU =
+  "Мы Opero — студия, которая под ключ настраивает бизнесу автоматизации, чтобы рутина в админке работала сама.";
+const SERVICES_INTRO_RU = "Вот что мы могли бы вам настроить:";
+const CALL_TO_ACTION_RU =
+  "Хотите увидеть, где можно сэкономить время или деньги? Введите свою сферу на opero-studio.com — он покажет автоматизации под ваш бизнес. Или просто ответьте, и я пришлю короткий пример.";
+const OPT_OUT_RU = "Не актуально? Ответьте «нет», и я больше не буду писать.";
+
+/**
+ * Build the OWNER-FACING Russian review body: the locked parts (intro, menu, CTA,
+ * signature, opt-out) come from the fixed RU copy above; only the personalised
+ * HOOK is translated (passed in as `hookRu`). This keeps the menu RU correct and
+ * costs one small hook translation instead of translating the whole body per lead.
+ */
+export function assembleDraftRu(row: OutputRow, cfg: AppConfig, hookRu: string): string {
+  const lines: string[] = [];
+  lines.push(greeting(row.company, seedFrom(row.domain)));
+  lines.push("");
+  const hk = hookRu.trim();
+  if (hk) {
+    lines.push(hk);
+    lines.push("");
+  }
+  lines.push(STUDIO_INTRO_RU);
+  lines.push("");
+  if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU_RU.length > 0) {
+    lines.push(SERVICES_INTRO_RU);
+    for (const s of CLINIC_MENU_RU) lines.push(`• ${s}`);
+    lines.push("");
+  }
+  lines.push(CALL_TO_ACTION_RU);
+  lines.push("");
+  lines.push(`— ${cfg.SENDER_SIGNATURE}`);
+  lines.push("");
+  lines.push(OPT_OUT_RU);
+  return lines.join("\n");
+}
+
+/**
  * Full sendable bodies for the 3-touch sequence (greeting + content + opt-out +
  * signature). Used by the autonomous campaign sender.
  */

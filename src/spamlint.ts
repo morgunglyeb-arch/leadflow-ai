@@ -12,6 +12,14 @@ const SPAM_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /!{2,}/, label: "multiple !!" },
   { re: /\b[A-Z]{5,}\b/, label: "ALL CAPS word" },
   { re: /\$\d/, label: "$ amount" },
+  // AI-tells we actually saw in live drafts — caught here as a pre-send safety net:
+  // the hook repeating the same fact twice (icebreaker+opener glued), and opening
+  // on flattery of a rating/review count.
+  { re: /\b(\w+\s+\w+\s+\w+\s+\w+)\b[\s\S]*?\b\1\b/i, label: "repeated phrase (hook dup)" },
+  {
+    re: /\b(impressive|fantastic|amazing|exceptional|incredible|outstanding)\b[^.]*\b(rating|reviews?|stars?|star)\b/i,
+    label: "flattery-on-reviews opener",
+  },
 ];
 
 export interface SpamReport {

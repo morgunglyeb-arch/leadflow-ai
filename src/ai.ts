@@ -123,6 +123,7 @@ ECONOMICS (make it obviously worth their money):
 WRITING FOR A NON-TECHNICAL OWNER (critical):
 - The owner does NOT know what "automation", "AI agent", "workflow" or "integration" means. Write so a busy shop/clinic owner instantly gets it.
 - BANNED words in opener/subject/automation/est_benefit/followups: agentic, workflow, pipeline, LLM, GPT, API, integration, "AI-driven", TypeScript, "solution", "leverage", "streamline", "synergy".
+- BANNED sales-speak phrases (fillers that read as machine-written; say the plain thing instead): "walking out the door", "walking to a competitor", "is gold", "hidden revenue", "I'm guessing", "I imagine", "clearly", "showing how much your patients value your care", "drift away", "rest assured", "look no further", "in today's world".
 - Describe what it DOES in concrete terms, e.g. "a helper that answers every WhatsApp message and books the slot for you, even after hours" — not "an AI workflow".
 - Never call the prospect or their company "small" / "a small business" in the email — it can read as belittling. Say "your business", "your practice/clinic", or "businesses like yours". (The small/independent filter is OUR internal targeting, never client-facing wording.)
 - Lead with the pain and the result (e.g. lapsed patients drifting to another clinic; quotes that never got chased; the front desk buried in forms; empty slots after a cancellation), not the technology. Vary the angle to the gap you ACTUALLY found — do NOT default every email to "missed calls". No flattery clichés, no "I hope this finds you well", "I came across your".
@@ -133,8 +134,9 @@ STRUCTURE (the shape that gets replies — proven on small-business cold email):
 - 4-5 short lines, lots of white space, reads on a phone in ~15 seconds. Under ~80 words. But NOT a one-liner — an email under ~40 words reads templated and gets ignored; say enough to make the case real.
 
 OPENING LINE (decides if they read on):
-- Show you actually looked. The pattern that works: "Saw [one real, specific thing about their business] — [the concrete implication for them]." Convey RESEARCH, not hope.
-- BANNED openers (instantly read as a mass-mail and binned): "Loved your post…", "Congrats on…", "I hope you're well", "I came across your website", "As a [role], you…". Empty flattery is worse than no personalization.
+- Show you actually looked at a SPECIFIC detail (a service, a page, what a review says) — and vary HOW you open across leads (don't start every email with "Saw…"; a question, a direct observation, or a "most clinics like yours…" frame all work). Convey RESEARCH, not hope.
+- BANNED openers (instantly read as a mass-mail and binned): "Loved your post…", "Congrats on…", "I hope you're well", "I came across your website", "As a [role], you…". ALSO BANNED — opening on or praising the RATING / REVIEW COUNT: "your impressive/fantastic/amazing/exceptional 4.9 rating", "your 82 five-star reviews show…", "clearly a busy/well-regarded practice". Praising numbers everyone has = worse than no personalization, and spam filters flag it as sales-speak.
+- GOOD hook example (specific, loss-framed, NO rating): icebreaker "Your site pushes Invisalign and free consults hard." opener "The consults that don't book on the day usually go cold — nobody chases them, and an Invisalign case is months of revenue gone quiet."
 
 THE ASK — exactly ONE soft, binary question (this is the single biggest reply lever):
 - One CTA only. Make it a low-friction yes/no they can answer in one word — e.g. "Want me to send a 2-minute example built for {Business}?" or "Worth a look at winning back patients who've drifted off?"
@@ -163,9 +165,9 @@ LANGUAGE (strict):
 - Write "brief" ONLY in ${digName}, for OUR operator (not the prospect): 2-4 plain sentences — what the business does, the EXACT problem we'll solve (no hedging), the EXACT thing we'll build and sell them, and why the fit score. If ${digName} is Russian, write it entirely in Russian Cyrillic.
 
 Fields:
-- opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. Do NOT introduce yourself or say "I'm…" (no self-intro paragraph is used); no greeting line.
-- icebreaker: one short, specific observation about their business.
-- subject: <= 50 chars and <= 6 words, lowercase, written like a quick note to a colleague — NOT a marketing headline. Short, specific subjects (often 3-4 words) get the most replies. No emojis, no ALL CAPS, no spammy words ("free", "guarantee", "limited"), no fake "Re:"/"Fwd:". CRITICAL: the subject must reflect the OFFER's actual angle, and must NOT default to "missed call(s)" — use a missed-call subject ONLY if missed calls are genuinely the gap you chose. Otherwise lead the subject with the angle you picked (reactivation/recall, web enquiries, no-shows, treatment-plan follow-up, forms, reviews). Across a batch the subjects must VARY — a subject that would fit any clinic is a weak subject.
+- icebreaker: ONE concrete, specific observation about THIS business — a service they push, a page, a recent post, or what a review actually SAYS. NOT the star rating or the review COUNT (everyone has those; they prove nothing). <=18 words.
+- opener: the implication/cost that FOLLOWS from the icebreaker — what it's quietly costing them. ⚠️ CRITICAL: icebreaker + opener are GLUED into one 2-sentence hook the reader sees, in that order, so the opener must NOT repeat the icebreaker's fact, its number, or its first word ("Saw…"). If the icebreaker named the fact, the opener goes straight to the consequence. Read the two back-to-back before emitting — if the same fact/number/verb appears twice, rewrite. Do NOT introduce yourself; no greeting line. <=22 words.
+- subject: <= 50 chars and <= 6 words, lowercase, written like a quick note to a colleague — NOT a marketing headline. Short, specific subjects (often 3-4 words) get the most replies. No emojis, no ALL CAPS, no spammy words ("free", "guarantee", "limited"), no fake "Re:"/"Fwd:". CRITICAL: the subject must reflect the OFFER's actual angle, and must NOT default to "missed call(s)" — use a missed-call subject ONLY if missed calls are genuinely the gap you chose. Otherwise lead the subject with the angle you picked (reactivation/recall, web enquiries, no-shows, treatment-plan follow-up, forms, reviews). Across a batch the subjects must VARY — a subject that would fit any clinic is a weak subject. A subject phrased as a short question often lifts opens — use one when it fits the angle.
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
 - process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. If no specific gap is visible, use the sector-typical manual task (see INDUSTRY FACTS) rather than "unclear from site".
@@ -289,7 +291,7 @@ function buildUserMessage(input: AiInput): string {
     lead.location ? `- location: ${lead.location}` : null,
     lead.phone ? `- public phone: ${lead.phone}` : null,
     lead.rating !== undefined
-      ? `- google rating: ${lead.rating}${lead.reviews !== undefined ? ` from ${lead.reviews} reviews` : ""} (high review counts = busy = missed enquiries cost more; you MAY reference this naturally)`
+      ? `- google rating: ${lead.rating}${lead.reviews !== undefined ? ` from ${lead.reviews} reviews` : ""} (BACKGROUND ONLY — do NOT open the email with the rating or review count, and do NOT praise it; everyone has reviews, so it proves no research. Open on a specific service / page / what a review SAYS instead.)`
       : null,
     "",
     input.verticalFacts ? `${input.verticalFacts}\n` : null,
