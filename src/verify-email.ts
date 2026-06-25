@@ -26,22 +26,49 @@ export async function domainHasMx(domain: string): Promise<boolean> {
 
 interface ZeroBounceResponse {
   status?: string; // "valid" | "invalid" | "catch-all" | "unknown" | ...
+  error?: string; // present (HTTP 200) when the key is invalid / out of credits
+}
+
+/** All ZeroBounce keys (ZEROBOUNCE_API_KEYS + legacy ZEROBOUNCE_API_KEY), tolerantly
+ * parsed: ZeroBounce keys are 32-hex, so we regex-extract them regardless of
+ * separator (commas/spaces/newlines) and dedupe — this also recovers two keys the
+ * owner pasted with no separator between them (a 64-hex run → two 32-hex keys). */
+export function zeroBounceKeys(cfg: AppConfig): string[] {
+  const raw = `${cfg.ZEROBOUNCE_API_KEYS ?? ""} ${cfg.ZEROBOUNCE_API_KEY ?? ""}`;
+  const found = raw.match(/[a-f0-9]{32}/gi) ?? [];
+  return [...new Set(found.map((k) => k.toLowerCase()))];
 }
 
 async function zeroBounceCheck(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
-  if (!cfg.ZEROBOUNCE_API_KEY) return null;
-  try {
-    const url = `https://api.zerobounce.net/v2/validate?api_key=${cfg.ZEROBOUNCE_API_KEY}&email=${encodeURIComponent(email)}`;
-    const res = await fetch(url);
-    if (!res.ok) return null;
-    const json = (await res.json()) as ZeroBounceResponse;
-    const status = json.status ?? "unknown";
-    // treat invalid/spamtrap/abuse as fail; valid/catch-all/unknown as pass
-    const bad = ["invalid", "spamtrap", "abuse", "do_not_mail"];
-    return { ok: !bad.includes(status), reason: `zerobounce:${status}` };
-  } catch {
-    return null;
+  const keys = zeroBounceKeys(cfg);
+  if (keys.length === 0) return null;
+  const bad = ["invalid", "spamtrap", "abuse", "do_not_mail"];
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const url = `https://api.zerobounce.net/v2/validate?api_key=${keys[i]}&email=${encodeURIComponent(email)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) {
+        const rotatable = [429, 402, 401, 403].includes(res.status);
+        if (rotatable && i < keys.length - 1) continue;
+        return null;
+      }
+      const json = (await res.json()) as ZeroBounceResponse;
+      // Out-of-credits / invalid key comes back HTTP 200 with `error` and no status
+      // → rotate to the next key instead of treating it as a pass.
+      if (json.error || !json.status) {
+        if (i < keys.length - 1) {
+          console.warn(`[zerobounce] key ${i + 1}/${keys.length} unusable (${json.error ?? "no status"}) — rotating`);
+          continue;
+        }
+        return null;
+      }
+      return { ok: !bad.includes(json.status), reason: `zerobounce:${json.status}` };
+    } catch {
+      if (i < keys.length - 1) continue;
+      return null;
+    }
   }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

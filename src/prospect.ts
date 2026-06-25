@@ -220,11 +220,11 @@ function verticalFromQuery(q: string | undefined): string | undefined {
   return parts.join(" in ").trim() || undefined;
 }
 
-// Owner-email derivation is capped per run — verification calls are scarce (Hunter
-// free tier ~25/mo, shared with domain-search). Only the final, role-only, Ltd
-// leads are attempted; once the budget is spent the rest stay on the role inbox
-// (flagged ⚠ for the owner to handle manually). Raise once verification quota grows.
-const OWNER_DERIVE_BUDGET = 6;
+// Owner-email derivation is capped per run. With ZeroBounce keys added (~100
+// verifications/key, several keys → 400+/mo) verification is no longer the
+// bottleneck, so we attempt the whole final set (Hunter 25/mo runs out first, then
+// the chain falls through to ZeroBounce). Only role-only, Ltd leads are attempted.
+const OWNER_DERIVE_BUDGET = 15;
 
 /** For role-only, corporate (Ltd) leads in the final set, try to reach the owner
  * directly: Companies House director → likely personal address → SMTP-verify. On a
