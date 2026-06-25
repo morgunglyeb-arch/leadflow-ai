@@ -193,11 +193,15 @@ export async function runWarmup(cfg: AppConfig, flags: WarmupFlags): Promise<voi
   // 2) PROCESS — rescue peer mail from Spam, mark read/important, reply to some.
   let rescued = 0;
   let replied = 0;
+  // Per-inbox warmup deliverability, keyed by inbox email, for the inbox_health
+  // heartbeat below (received = peer mail seen, rescued = of which in spam).
+  const perInbox = new Map<string, { received: number; rescued: number; replied: number }>();
   if (!flags.dryRun && !flags.mock) {
     const peerEmails = inboxes.map((b) => b.email);
     for (const box of inboxes) {
       try {
         const res = await processInbox(cfg, box, peerEmails, cfg.WARMUP_REPLY_RATE);
+        perInbox.set(box.email, res);
         rescued += res.rescued;
         replied += res.replied;
       } catch (err) {
@@ -211,14 +215,21 @@ export async function runWarmup(cfg: AppConfig, flags: WarmupFlags): Promise<voi
 
   // Per-inbox heartbeat → Opero Ops `inbox_health`. The cold send path only emits
   // once real sending starts, so without this the analytics are blind during the
-  // exact warmup ramp where deliverability problems surface first. Best-effort.
+  // exact warmup ramp where deliverability problems surface first. `received` lets
+  // the hub compute warmup reply_rate + spam_rate (the real signal). Best-effort.
   await emitInboxHealth(
-    inboxes.map((b) => ({
-      domain: b.email.split("@")[1] ?? "",
-      inbox: b.email,
-      warmup_day: state.day,
-      sent: warmupSentToday(state, b.email),
-    })),
+    inboxes.map((b) => {
+      const p = perInbox.get(b.email);
+      return {
+        domain: b.email.split("@")[1] ?? "",
+        inbox: b.email,
+        warmup_day: state.day,
+        sent: warmupSentToday(state, b.email),
+        ...(p
+          ? { received: p.received, rescued: p.rescued, replies: p.replied }
+          : {}),
+      };
+    }),
   );
 
   // Daily morning summary → owner's Telegram (via Opero Ops). Best-effort.
@@ -249,7 +260,7 @@ async function processInbox(
   box: Inbox,
   peerEmails: string[],
   replyRate: number,
-): Promise<{ rescued: number; replied: number }> {
+): Promise<{ received: number; rescued: number; replied: number }> {
   const auth = await getGmailClient(cfg, box);
   const gmail = google.gmail({ version: "v1", auth });
   const fromQuery = peerEmails
@@ -262,8 +273,23 @@ async function processInbox(
   const q = `(${fromQuery}) is:unread newer_than:3d (in:inbox OR in:spam)`;
   const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 25 });
   const messages = list.data.messages ?? [];
+  const received = messages.length;
 
+  // True spam count for the deliverability signal: how many peer mails landed in
+  // SPAM (vs the inbox). Counted separately BEFORE we modify (the rescue strips the
+  // SPAM label). spam_rate = rescued/received is the key warmup health metric.
   let rescued = 0;
+  try {
+    const spamList = await gmail.users.messages.list({
+      userId: "me",
+      q: `(${fromQuery}) is:unread newer_than:3d in:spam`,
+      maxResults: 25,
+    });
+    rescued = (spamList.data.messages ?? []).length;
+  } catch (err) {
+    console.warn(`[warmup] spam-count ${box.email} failed: ${(err as Error).message}`);
+  }
+
   let replied = 0;
   for (const m of messages) {
     if (!m.id) continue;
@@ -274,7 +300,6 @@ async function processInbox(
         id: m.id,
         requestBody: { removeLabelIds: ["SPAM", "UNREAD"], addLabelIds: ["IMPORTANT"] },
       });
-      rescued++;
 
       if (Math.random() < replyRate) {
         const meta = await gmail.users.messages.get({
@@ -309,7 +334,7 @@ async function processInbox(
       console.warn(`[warmup] message ${m.id} in ${box.email} failed: ${(err as Error).message}`);
     }
   }
-  return { rescued, replied };
+  return { received, rescued, replied };
 }
 
 function extractEmail(header: string): string | undefined {

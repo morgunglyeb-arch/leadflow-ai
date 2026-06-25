@@ -72,6 +72,11 @@ export interface InboxHealthRow {
   sent?: number; // lifetime sends from this inbox (rate denominator)
   bounces?: number;
   replies?: number;
+  // Warmup-window signal: of `received` peer mails, `rescued` were in spam. When
+  // present the hub computes warmup reply_rate + spam_rate off `received` (the
+  // cold-send `sent` denominator is 0 until real sending starts).
+  received?: number;
+  rescued?: number;
 }
 
 /**
