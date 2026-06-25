@@ -71,7 +71,7 @@ export type OutputRow = DiscoveredLead & {
   // the sender uses these so cold mail lands on the business's own working days.
   working_days?: string;
   status: LeadStatus;
-  email_source: "provided" | "site" | "none";
+  email_source: "provided" | "site" | "none" | "derived";
   // Owner-reachability: true = the chosen address is a generic/desk inbox
   // (info@/reception@) that lands on staff, not the decision-maker. Drives the
   // qualify gate (role-only → review, not auto-send) + the «Рассылка» ⚠ flag.

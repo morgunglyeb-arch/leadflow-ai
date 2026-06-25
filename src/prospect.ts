@@ -7,6 +7,7 @@ import { sendDigest, writeDigestFile } from "./digest.js";
 import { assembleDraft } from "./outreach.js";
 import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
+import { deriveOwnerEmail } from "./owner-email.js";
 import { matchVertical, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
 import { emitDraft, emitEvent, emitRunEnd, emitRunStart } from "./ops-emit.js";
@@ -219,6 +220,38 @@ function verticalFromQuery(q: string | undefined): string | undefined {
   return parts.join(" in ").trim() || undefined;
 }
 
+// Owner-email derivation is capped per run — verification calls are scarce (Hunter
+// free tier ~25/mo, shared with domain-search). Only the final, role-only, Ltd
+// leads are attempted; once the budget is spent the rest stay on the role inbox
+// (flagged ⚠ for the owner to handle manually). Raise once verification quota grows.
+const OWNER_DERIVE_BUDGET = 6;
+
+/** For role-only, corporate (Ltd) leads in the final set, try to reach the owner
+ * directly: Companies House director → likely personal address → SMTP-verify. On a
+ * verified hit, swap the role inbox for the owner's address. Best-effort + capped. */
+async function deriveOwnerEmails(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
+  let budget = OWNER_DERIVE_BUDGET;
+  for (const row of rows) {
+    if (budget <= 0) break;
+    if (!row.email_is_role) continue; // already a personal/named inbox
+    if (row.is_ltd === false) continue; // sole trader → review, don't chase (PECR)
+    if (!row.domain) continue;
+    budget--;
+    try {
+      const personal = await deriveOwnerEmail(cfg, row.company, row.domain);
+      if (personal) {
+        row.email = personal;
+        row.email_is_role = false;
+        row.derived_personal_email = personal;
+        row.email_source = "derived";
+        console.log(`[owner-email] ${row.company}: reached owner at ${personal} (was role inbox)`);
+      }
+    } catch (err) {
+      console.warn(`[owner-email] ${row.company}: ${(err as Error).message}`);
+    }
+  }
+}
+
 /** Build a review-draft per qualified lead (site · email · why · message) and
  * emit it to Opero Ops. Best-effort: one failure never breaks the run.
  * Exported so the CSV-regenerate path (scripts/regen-from-csv.ts) reuses the
@@ -389,6 +422,11 @@ async function runProspectingCore(
 
   // 4. final set: qualified, highest ROI first, capped to target
   const rows = qualified.sort((a, b) => roiScore(b) - roiScore(a)).slice(0, target);
+
+  // 4a. OWNER-REACHABILITY (P0b) — for the final set only (token-cheap), try to
+  //     reach the decision-maker directly: a role-only inbox on a corporate (Ltd)
+  //     lead → derive the director's personal address (Companies House) + verify.
+  if (!flags.mock) await deriveOwnerEmails(cfg, rows);
 
   // 4b. enrich the final set with operator-only digest extras (market price,
   //     what they already have, and a translation of the outgoing email).
