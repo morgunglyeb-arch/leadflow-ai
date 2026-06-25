@@ -197,6 +197,20 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
   }
 }
 
+/** Normalize a discovery query ("dental implant clinics in Warrington, United
+ * Kingdom") down to just the VERTICAL ("dental implant clinics") for `drafts.
+ * industry` — so the funnel can group/learn by vertical instead of treating every
+ * city as its own "industry" (audit #29). The city is always the last `" in "`
+ * segment, so we drop it (rejoining the rest preserves verticals like "walk in
+ * clinics"). */
+function verticalFromQuery(q: string | undefined): string | undefined {
+  if (!q) return undefined;
+  const parts = q.split(/\s+in\s+/i);
+  if (parts.length < 2) return q.trim() || undefined;
+  parts.pop(); // drop the trailing "<city>[, Country]" segment
+  return parts.join(" in ").trim() || undefined;
+}
+
 /** Build a review-draft per qualified lead (site · email · why · message) and
  * emit it to Opero Ops. Best-effort: one failure never breaks the run. */
 async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
@@ -222,7 +236,9 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
         business: row.company,
         ...(website ? { website } : {}),
         ...(row.email ? { email: row.email } : {}),
-        ...(row.discovery_query ? { industry: row.discovery_query } : {}),
+        ...(verticalFromQuery(row.discovery_query)
+          ? { industry: verticalFromQuery(row.discovery_query) }
+          : {}),
         ...(reason ? { reason } : {}),
         subject,
         message: body,
