@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  COLD-SEND cron (F9 from the warmup/reputation audit). The warmup plist runs
+  `--warmup` at 10:00; there was NO scheduled cold-send run. This fills that gap.
+
+  TEMPLATE — NOT auto-loaded (it lives in the repo, not ~/Library/LaunchAgents).
+  Install ONLY when going live (owner decision: ~July 9, warmup day 14):
+    cp ops/launchd/com.opero.leadflow.send.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.opero.leadflow.send.plist
+  To stop:
+    launchctl unload ~/Library/LaunchAgents/com.opero.leadflow.send.plist
+
+  Spreads the day's volume across FOUR slots inside the send window (8–11 / 13–16),
+  not one 10:00 blast — a human-looking cadence protects deliverability. SEND_PER_RUN_CAP
+  in .env sub-caps each slot. Sending still obeys SENDING_ENABLED + per-lead working days,
+  so this is inert until SENDING_ENABLED=true.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.opero.leadflow.send</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd /Users/a1/LeadFlow-AI &amp;&amp; /usr/local/bin/npm run campaign -- --top-up &gt;&gt; /Users/a1/LeadFlow-AI/data/campaign/send-cron.log 2&gt;&amp;1</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>11</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>14</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+    <key>StandardErrorPath</key>
+    <string>/Users/a1/LeadFlow-AI/data/campaign/send-launchd.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
