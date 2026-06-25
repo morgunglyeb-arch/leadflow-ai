@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { detectMultiSite, detectSignals, detectWorkingDays } from "./enrich";
+import { detectMultiSite, detectSignals, detectWorkingDays, extractEmails, isRoleInbox } from "./enrich";
+
+describe("owner-reachability: personal inbox ranks ABOVE role (info@)", () => {
+  it("isRoleInbox flags desk inboxes, not named people", () => {
+    expect(isRoleInbox("info@clinic.co.uk")).toBe(true);
+    expect(isRoleInbox("reception@clinic.co.uk")).toBe(true);
+    expect(isRoleInbox("drsmith@clinic.co.uk")).toBe(false);
+    expect(isRoleInbox("john@clinic.co.uk")).toBe(false);
+  });
+  it("extractEmails ranks a named on-domain inbox above info@ on the same domain", () => {
+    const html = `<a href="mailto:info@clinic.co.uk">info</a> <a href="mailto:drsmith@clinic.co.uk">Dr Smith</a>`;
+    const ranked = extractEmails(html, "clinic.co.uk");
+    expect(ranked[0]).toBe("drsmith@clinic.co.uk"); // personal first now (was info@)
+    expect(ranked).toContain("info@clinic.co.uk");
+  });
+});
 
 describe("detectWorkingDays — parse opening days from site", () => {
   it("7 days / Monday–Sunday → all week", () => {

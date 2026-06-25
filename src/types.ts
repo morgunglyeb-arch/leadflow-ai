@@ -72,6 +72,13 @@ export type OutputRow = DiscoveredLead & {
   working_days?: string;
   status: LeadStatus;
   email_source: "provided" | "site" | "none";
+  // Owner-reachability: true = the chosen address is a generic/desk inbox
+  // (info@/reception@) that lands on staff, not the decision-maker. Drives the
+  // qualify gate (role-only → review, not auto-send) + the «Рассылка» ⚠ flag.
+  email_is_role?: boolean;
+  // A personal/named owner address derived (Companies House director → pattern)
+  // and SMTP-verified, when the site only exposed a role inbox.
+  derived_personal_email?: string;
   // --- operator-only digest extras (never sent to the prospect) ---
   // Russian (DIGEST_LANG) translation of the assembled English email.
   email_translation?: string;

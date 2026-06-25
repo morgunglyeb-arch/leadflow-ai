@@ -279,6 +279,15 @@ const EMAIL_NOISE = [
 ];
 const ROLE_INBOX = /^(info|hello|contact|enquir|enquiries|reception|admin|office|bookings?|appointments?|hi|team|sales|support|mail)@/i;
 
+/** True if this is a generic/desk mailbox (info@, reception@) rather than a named
+ * person. Role inboxes are read by staff who treat cold mail as ads → ignore or
+ * report-spam → tank the sender domain's reputation; a named/personal inbox lands
+ * on the decision-maker. So we now RANK PERSONAL ABOVE ROLE everywhere
+ * (owner-reachability), reversing the old "generic-first for SMB" assumption. */
+export function isRoleInbox(email: string): boolean {
+  return ROLE_INBOX.test(email);
+}
+
 /** Extract + rank emails from raw HTML (mailto links + body text). */
 export function extractEmails(html: string, siteDomain: string): string[] {
   const found = new Set<string>();
@@ -295,7 +304,7 @@ export function extractEmails(html: string, siteDomain: string): string[] {
     const at = email.split("@")[1] ?? "";
     let score = 0;
     if (at === root || at.endsWith(`.${root}`)) score += 5;
-    if (ROLE_INBOX.test(email)) score += 2;
+    if (ROLE_INBOX.test(email)) score -= 2; // sink role/desk inboxes below a named one
     if (/(gmail|outlook|hotmail|yahoo|icloud|proton)\./.test(at)) score += 1;
     scored.push({ email, score });
   }
@@ -472,7 +481,7 @@ function rerankEmails(emails: string[], domain: string): string[] {
       const at = email.split("@")[1] ?? "";
       let score = 0;
       if (at === root || at.endsWith(`.${root}`)) score += 5;
-      if (ROLE_INBOX.test(email)) score += 2;
+      if (ROLE_INBOX.test(email)) score -= 2; // sink role/desk inboxes below a named one
       if (/(gmail|outlook|hotmail|yahoo|icloud|proton)\./.test(at)) score += 1;
       return { email, score };
     })

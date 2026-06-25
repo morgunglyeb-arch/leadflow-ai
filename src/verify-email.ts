@@ -141,9 +141,9 @@ interface HunterDomainResponse {
 }
 
 /**
- * Ask Hunter.io for known email addresses on a domain. Returns up to 5
- * emails sorted by confidence, with generic (info@, contact@) first since
- * those are the most useful for cold outreach to SMBs.
+ * Ask Hunter.io for known email addresses on a domain. Returns up to 5 emails,
+ * PERSONAL (named people) first then by confidence — we want the decision-maker,
+ * not a desk inbox.
  */
 export async function hunterDomainSearch(
   cfg: AppConfig,
@@ -159,12 +159,15 @@ export async function hunterDomainSearch(
   try {
     const json = (await res.json()) as HunterDomainResponse;
     const emails = json.data?.emails ?? [];
-    // Sort: generic first (info@, contact@ — best for SMB cold email), then by
-    // confidence descending.
+    // Sort: PERSONAL first (named people = the decision-maker), then by confidence.
+    // Reversed from the old "generic-first for SMB" rule: role/desk inboxes (info@)
+    // are read by staff as ads → ignored / report-spam → wreck sender reputation.
     return emails
       .sort((a, b) => {
-        if (a.type === "generic" && b.type !== "generic") return -1;
-        if (a.type !== "generic" && b.type === "generic") return 1;
+        const aPersonal = a.type === "personal";
+        const bPersonal = b.type === "personal";
+        if (aPersonal && !bPersonal) return -1;
+        if (!aPersonal && bPersonal) return 1;
         return (b.confidence ?? 0) - (a.confidence ?? 0);
       })
       .map((e) => e.value.toLowerCase())

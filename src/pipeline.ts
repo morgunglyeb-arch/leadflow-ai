@@ -1,6 +1,6 @@
 import type { AppConfig } from "./config.js";
 import { emailTestReady, sheetsOutputReady } from "./config.js";
-import { detectWorkingDays, enrichLead } from "./enrich.js";
+import { detectWorkingDays, enrichLead, isRoleInbox } from "./enrich.js";
 import { personalize, fallbackPersonalization } from "./ai.js";
 import { pLimit } from "./pLimit.js";
 import {
@@ -142,6 +142,8 @@ export async function processLeads(
           ? isCorporateEntity(lead.company)
           : await isEmailableEntity(cfg, lead.company);
 
+        const chosenEmail = lead.email ?? enrichment.emails[0];
+
         const row: OutputRow = {
           company: lead.company,
           domain: lead.domain,
@@ -151,11 +153,11 @@ export async function processLeads(
           ...(lead.name !== undefined ? { name: lead.name } : {}),
           ...(lead.role !== undefined ? { role: lead.role } : {}),
           ...(lead.linkedin !== undefined ? { linkedin: lead.linkedin } : {}),
-          // prefer a known email, else the best one found on the site
-          ...((lead.email ?? enrichment.emails[0]) !== undefined
-            ? { email: lead.email ?? enrichment.emails[0] }
-            : {}),
+          // prefer a known email, else the best on the site — now ranked
+          // personal-first, so this is the named owner inbox when one exists
+          ...(chosenEmail !== undefined ? { email: chosenEmail } : {}),
           email_source: lead.email ? "provided" : enrichment.emails[0] ? "site" : "none",
+          ...(chosenEmail !== undefined ? { email_is_role: isRoleInbox(chosenEmail) } : {}),
           ...(lead.phone !== undefined ? { phone: lead.phone } : {}),
           ...(lead.rating !== undefined ? { rating: lead.rating } : {}),
           ...(lead.reviews !== undefined ? { reviews: lead.reviews } : {}),

@@ -137,13 +137,21 @@ export function roiScore(row: OutputRow): number {
   // fix for "Maps surfaces the giants" is narrow-geo discovery, not a cutoff).
   const reviews = row.reviews ?? 0;
   if (reviews > 800) s -= 2;
-  // OWNER-REACHABILITY — a personal/named inbox (drsmith@, john@) lands on the
-  // decision-maker; a generic desk inbox (info@/reception@) is still deliverable
-  // but gatekept → mild penalty, not an exclude.
+  // OWNER-REACHABILITY (heavy weight, not cosmetic) — a named/personal inbox
+  // (drsmith@) lands on the DECISION-MAKER; a generic desk inbox (info@/reception@)
+  // is read by staff as ads → ignored / report-spam → wrecks the sender domain's
+  // reputation for EVERY lead. So role-only is now a strong DOWN-rank, named a
+  // strong UP-rank — this is the single biggest deliverability lever in selection.
   const localpart = (row.email ?? "").split("@")[0]?.toLowerCase() ?? "";
   const GENERIC_INBOX =
     /^(info|office|reception|service|services|admin|hello|hi|contact|contactus|enquir(?:y|ies)|mail|team|clinic|practice|appointments?|bookings?|reservations|frontdesk|hr|careers|jobs|no-?reply|donotreply)$/;
-  if (localpart) s += GENERIC_INBOX.test(localpart) ? -1 : 2;
+  if (row.email) {
+    const isRole = row.email_is_role ?? GENERIC_INBOX.test(localpart);
+    s += isRole ? -4 : 5;
+  }
+  // A director's personal address we DERIVED + SMTP-verified (Companies House →
+  // pattern) is the strongest owner-reachability signal there is.
+  if (row.derived_personal_email) s += 2;
   // INDEPENDENCE — explicit owner-run/established language = our ideal ICP.
   if (sig.has("owner_run")) s += 2;
   // buy-signals: motivated + has budget
@@ -229,11 +237,19 @@ export async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<voi
       // (digest lang). Fall back to the English reason/process only if absent,
       // so the Mini App shows the explanation in the owner's language.
       const proc = (row.process ?? "").trim();
+      // ⚠ REVIEW FLAGS — surface owner-reachability / PECR risks to the operator in
+      // «Рассылка» so a role-inbox or non-Ltd lead is checked before sending (the
+      // owner chose: emit with a flag + lower score, not withhold).
+      const warnFlags: string[] = [];
+      if (row.email_is_role) warnFlags.push("ящик role-типа (info@/reception@) — может не дойти до владельца");
+      if (row.is_ltd === false) warnFlags.push("не подтверждён как Ltd — PECR, проверь перед отправкой");
+      const warn = warnFlags.length > 0 ? `⚠ ${warnFlags.join("; ")}. ` : "";
       const reason =
-        (row.brief ?? "").trim() ||
-        [row.reason, proc && proc !== "unclear from site" ? proc : ""]
-          .filter(Boolean)
-          .join(" · ");
+        warn +
+        ((row.brief ?? "").trim() ||
+          [row.reason, proc && proc !== "unclear from site" ? proc : ""]
+            .filter(Boolean)
+            .join(" · "));
       // ⭐ RULE — owner-facing RU translation is GUARANTEED HERE, the single choke
       // point every draft passes through on its way to «Рассылка». Do NOT rely on a
       // separate upstream step (attachDigestExtras): paths that build rows directly
