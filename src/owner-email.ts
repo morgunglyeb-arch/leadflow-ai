@@ -12,9 +12,14 @@ import { getActiveDirectorName } from "./companies-house.js";
 import type { AppConfig } from "./config.js";
 import { verifyEmail } from "./verify-email.js";
 
-/** Only a real mailbox-level "deliverable" blesses a GUESSED address (not MX-only). */
+/** Only a real mailbox-level "deliverable/valid" verdict blesses a GUESSED address
+ * (an MX-record hit is NOT enough — that just means the domain accepts mail). */
 function isStrongDeliverable(reason: string): boolean {
-  return reason.startsWith("hunter:deliverable") || reason.startsWith("zerobounce:valid");
+  return (
+    reason.startsWith("hunter:deliverable") ||
+    reason.startsWith("zerobounce:valid") ||
+    reason === "myemailverifier:valid"
+  );
 }
 
 /**

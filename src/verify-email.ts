@@ -72,6 +72,68 @@ async function zeroBounceCheck(cfg: AppConfig, email: string): Promise<VerifyRes
 }
 
 // ---------------------------------------------------------------------------
+// MyEmailVerifier — free tier 100 verifications/DAY/key with API access. The
+// highest-volume free verifier → leads the chain so the scarcer Hunter/ZeroBounce
+// keys are spared. https://github.com/pat-myemailverifier/myemailverifier-api
+// ---------------------------------------------------------------------------
+
+interface MevResponse {
+  Status?: string; // "Valid" | "Invalid" | "Unknown" | "Catch All" | ...
+  error?: string;
+}
+
+/** MyEmailVerifier keys (KEYS + legacy KEY), any separator, deduped. Keys are
+ * alphanumeric (no fixed length/format), so we split on separators + keep plausible
+ * tokens rather than regex-extracting a fixed shape. */
+export function myEmailVerifierKeys(cfg: AppConfig): string[] {
+  const raw = `${cfg.MYEMAILVERIFIER_API_KEYS ?? ""} ${cfg.MYEMAILVERIFIER_API_KEY ?? ""}`;
+  return [
+    ...new Set(
+      raw
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((k) => /^[A-Za-z0-9]{8,}$/.test(k)),
+    ),
+  ];
+}
+
+async function myEmailVerifierCheck(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
+  const keys = myEmailVerifierKeys(cfg);
+  if (keys.length === 0) return null;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const url = `https://api.myemailverifier.com/api/validate_single.php?apikey=${keys[i]}&email=${encodeURIComponent(email)}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) {
+        if ([429, 402, 401, 403].includes(res.status) && i < keys.length - 1) continue;
+        return null;
+      }
+      let json: MevResponse;
+      try {
+        json = (await res.json()) as MevResponse;
+      } catch {
+        // Some error states return non-JSON text → rotate / give up.
+        if (i < keys.length - 1) continue;
+        return null;
+      }
+      const status = (json.Status ?? "").toLowerCase();
+      if (json.error || !status) {
+        if (i < keys.length - 1) continue;
+        return null;
+      }
+      if (status === "invalid") return { ok: false, reason: "myemailverifier:invalid" };
+      // valid / unknown / catch all → pass (conservative); only "valid" is treated as
+      // STRONGLY deliverable for guessed addresses (see owner-email.ts).
+      return { ok: true, reason: `myemailverifier:${status.replace(/\s+/g, "_")}` };
+    } catch {
+      if (i < keys.length - 1) continue;
+      return null;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Hunter.io — email verification (SMTP-level, much better than MX-only)
 // https://hunter.io/api-documentation#email-verifier
 // ---------------------------------------------------------------------------
@@ -212,6 +274,10 @@ export async function hunterDomainSearch(
  */
 export async function verifyEmail(cfg: AppConfig, email: string): Promise<VerifyResult> {
   if (!EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
+
+  // MyEmailVerifier first — highest free quota (100/day/key), spares the scarce ones.
+  const mev = await myEmailVerifierCheck(cfg, email);
+  if (mev) return mev;
 
   // Hunter.io verify — SMTP-level check, much better than MX-only
   const hunter = await hunterVerify(cfg, email);

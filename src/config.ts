@@ -100,6 +100,10 @@ const schema = z.object({
   // Optional rotation list (any separator) — ZeroBounce free tier is 100
   // verifications/key, so several keys multiply the verification budget.
   ZEROBOUNCE_API_KEYS: z.string().optional(),
+  // MyEmailVerifier — free tier 100 verifications/DAY/key with API access; the
+  // highest-volume free verifier, so it leads the verify chain. Singular + rotation.
+  MYEMAILVERIFIER_API_KEY: z.string().optional(),
+  MYEMAILVERIFIER_API_KEYS: z.string().optional(),
 
   // Hunter.io — email finder + deliverability verification (free: 25 req/mo)
   // Domain search finds emails we missed; verify checks if a specific address
