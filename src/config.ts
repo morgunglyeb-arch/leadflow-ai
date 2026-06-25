@@ -237,7 +237,7 @@ const schema = z.object({
   SEND_DAILY_CAP: z.coerce.number().int().positive().default(25),
   // Gentle warmup for a fresh inbox: day1=5, +2/day (the safe step — +3 ramps
   // too fast and costs ~+23% spam placement in month 1). ~3-4wk to full volume.
-  SEND_WARMUP_START: z.coerce.number().int().positive().default(10),
+  SEND_WARMUP_START: z.coerce.number().int().positive().default(5),
   SEND_WARMUP_STEP: z.coerce.number().int().positive().default(2),
   // Only send leads scoring at/above this ROI/quality bar (the rest queue for
   // your manual review). Higher = fewer, stronger sends.

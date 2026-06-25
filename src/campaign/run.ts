@@ -23,6 +23,7 @@ import {
   sendEmail,
   gmailInboxes,
   inboxByEmail,
+  sweepUnsubscribes,
   type Inbox,
 } from "./gmail.js";
 import { classifyReply, isStopReply, isBounce } from "./classify.js";
@@ -154,6 +155,11 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // 1) POLL replies on everything awaiting a response → stop sequences,
   //    handle bounces, and draft suggested responses to interested leads.
   if (live) await pollReplies(cfg, state, suppression);
+
+  // 1b) SWEEP List-Unsubscribe mailto requests across every sending inbox.
+  //     These arrive as fresh emails (not thread replies), so pollReplies misses
+  //     them — sweep + suppress so the one-click unsubscribe is genuinely honored.
+  if (live && !flags.mock) await sweepUnsubscribeRequests(cfg, state, suppression, inboxes);
 
   // 2) TOP UP the queue with fresh qualified leads (agent decides volume by
   //    sending pace, so we keep a backlog rather than a fixed count)
@@ -399,6 +405,40 @@ async function pollReplies(
       }
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);
+    }
+  }
+}
+
+/**
+ * Honor List-Unsubscribe mailto requests: sweep each sending inbox for fresh
+ * "unsubscribe" emails (the native one-click button sends one), suppress the
+ * sender, and stop any in-flight sequence for that address.
+ */
+async function sweepUnsubscribeRequests(
+  cfg: AppConfig,
+  state: CampaignState,
+  suppression: Set<string>,
+  inboxes: Inbox[],
+): Promise<void> {
+  for (const inbox of inboxes) {
+    let senders: string[] = [];
+    try {
+      senders = await sweepUnsubscribes(cfg, inbox);
+    } catch (err) {
+      console.warn(`[unsub-sweep] ${inbox.email} failed: ${(err as Error).message}`);
+      continue;
+    }
+    for (const email of senders) {
+      if (suppression.has(email)) continue;
+      await addToSuppression(cfg.SUPPRESSION_PATH, email, "unsubscribe-header");
+      suppression.add(email);
+      for (const lead of Object.values(state.leads)) {
+        if (lead.email.toLowerCase() === email && lead.status !== "opted_out") {
+          lead.status = "opted_out";
+          logEvent(lead, "reply", "not_interested");
+        }
+      }
+      console.log(`[unsub-sweep] honored unsubscribe from ${email} — suppressed`);
     }
   }
 }

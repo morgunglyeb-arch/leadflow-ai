@@ -213,6 +213,51 @@ export interface ThreadReplyInfo {
 }
 
 /** Look for a reply in the thread from someone other than us. */
+function addressFromHeader(header: string): string | undefined {
+  const m = header.match(/<([^>]+)>/) ?? header.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return m ? (m[1] ?? m[0]) : undefined;
+}
+
+/**
+ * Sweep an inbox for List-Unsubscribe mailto requests. The header we set
+ * (`List-Unsubscribe: <mailto:from?subject=unsubscribe>`) makes a recipient's
+ * native unsubscribe button send a FRESH email to the sending inbox with subject
+ * "unsubscribe" — NOT a thread reply, so pollReplies (thread-scoped) never sees
+ * it. This sweeps those out so the opt-out is honored. Returns the sender
+ * addresses found and marks the messages read so they aren't reprocessed.
+ */
+export async function sweepUnsubscribes(cfg: AppConfig, inbox: Inbox): Promise<string[]> {
+  const auth = await getGmailClient(cfg, inbox);
+  const gmail = google.gmail({ version: "v1", auth });
+  const q = "subject:unsubscribe is:unread newer_than:14d";
+  const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 50 });
+  const messages = list.data.messages ?? [];
+  const senders: string[] = [];
+  for (const m of messages) {
+    if (!m.id) continue;
+    try {
+      const meta = await gmail.users.messages.get({
+        userId: "me",
+        id: m.id,
+        format: "metadata",
+        metadataHeaders: ["From"],
+      });
+      const fromHeader =
+        meta.data.payload?.headers?.find((h) => /^from$/i.test(h.name ?? ""))?.value ?? "";
+      const addr = addressFromHeader(fromHeader);
+      if (addr && addr.toLowerCase() !== inbox.email.toLowerCase()) senders.push(addr.toLowerCase());
+      await gmail.users.messages.modify({
+        userId: "me",
+        id: m.id,
+        requestBody: { removeLabelIds: ["UNREAD"] },
+      });
+    } catch (err) {
+      console.warn(`[unsub-sweep] ${inbox.email} msg ${m.id} failed: ${(err as Error).message}`);
+    }
+  }
+  return senders;
+}
+
 export async function getThreadReply(
   cfg: AppConfig,
   threadId: string,
