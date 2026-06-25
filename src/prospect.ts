@@ -20,7 +20,7 @@ const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian
  * operator can sanity-check we're not re-pitching), and a faithful translation
  * of the outgoing English email into the operator's language.
  */
-async function attachDigestExtras(
+export async function attachDigestExtras(
   cfg: AppConfig,
   rows: OutputRow[],
   concurrency: number,
@@ -212,8 +212,10 @@ function verticalFromQuery(q: string | undefined): string | undefined {
 }
 
 /** Build a review-draft per qualified lead (site · email · why · message) and
- * emit it to Opero Ops. Best-effort: one failure never breaks the run. */
-async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
+ * emit it to Opero Ops. Best-effort: one failure never breaks the run.
+ * Exported so the CSV-regenerate path (scripts/regen-from-csv.ts) reuses the
+ * exact same emit + vertical-normalization logic. */
+export async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
   for (const row of rows) {
     try {
       const { subject, body } = assembleDraft(row, cfg);
@@ -232,6 +234,17 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
         [row.reason, proc && proc !== "unclear from site" ? proc : ""]
           .filter(Boolean)
           .join(" · ");
+      // ⭐ RULE — owner-facing RU translation is GUARANTEED HERE, the single choke
+      // point every draft passes through on its way to «Рассылка». Do NOT rely on a
+      // separate upstream step (attachDigestExtras): paths that build rows directly
+      // — the regen script, future callers — skip it and the RU silently vanished.
+      // If the row already carries a translation we reuse it; otherwise translate
+      // the exact body we're about to send. (No-op when DIGEST_LANG == OUTREACH_LANG.)
+      let messageRu = row.email_translation;
+      if (!messageRu && cfg.DIGEST_LANG !== cfg.OUTREACH_LANG) {
+        const targetLang = DIGEST_LANG_NAME[cfg.DIGEST_LANG] ?? "Russian";
+        messageRu = (await translate(cfg, body, targetLang)) || undefined;
+      }
       await emitDraft({
         business: row.company,
         ...(website ? { website } : {}),
@@ -242,7 +255,7 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
         ...(reason ? { reason } : {}),
         subject,
         message: body,
-        ...(row.email_translation ? { message_ru: row.email_translation } : {}),
+        ...(messageRu ? { message_ru: messageRu } : {}),
         score: Math.round(roiScore(row)),
         dedup_key: (row.domain || row.email || row.company).toLowerCase(),
       });
