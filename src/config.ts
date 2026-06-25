@@ -235,6 +235,11 @@ const schema = z.object({
   // Safe ceiling for a WARMED inbox is "under 50"; a fresh inbox must stay far
   // lower and only reach ~25 at the end of warmup (see GTM plan). Default 25.
   SEND_DAILY_CAP: z.coerce.number().int().positive().default(25),
+  // Per-DOMAIN daily cold-send ceiling (belt-and-suspenders over the per-inbox
+  // cap). 3 inboxes × 25 = 75/day/domain otherwise — too hot for fresh domains.
+  // Caps total cold volume per sending domain regardless of how many inboxes it
+  // has; rotation skips an inbox whose domain has hit this. Default 40.
+  SEND_DOMAIN_DAILY_CAP: z.coerce.number().int().positive().default(40),
   // Gentle warmup for a fresh inbox: day1=5, +2/day (the safe step — +3 ramps
   // too fast and costs ~+23% spam placement in month 1). ~3-4wk to full volume.
   SEND_WARMUP_START: z.coerce.number().int().positive().default(5),

@@ -197,6 +197,23 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // Per-inbox remaining capacity today; round-robin pick the next inbox with room.
   const remaining = new Map(inboxes.map((b) => [b.email, inboxRemaining(state, cfg, b.email)]));
   const totalRoom = [...remaining.values()].reduce((a, b) => a + b, 0);
+  // Per-DOMAIN remaining cold capacity today — caps total volume per sending
+  // domain over the per-inbox cap (3 inboxes × 25 = 75/domain is too hot for
+  // fresh domains). Sums today's sends across all inboxes sharing a domain.
+  const sendDay = new Date().toISOString().slice(0, 10);
+  const domainUsed = new Map<string, number>();
+  for (const [email, rec] of Object.entries(state.inbox_sent ?? {})) {
+    if (rec.date === sendDay) {
+      const d = domainOf(email);
+      domainUsed.set(d, (domainUsed.get(d) ?? 0) + rec.count);
+    }
+  }
+  const domainRoom = new Map<string, number>();
+  for (const b of inboxes) {
+    const d = domainOf(b.email);
+    if (!domainRoom.has(d))
+      domainRoom.set(d, Math.max(0, cfg.SEND_DOMAIN_DAILY_CAP - (domainUsed.get(d) ?? 0)));
+  }
   // Peer-warmup cold-ramp gate — hold first-touches until warmup has matured
   // (follow-ups to already-contacted leads continue regardless).
   let coldAllowed = true;
@@ -245,38 +262,55 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   console.log(
     `[campaign] first-touches to send: ${firstTouches.length} (room left today: ${totalRoom})`,
   );
+  // 3b) SEND due follow-ups FIRST — warm threads to already-contacted leads are
+  //     higher-value AND safer than new cold mail, so they get first claim on the
+  //     day's capacity. They count against the SAME per-inbox + per-domain caps
+  //     (F2: otherwise the ramp is fiction — a heavy follow-up day silently
+  //     over-sends from an inbox). Cap reached → defer the follow-up to a later run.
+  const followups = selectDueFollowups(state, cfg);
+  console.log(`[campaign] follow-ups due: ${followups.length}`);
+  for (const lead of followups) {
+    const which = lead.step === 1 ? "followup_1" : "followup_2";
+    const box = inboxByEmail(cfg, lead.inbox);
+    if (box) {
+      const d = domainOf(box.email);
+      if ((remaining.get(box.email) ?? 0) <= 0 || (domainRoom.get(d) ?? 0) <= 0) continue;
+    }
+    const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
+    const sent = await sendStep(cfg, lead, which, sendLead, box);
+    if (sent && box) {
+      recordInboxSend(state, box.email);
+      remaining.set(box.email, (remaining.get(box.email) ?? 1) - 1);
+      const d = domainOf(box.email);
+      domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
+    }
+    if (sendLead) await sleep(jitterMs(cfg));
+  }
+
+  // 4) SEND first touches — strongest queued leads, across inboxes that still
+  //    have BOTH per-inbox and per-domain room (F5) after follow-ups took theirs.
   let rr = 0;
   for (const lead of firstTouches) {
-    // find the next inbox (round-robin) that still has capacity today
     let chosen: Inbox | undefined;
     for (let i = 0; i < inboxes.length; i++) {
       const cand = inboxes[(rr + i) % inboxes.length]!;
-      if ((remaining.get(cand.email) ?? 0) > 0) {
+      if ((remaining.get(cand.email) ?? 0) > 0 && (domainRoom.get(domainOf(cand.email)) ?? 0) > 0) {
         chosen = cand;
         rr = rr + i + 1;
         break;
       }
     }
-    if (!chosen) break; // all inboxes hit their cap
+    if (!chosen) break; // every inbox hit a per-inbox OR per-domain cap
     // gate this lead to ITS own working days (from its website), not a global list
     const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
     const sent = await sendStep(cfg, lead, "initial", sendLead, chosen);
     if (sent) {
       recordInboxSend(state, chosen.email);
       remaining.set(chosen.email, (remaining.get(chosen.email) ?? 1) - 1);
+      const d = domainOf(chosen.email);
+      domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
     }
     if (sendableNow) await sleep(jitterMs(cfg));
-  }
-
-  // 4) SEND due follow-ups (only to non-repliers, after the gap) — from the
-  //    SAME inbox that started the thread, so threading/deliverability hold.
-  const followups = selectDueFollowups(state, cfg);
-  console.log(`[campaign] follow-ups due: ${followups.length}`);
-  for (const lead of followups) {
-    const which = lead.step === 1 ? "followup_1" : "followup_2";
-    const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
-    await sendStep(cfg, lead, which, sendLead, inboxByEmail(cfg, lead.inbox));
-    if (sendLead) await sleep(jitterMs(cfg));
   }
 
   // 5) LEARN + write replies-to-action for the operator
