@@ -186,6 +186,16 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       console.log(
         `[warmup] cold first-touches paused — warmup day ${wday} < ${cfg.WARMUP_COLD_AFTER_DAYS}; follow-ups continue.`,
       );
+  } else if (live && !cfg.WARMUP_ENABLED && !cfg.SEND_WITHOUT_WARMUP && !flags.mock) {
+    // FAIL-CLOSED (audit #24): peer-warmup OFF + sending LIVE = no reputation base.
+    // Previously this only warned and then sent — torching fresh domains. Now we HOLD
+    // cold first-touches (follow-ups to already-contacted leads still go). A deliberate
+    // send-ramp-only strategy must be opted into explicitly via SEND_WITHOUT_WARMUP=true.
+    coldAllowed = false;
+    console.error(
+      "[campaign] ⛔ HOLDING cold first-touches — WARMUP_ENABLED=false and SEND_WITHOUT_WARMUP is not set. " +
+        "Enable peer-warmup, or set SEND_WITHOUT_WARMUP=true to send on the ramp alone (deliberately).",
+    );
   }
   // Optional per-run sub-cap spreads the daily volume across hourly runs in the
   // send window (anti-burst). 0 = off → use the full remaining room.

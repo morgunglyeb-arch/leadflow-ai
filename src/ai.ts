@@ -125,7 +125,7 @@ WRITING FOR A NON-TECHNICAL OWNER (critical):
 - BANNED words in opener/subject/automation/est_benefit/followups: agentic, workflow, pipeline, LLM, GPT, API, integration, "AI-driven", TypeScript, "solution", "leverage", "streamline", "synergy".
 - Describe what it DOES in concrete terms, e.g. "a helper that answers every WhatsApp message and books the slot for you, even after hours" — not "an AI workflow".
 - Never call the prospect or their company "small" / "a small business" in the email — it can read as belittling. Say "your business", "your practice/clinic", or "businesses like yours". (The small/independent filter is OUR internal targeting, never client-facing wording.)
-- Lead with the pain and the result (missed calls = lost customers; never miss a booking again), not the technology. No flattery clichés, no "I hope this finds you well", "I came across your".
+- Lead with the pain and the result (e.g. lapsed patients drifting to another clinic; quotes that never got chased; the front desk buried in forms; empty slots after a cancellation), not the technology. Vary the angle to the gap you ACTUALLY found — do NOT default every email to "missed calls". No flattery clichés, no "I hope this finds you well", "I came across your".
 - The email must make sense and feel worth a reply on its own — it should sell itself.
 
 STRUCTURE (the shape that gets replies — proven on small-business cold email):
@@ -137,7 +137,7 @@ OPENING LINE (decides if they read on):
 - BANNED openers (instantly read as a mass-mail and binned): "Loved your post…", "Congrats on…", "I hope you're well", "I came across your website", "As a [role], you…". Empty flattery is worse than no personalization.
 
 THE ASK — exactly ONE soft, binary question (this is the single biggest reply lever):
-- One CTA only. Make it a low-friction yes/no they can answer in one word — e.g. "Want me to send a 2-minute example built for {Business}?" or "Is missing calls after hours something you'd want fixed?"
+- One CTA only. Make it a low-friction yes/no they can answer in one word — e.g. "Want me to send a 2-minute example built for {Business}?" or "Worth a look at winning back patients who've drifted off?"
 - A reply-or-interest ask beats asking for a meeting by ~2.5x, and a soft ask beats a hard pitch ~3x. Never stack two asks. (Calls are already banned below — the ask is a reply or a sent example, never a call.)
 
 TRUST WITHOUT CASE STUDIES (we're new — no testimonials to lean on):
@@ -165,17 +165,17 @@ LANGUAGE (strict):
 Fields:
 - opener: 1-2 sentences that go straight to THEIR specific situation/problem in plain words. Do NOT introduce yourself or say "I'm…" (no self-intro paragraph is used); no greeting line.
 - icebreaker: one short, specific observation about their business.
-- subject: <= 50 chars and <= 6 words, lowercase, written like a quick note to a colleague — NOT a marketing headline. Short, specific subjects (often 3-4 words) get the most replies. No emojis, no ALL CAPS, no spammy words ("free", "guarantee", "limited"), no fake "Re:"/"Fwd:".
+- subject: <= 50 chars and <= 6 words, lowercase, written like a quick note to a colleague — NOT a marketing headline. Short, specific subjects (often 3-4 words) get the most replies. No emojis, no ALL CAPS, no spammy words ("free", "guarantee", "limited"), no fake "Re:"/"Fwd:". CRITICAL: the subject must reflect the OFFER's actual angle, and must NOT default to "missed call(s)" — use a missed-call subject ONLY if missed calls are genuinely the gap you chose. Otherwise lead the subject with the angle you picked (reactivation/recall, web enquiries, no-shows, treatment-plan follow-up, forms, reviews). Across a batch the subjects must VARY — a subject that would fit any clinic is a weak subject.
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
 - process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. If no specific gap is visible, use the sector-typical manual task (see INDUSTRY FACTS) rather than "unclear from site".
-- automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an automatic assistant that texts back every missed call within seconds and books the patient in for you — 24/7, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon. DESCRIBE ONLY WHAT WE'D BUILD — do NOT add any ask, reply request, or demo/example offer here ("just reply", "reply yes", "I can send you a demo/example/video"). The email has exactly ONE ask, and it lives in the final line — never repeat it in the offer.
+- automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an assistant that automatically messages patients who haven't been in for a while and offers them a slot — so lapsed patients rebook themselves, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon. DESCRIBE ONLY WHAT WE'D BUILD — do NOT add any ask, reply request, or demo/example offer here ("just reply", "reply yes", "I can send you a demo/example/video"). The email has exactly ONE ask, and it lives in the final line — never repeat it in the offer.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
 - followup_1, followup_2: see FOLLOW-UPS above (offer to SEND an example/video; never a call).
 - services: see "SHOW A FEW SERVICES" above.
 - subject: the main subject line. subject_b: a SECOND subject on a DIFFERENT angle (e.g. one curiosity-led, one benefit/outcome-led) for A/B testing. Both <=50 chars and <=6 words, lowercase, conversational like a note to a colleague, no emojis/ALL CAPS/spam words.
-- demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi, sorry we missed your call at Smile Dental — reply here and we'll get you booked in." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
+- demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi from Smile Dental — it's been a while since your last check-up. Reply BOOK and we'll find you a slot this month." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
 
 Output via the emit_personalization tool only.`;
 }
@@ -343,17 +343,17 @@ export function fallbackPersonalization(
       : "No website context available, so fit is uncertain.",
     process: "unclear from site",
     automation:
-      "A short discovery call to map which repetitive ops could move to an agentic workflow.",
-    est_benefit: "Less manual back-office work once the right process is identified.",
+      "We'd set up an assistant that automatically messages patients who haven't been in for a while and offers them a slot, so lapsed patients rebook themselves — hands-off for your team.",
+    est_benefit: "Lapsed patients come back without anyone on your team chasing them.",
     brief,
     followup_1: `Just floating this back to the top of your inbox — happy to show a quick example of what we'd set up for ${lead.company}.`,
     followup_2: `I'll assume the timing isn't right for now — happy to leave the door open if things change.`,
     subject_b: `a quick win for ${lead.company}`,
     demo: "",
     services: [
-      "Auto text-back to every missed call",
-      "Instant replies to website and social enquiries",
-      "A simple system that logs leads and follows up",
+      "Win back patients who haven't been in for a while",
+      "Auto-fill last-minute cancellations from a waitlist",
+      "Chase unbooked treatment plans until patients book",
     ],
   };
 }

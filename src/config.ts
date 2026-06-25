@@ -296,6 +296,13 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((s) => s.toLowerCase() === "true"),
+  // Fail-closed escape hatch (audit #24): when WARMUP_ENABLED=false and sending is
+  // LIVE, cold first-touches are HELD by default (no reputation base = torched
+  // domains). Set true to deliberately send on the send-ramp alone (no peer-warmup).
+  SEND_WITHOUT_WARMUP: z
+    .string()
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
   // Peer-warmup volume per inbox: starts at WARMUP_DAILY, ramps linearly to
   // WARMUP_DAILY_MAX over WARMUP_RAMP_DAYS (gentle, human-looking). Plateau kept
   // at 8 (not 12) — the GTM safe protocol holds steady warmup traffic at 5–8/day

@@ -24,6 +24,10 @@ export function isCorporateEntity(company: string | undefined | null): boolean {
   return CORPORATE_RE.test(company);
 }
 
+// Warn ONCE per process if the PECR gate is running without its strong signal, so
+// the degrade to the name heuristic is never silent (audit #26).
+let warnedNoChKey = false;
+
 /**
  * The full emailability decision: prefer the official Companies House register
  * (when COMPANIES_HOUSE_API_KEY is set), fall back to the name heuristic.
@@ -37,6 +41,15 @@ export async function isEmailableEntity(
   company: string | undefined | null,
 ): Promise<boolean> {
   if (!company) return false;
+  if (!cfg.COMPANIES_HOUSE_API_KEY && !warnedNoChKey) {
+    warnedNoChKey = true;
+    console.warn(
+      "[compliance] ⚠️ SEND_CORPORATE_ONLY is ON but COMPANIES_HOUSE_API_KEY is unset — " +
+        "the PECR gate is degraded to a NAME heuristic only (it sees '…Ltd' in the trading " +
+        "name but can't confirm registration). Registered firms trading under a plain name " +
+        "will be wrongly HELD, and the gate can't spot dissolved companies. Set the key to harden it.",
+    );
+  }
   const ch = await isRegisteredCompany(cfg, company);
   if (ch === true) return true;
   if (ch === false && cfg.REQUIRE_LTD) return false;

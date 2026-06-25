@@ -178,12 +178,18 @@ export function roiScore(row: OutputRow): number {
  */
 export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
   const runId = await emitRunStart("prospect");
+  const stats: { discovered?: number } = {};
   try {
-    const rows = await runProspectingCore(cfg, flags);
+    const rows = await runProspectingCore(cfg, flags, stats);
     // Push each qualified lead's pre-generated message to the hub's "Рассылка"
     // review tab so the owner can check + send it by hand. Skip mock data.
     if (!flags.mock) await emitDrafts(cfg, rows);
-    await emitRunEnd(runId, { status: "done", qualified: rows.length, sent: 0 });
+    await emitRunEnd(runId, {
+      status: "done",
+      discovered: stats.discovered ?? 0,
+      qualified: rows.length,
+      sent: 0,
+    });
     return rows;
   } catch (err) {
     await emitRunEnd(runId, { status: "failed" });
@@ -230,7 +236,11 @@ async function emitDrafts(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
   }
 }
 
-async function runProspectingCore(cfg: AppConfig, flags: ProspectFlags): Promise<OutputRow[]> {
+async function runProspectingCore(
+  cfg: AppConfig,
+  flags: ProspectFlags,
+  stats?: { discovered?: number },
+): Promise<OutputRow[]> {
   const concurrency = flags.concurrency ?? cfg.CONCURRENCY;
   const target = flags.limit && flags.limit > 0 ? flags.limit : cfg.MAX_LEADS;
   const minFit = flags.minFit ?? cfg.MIN_FIT;
@@ -254,6 +264,7 @@ async function runProspectingCore(cfg: AppConfig, flags: ProspectFlags): Promise
     mock: flags.mock,
     maxLeads: poolSize,
   });
+  if (stats) stats.discovered = discovered.length;
   console.log(
     `[prospect] discovered ${discovered.length} candidates (pool target ${poolSize}) ` +
       `across ${icp.segments.length} segment(s)`,
