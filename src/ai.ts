@@ -453,6 +453,71 @@ const JSON_KEYS_HINT =
   "followup_1 (string), followup_2 (string), subject_b (string), demo (string), " +
   "services (array of 2-4 short strings).";
 
+/**
+ * Pull the JSON object out of a model reply. Free models (notably OpenRouter's
+ * `gpt-oss-120b:free`) ignore `response_format` and wrap the JSON in a markdown
+ * code fence (```json … ``` / ```json5), sometimes with prose around it — a raw
+ * JSON.parse then fails and the whole lead falls back. Strip any fence and slice
+ * the outermost {…}.
+ */
+export function extractJsonObject(text: string): string {
+  let t = text.trim();
+  t = t.replace(/^```[a-z0-9]*\s*/i, ""); // opening fence (```json / ```json5 / ```)
+  t = t.replace(/\s*```\s*$/i, ""); // closing fence
+  const first = t.indexOf("{");
+  const last = t.lastIndexOf("}");
+  if (first >= 0 && last > first) t = t.slice(first, last + 1);
+  return t.trim();
+}
+
+/**
+ * Escape raw control characters that appear INSIDE string literals (these models
+ * often emit literal newlines in a string value → "Bad control character in
+ * string literal"). String-aware so structural whitespace between tokens is left
+ * untouched. A best-effort repair tried only after a normal parse fails.
+ */
+export function repairJsonControlChars(s: string): string {
+  let out = "";
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i]!;
+    if (esc) {
+      out += ch;
+      esc = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      esc = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = !inStr;
+      out += ch;
+      continue;
+    }
+    const code = s.charCodeAt(i);
+    if (inStr && code < 0x20) {
+      out += ch === "\n" ? "\\n" : ch === "\r" ? "\\r" : ch === "\t" ? "\\t" : `\\u${code.toString(16).padStart(4, "0")}`;
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/** Tolerant parse for free-model replies: fence-strip + object-slice, then a
+ * control-char repair pass before giving up. */
+export function parseModelJson(text: string): unknown {
+  const candidate = extractJsonObject(text);
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return JSON.parse(repairJsonControlChars(candidate));
+  }
+}
+
 async function callOpenAIRaw(
   cfg: AppConfig,
   system: string,
@@ -482,7 +547,7 @@ async function callOpenAIRaw(
       const text = res.choices[0]?.message?.content ?? "";
       let parsed: unknown;
       try {
-        parsed = JSON.parse(text);
+        parsed = parseModelJson(text);
       } catch (err) {
         throw new Error(`response was not valid JSON: ${(err as Error).message}`);
       }
