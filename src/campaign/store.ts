@@ -18,8 +18,10 @@ export type CampaignStatus =
 export interface ReplyRecord {
   at: string;
   snippet: string;
-  sentiment?: "interested" | "not_interested" | "objection" | "auto" | "unclear";
+  sentiment?: "interested" | "not_interested" | "soft_decline" | "objection" | "auto" | "unclear";
   suggested?: string; // a drafted response for the operator to send
+  lastInboundId?: string; // Gmail message id of the inbound we last processed
+  // (so multi-turn polling re-processes only NEW messages in the thread)
 }
 
 export interface CampaignLead {

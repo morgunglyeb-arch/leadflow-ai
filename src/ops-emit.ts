@@ -98,6 +98,8 @@ export interface ReplyFields {
   email?: string;
   snippet?: string;
   suggested?: string;
+  replyId?: string; // Gmail message id → dedup key per DISTINCT inbound reply
+  // (so a genuine 2nd reply in the same thread isn't swallowed as a duplicate)
 }
 
 /**

@@ -347,14 +347,27 @@ async function pollReplies(
   state: CampaignState,
   suppression: Set<string>,
 ): Promise<void> {
+  // Poll leads mid-sequence (sent/fu1/fu2) AND leads in a LIVE conversation —
+  // F2: once a lead is "replied" with an interested/objection sentiment the deal
+  // is still open, so keep watching the thread for their NEXT message and keep
+  // drafting. Opt-outs/bounces/soft-declines/done are terminal and not re-polled.
+  const isLiveConversation = (l: CampaignLead): boolean =>
+    l.status === "replied" &&
+    (l.reply?.sentiment === "interested" || l.reply?.sentiment === "objection");
   const awaiting = Object.values(state.leads).filter(
-    (l) => l.threadId && ["sent", "followup_1", "followup_2"].includes(l.status),
+    (l) =>
+      l.threadId &&
+      (["sent", "followup_1", "followup_2"].includes(l.status) || isLiveConversation(l)),
   );
   for (const lead of awaiting) {
     try {
       const sender = lead.inbox ?? cfg.GMAIL_SENDER ?? "";
       const reply = await getThreadReply(cfg, lead.threadId!, sender, inboxByEmail(cfg, lead.inbox));
       if (!reply) continue;
+
+      // F2 turn-dedup: skip a message we already processed (otherwise every run
+      // re-drafts + re-pushes the same reply). Only NEW inbound ids proceed.
+      if (reply.id && reply.id === lead.reply?.lastInboundId) continue;
 
       // Bounce → stop + suppress the address (protects sender reputation)
       if (isBounce(reply.from, reply.snippet)) {
@@ -367,42 +380,65 @@ async function pollReplies(
       }
 
       const sentiment = classifyReply(reply.snippet);
-      lead.reply = { at: new Date().toISOString(), snippet: reply.snippet, sentiment };
-      if (isStopReply(sentiment)) {
-        lead.status = sentiment === "not_interested" ? "opted_out" : "replied";
-        logEvent(lead, "reply", sentiment);
-        if (sentiment === "not_interested") {
-          await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
-          suppression.add(lead.email.toLowerCase());
-        }
-        // Draft a suggested response for every genuine reply except opt-outs
-        // (no point drafting an answer to "remove me").
-        if (cfg.REPLY_ASSIST && sentiment !== "not_interested") {
-          try {
-            lead.reply.suggested = await suggestReply(cfg, {
-              company: lead.company,
-              ourOffer: cfg.OUR_OFFER,
-              ...(lead.snapshot.process ? { pitchedProcess: lead.snapshot.process } : {}),
-              ...(lead.snapshot.automation ? { pitchedAutomation: lead.snapshot.automation } : {}),
-              theirReply: reply.snippet,
-            });
-          } catch (err) {
-            console.warn(`[campaign] reply draft failed for ${lead.domain}: ${(err as Error).message}`);
-          }
-        }
-        console.log(
-          `[campaign] reply from ${lead.company} (${sentiment})${sentiment === "interested" ? " ⭐ — drafted a response" : ""} — sequence stopped`,
-        );
-        // Push the reply + human draft to the owner's phone (Telegram via hub).
-        // Best-effort, owner-only, never auto-sends — the operator decides.
-        await emitReply({
-          company: lead.company,
-          sentiment: sentiment ?? "unclear",
-          email: lead.email,
-          ...(reply.snippet ? { snippet: reply.snippet } : {}),
-          ...(lead.reply.suggested ? { suggested: lead.reply.suggested } : {}),
-        });
+      lead.reply = {
+        at: new Date().toISOString(),
+        snippet: reply.snippet,
+        sentiment,
+        ...(reply.id ? { lastInboundId: reply.id } : {}),
+      };
+      if (!isStopReply(sentiment)) continue; // auto-replies: ignore, keep sequence
+
+      // F7: only an EXPLICIT opt-out earns the permanent, irreversible suppress.
+      // A soft "no thanks" stops the sequence but routes to the soft bucket —
+      // the operator confirms in Telegram before any permanent ban.
+      if (sentiment === "not_interested") {
+        lead.status = "opted_out";
+        await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
+        suppression.add(lead.email.toLowerCase());
+      } else {
+        lead.status = "replied";
       }
+      logEvent(lead, "reply", sentiment);
+
+      // Draft a suggested reply for live conversations (interested/objection/
+      // unclear). NOT for opt-outs (nothing to say) and NOT for soft declines
+      // (don't counter-pitch a "no" — the operator decides whether to suppress).
+      const shouldDraft =
+        cfg.REPLY_ASSIST && sentiment !== "not_interested" && sentiment !== "soft_decline";
+      if (shouldDraft) {
+        try {
+          lead.reply.suggested = await suggestReply(cfg, {
+            company: lead.company,
+            ourOffer: cfg.OUR_OFFER,
+            ...(lead.snapshot.process ? { pitchedProcess: lead.snapshot.process } : {}),
+            ...(lead.snapshot.automation ? { pitchedAutomation: lead.snapshot.automation } : {}),
+            theirReply: reply.snippet,
+          });
+        } catch (err) {
+          // F3: the most valuable moment to lose the LLM — alert the operator's
+          // phone so a dead key pool never silently leaves a warm lead un-drafted.
+          console.warn(`[campaign] reply draft failed for ${lead.domain}: ${(err as Error).message}`);
+          await emitEvent("llm_exhausted", {
+            context: "reply_draft",
+            company: lead.company,
+            provider: cfg.LLM_PROVIDER,
+            note: "LLM failed while drafting a reply to a warm lead — operator got no draft. Rotate/replenish keys.",
+          });
+        }
+      }
+      console.log(
+        `[campaign] reply from ${lead.company} (${sentiment})${lead.reply.suggested ? " ⭐ — drafted a response" : ""} — sequence stopped`,
+      );
+      // Push the reply + human draft to the owner's phone (Telegram via hub).
+      // Best-effort, owner-only, never auto-sends — the operator decides.
+      await emitReply({
+        company: lead.company,
+        sentiment: sentiment ?? "unclear",
+        email: lead.email,
+        ...(reply.id ? { replyId: reply.id } : {}),
+        ...(reply.snippet ? { snippet: reply.snippet } : {}),
+        ...(lead.reply.suggested ? { suggested: lead.reply.suggested } : {}),
+      });
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);
     }

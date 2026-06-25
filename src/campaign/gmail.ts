@@ -210,6 +210,7 @@ export interface ThreadReply {
 export interface ThreadReplyInfo {
   from: string;
   snippet: string;
+  id: string; // Gmail message id of the inbound message (for multi-turn dedup)
 }
 
 /** Look for a reply in the thread from someone other than us. */
@@ -268,11 +269,15 @@ export async function getThreadReply(
   const gmail = google.gmail({ version: "v1", auth });
   const res = await gmail.users.threads.get({ userId: "me", id: threadId, format: "metadata" });
   const messages = res.data.messages ?? [];
-  for (const m of messages) {
+  // Walk newest→oldest and take the LATEST inbound message — for multi-turn
+  // threads (their reply → our reply → their 2nd reply) we must surface the
+  // most recent prospect message, not the first one we already processed.
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i]!;
     const from = m.payload?.headers?.find((h) => /^from$/i.test(h.name ?? ""))?.value ?? "";
     const isFromMe = senderEmail && from.toLowerCase().includes(senderEmail.toLowerCase());
     if (!isFromMe && from) {
-      return { from, snippet: (m.snippet ?? "(reply received)").slice(0, 400) };
+      return { from, snippet: (m.snippet ?? "(reply received)").slice(0, 400), id: m.id ?? "" };
     }
   }
   return null;
