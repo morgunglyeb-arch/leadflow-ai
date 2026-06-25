@@ -533,6 +533,17 @@ export function parseModelJson(text: string): unknown {
   }
 }
 
+// LLM-spend instrumentation: accumulate token usage across a run so prospect can
+// emit it to the ops hub (cost-per-lead / unit economics). Cost ≈ 0 on the free
+// tiers, but the token VOLUME is the leading indicator before paid Gemini kicks in.
+let tokensThisRun = 0;
+/** Read the run's accumulated LLM token usage and reset the counter. */
+export function drainTokenUsage(): number {
+  const t = tokensThisRun;
+  tokensThisRun = 0;
+  return t;
+}
+
 async function callOpenAIRaw(
   cfg: AppConfig,
   system: string,
@@ -559,6 +570,7 @@ async function callOpenAIRaw(
         response_format: { type: "json_object" },
         messages,
       });
+      tokensThisRun += res.usage?.total_tokens ?? 0;
       const text = res.choices[0]?.message?.content ?? "";
       let parsed: unknown;
       try {
@@ -859,6 +871,7 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
       const client = new OpenAI({ apiKey: keys[(start + attempt) % keys.length], baseURL: p.baseURL });
       try {
         const res = await client.chat.completions.create({ model: p.model, messages });
+        tokensThisRun += res.usage?.total_tokens ?? 0;
         return (res.choices[0]?.message?.content ?? "").trim();
       } catch (err) {
         lastErr = err;

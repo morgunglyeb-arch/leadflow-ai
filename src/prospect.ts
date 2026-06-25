@@ -5,7 +5,7 @@ import { loadExistingKeys } from "./output.js";
 import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
 import { sendDigest, writeDigestFile } from "./digest.js";
 import { assembleDraft, assembleDraftRu } from "./outreach.js";
-import { translate } from "./ai.js";
+import { drainTokenUsage, translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { deriveOwnerEmail } from "./owner-email.js";
 import { matchVertical, verticalFromQuery, verticalPrice } from "./vertical.js";
@@ -213,6 +213,16 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
       qualified: rows.length,
       sent: 0,
     });
+    // LLM-spend: emit this run's token usage so ops can track cost-per-lead /
+    // unit economics (cost ≈ 0 on free tiers; volume is the leading indicator).
+    const tokens = drainTokenUsage();
+    if (tokens > 0) {
+      await emitEvent("llm_usage", {
+        tokens,
+        qualified: rows.length,
+        per_lead: rows.length > 0 ? Math.round(tokens / rows.length) : tokens,
+      });
+    }
     return rows;
   } catch (err) {
     await emitRunEnd(runId, { status: "failed" });
