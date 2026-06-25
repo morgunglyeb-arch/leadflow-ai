@@ -99,9 +99,25 @@ export interface CampaignFlags {
 
 export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise<void> {
   const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
-  advanceWarmup(state);
+  // Cold-send ramp counter (warmup_day) must only advance on days we actually
+  // send cold mail — otherwise it climbs during the dry-run/peer-warmup window
+  // and the cold ramp starts mid-curve (e.g. day 14 = full cap) instead of low
+  // on the first live day. Peer-warmup uses its own counter, untouched by this.
+  const live = cfg.SENDING_ENABLED && !flags.dryRun;
+  if (live) advanceWarmup(state);
   const cap = warmupCap(state, cfg);
   let inboxes = gmailInboxes(cfg);
+  // Manual kill-switch: let the owner pull a specific inbox out of sending without
+  // de-authing it (e.g. one stuck in spam placement) via SEND_EXCLUDE_INBOXES.
+  if (cfg.SEND_EXCLUDE_INBOXES.length > 0) {
+    const excluded = new Set(cfg.SEND_EXCLUDE_INBOXES.map((e) => e.toLowerCase()));
+    const before = inboxes.length;
+    inboxes = inboxes.filter((b) => !excluded.has(b.email.toLowerCase()));
+    if (inboxes.length < before)
+      console.warn(
+        `[campaign] SEND_EXCLUDE_INBOXES pulled ${before - inboxes.length} inbox(es): ${[...excluded].join(", ")}`,
+      );
+  }
   // Deliverability gate — drop inboxes whose sending domain fails SPF/DKIM/DMARC
   // (warmup is pointless if auth is broken; sending from one burns reputation).
   if (cfg.DELIVERABILITY_GATE && !flags.mock && inboxes.length > 0) {
@@ -117,7 +133,6 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       console.warn("[deliverability] no sending domain passed — no first-touches will be sent this run");
   }
   const combinedCap = cap * inboxes.length;
-  const live = cfg.SENDING_ENABLED && !flags.dryRun;
   console.log(
     `[campaign] day ${state.warmup_day} · cap ${cap}/inbox × ${inboxes.length} inbox(es) = ${combinedCap}/day · ` +
       `sending=${live ? "LIVE" : "dry-run"} · queued=${

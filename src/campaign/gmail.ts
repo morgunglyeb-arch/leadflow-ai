@@ -151,6 +151,12 @@ function buildMime(opts: {
     `Subject: ${opts.subject}`,
     'Content-Type: text/plain; charset="UTF-8"',
     "MIME-Version: 1.0",
+    // Deliverability: a one-click unsubscribe header is a strong positive signal
+    // for Gmail/Outlook bulk-sender heuristics (and surfaces a native unsubscribe
+    // button). mailto points at the sending inbox; the honored opt-out channel
+    // stays the in-thread "reply no" line in the body. No HTTPS endpoint, so no
+    // List-Unsubscribe-Post One-Click (that would require a POST receiver).
+    `List-Unsubscribe: <mailto:${opts.from}?subject=unsubscribe>`,
   ];
   if (opts.inReplyTo) {
     headers.push(`In-Reply-To: ${opts.inReplyTo}`, `References: ${opts.inReplyTo}`);

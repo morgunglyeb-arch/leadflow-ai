@@ -247,6 +247,14 @@ const schema = z.object({
   // day's volume into small bursts (human-looking, protects deliverability)
   // instead of firing the whole cap at once. Per-inbox daily caps still apply.
   SEND_PER_RUN_CAP: z.coerce.number().int().min(0).default(0),
+  // Manual kill-switch: comma/space-separated inbox addresses to PULL from sending
+  // without de-authing them (e.g. one stuck in spam placement). They keep warming;
+  // they just won't send cold mail. Empty = all authorized inboxes send.
+  SEND_EXCLUDE_INBOXES: z
+    .string()
+    .optional()
+    .default("")
+    .transform((s) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)),
   // Days to wait before each follow-up if no reply (comma-separated).
   FOLLOWUP_GAP_DAYS: z.string().default("3,10"),
   // Deliverability GATE (deliverability-audit skill, enforced in code): before
