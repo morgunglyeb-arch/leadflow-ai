@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { verticalFromQuery } from "../vertical.js";
 import type { CampaignLead, CampaignState } from "./store.js";
 
 const LEARNINGS_PATH = "data/campaign/learnings.md";
@@ -32,7 +33,7 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
 
   const byVertical = new Map<string, { sent: number; replied: number; interested: number }>();
   for (const l of sentLeads) {
-    const v = l.snapshot.discovery_query ?? "unknown";
+    const v = verticalFromQuery(l.snapshot.discovery_query) ?? "unknown";
     const e = byVertical.get(v) ?? { sent: 0, replied: 0, interested: 0 };
     e.sent++;
     if (l.status === "replied") e.replied++;
@@ -42,7 +43,7 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
 
   const winners: Winner[] = interested
     .map((l) => ({
-      vertical: l.snapshot.discovery_query ?? "",
+      vertical: verticalFromQuery(l.snapshot.discovery_query) ?? "",
       subject: l.snapshot.subject ?? l.subject ?? "",
       opener: l.snapshot.opener ?? "",
       process: l.snapshot.process ?? "",

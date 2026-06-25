@@ -63,6 +63,21 @@ export function verticalAutomations(v: Vertical): string[] {
   return v.automations;
 }
 
+/**
+ * Normalize a discovery query into a vertical key by dropping the trailing
+ * " in <city>[, Country]" segment — "dental clinic in Leeds" → "dental clinic".
+ * THE learning/funnel grouping key: it equals what's stored as `contacts.industry`
+ * in opero-ops, so winners, attribution, and the per-vertical few-shot all agree
+ * on one vocabulary (audit #29 + learn-loop F8). Keep this the single source.
+ */
+export function verticalFromQuery(q: string | undefined): string | undefined {
+  if (!q) return undefined;
+  const parts = q.split(/\s+in\s+/i);
+  if (parts.length < 2) return q.trim() || undefined;
+  parts.pop(); // drop the trailing "<city>[, Country]" segment
+  return parts.join(" in ").trim() || undefined;
+}
+
 export function verticalFacts(v: Vertical): string {
   return [
     `INDUSTRY FACTS — this is a ${v.name}; ground the diagnosis in how this type of business REALLY works:`,

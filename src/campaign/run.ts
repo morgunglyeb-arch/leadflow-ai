@@ -35,6 +35,7 @@ import { suggestReply } from "../ai.js";
 import { verifyEmail } from "../verify-email.js";
 import { spamLint } from "../spamlint.js";
 import { emitReply, emitEvent, emitInboxHealth } from "../ops-emit.js";
+import { verticalFromQuery } from "../vertical.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -472,6 +473,13 @@ async function pollReplies(
         ...(reply.id ? { replyId: reply.id } : {}),
         ...(reply.snippet ? { snippet: reply.snippet } : {}),
         ...(lead.reply.suggested ? { suggested: lead.reply.suggested } : {}),
+        // F5 — angle attribution so the hub can learn per vertical × angle on WON.
+        ...(verticalFromQuery(lead.snapshot.discovery_query)
+          ? { vertical: verticalFromQuery(lead.snapshot.discovery_query) }
+          : {}),
+        ...(lead.variant ? { variant: lead.variant } : {}),
+        ...(lead.snapshot.opener ? { opener: lead.snapshot.opener } : {}),
+        ...(lead.subject ? { subject: lead.subject } : {}),
       });
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);

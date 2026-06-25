@@ -8,7 +8,7 @@ import { assembleDraft, assembleDraftRu } from "./outreach.js";
 import { translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { deriveOwnerEmail } from "./owner-email.js";
-import { matchVertical, verticalPrice } from "./vertical.js";
+import { matchVertical, verticalFromQuery, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
 import { emitDraft, emitEvent, emitRunEnd, emitRunStart } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
@@ -218,20 +218,6 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
     await emitRunEnd(runId, { status: "failed" });
     throw err;
   }
-}
-
-/** Normalize a discovery query ("dental implant clinics in Warrington, United
- * Kingdom") down to just the VERTICAL ("dental implant clinics") for `drafts.
- * industry` — so the funnel can group/learn by vertical instead of treating every
- * city as its own "industry" (audit #29). The city is always the last `" in "`
- * segment, so we drop it (rejoining the rest preserves verticals like "walk in
- * clinics"). */
-function verticalFromQuery(q: string | undefined): string | undefined {
-  if (!q) return undefined;
-  const parts = q.split(/\s+in\s+/i);
-  if (parts.length < 2) return q.trim() || undefined;
-  parts.pop(); // drop the trailing "<city>[, Country]" segment
-  return parts.join(" in ").trim() || undefined;
 }
 
 // Owner-email derivation is capped per run. With ZeroBounce keys added (~100

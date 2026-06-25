@@ -4,8 +4,9 @@ import OpenAI from "openai";
 import { z } from "zod";
 import type { AppConfig } from "./config.js";
 import type { DiscoveredLead, Enrichment, Lead, Personalized } from "./types.js";
-import { matchVertical, verticalFacts } from "./vertical.js";
+import { matchVertical, verticalFacts, verticalFromQuery } from "./vertical.js";
 import { existingAutomations } from "./enrich.js";
+import { fetchWinners } from "./ops-emit.js";
 
 export const PersonalizedSchema = z.object({
   opener: z.string().min(5).max(400),
@@ -248,6 +249,14 @@ let winnersCache: Winner[] | undefined;
 /** Load openers that earned replies (written by the learning loop) for few-shot. */
 async function loadWinners(): Promise<Winner[]> {
   if (winnersCache !== undefined) return winnersCache;
+  // F1: prefer the hub (source of truth — learned on WON across persistent
+  // contacts, min-N gated); fall back to the local winners.json (hub down /
+  // offline), then empty (cold-start is safe — the prompt has a hardcoded example).
+  const hub = await fetchWinners();
+  if (hub) {
+    winnersCache = hub as Winner[];
+    return winnersCache;
+  }
   try {
     const w = JSON.parse(await readFile("data/campaign/winners.json", "utf8"));
     winnersCache = Array.isArray(w) ? (w as Winner[]) : [];
@@ -257,8 +266,12 @@ async function loadWinners(): Promise<Winner[]> {
   return winnersCache;
 }
 
-function winnersText(winners: Winner[]): string | undefined {
-  const good = winners.filter((w) => w.opener).slice(0, 5);
+function winnersText(winners: Winner[], vertical?: string): string | undefined {
+  // F8: only emulate winners from the SAME vertical — a dental opener must not
+  // leak into a physio email. If the vertical has no winners yet, return none
+  // (the system prompt's hardcoded GOOD example carries the cold-start).
+  const scoped = vertical ? winners.filter((w) => w.vertical === vertical) : winners;
+  const good = scoped.filter((w) => w.opener).slice(0, 5);
   if (good.length === 0) return undefined;
   return [
     "EXAMPLES THAT EARNED REPLIES (emulate the angle/style for similar businesses — do NOT copy verbatim):",
@@ -736,7 +749,10 @@ export async function personalize(
   const vertical = await matchVertical(
     `${lead.discovery_query ?? ""} ${lead.company} ${enrichment.title ?? ""} ${enrichment.summary_text.slice(0, 400)}`,
   );
-  const wt = winnersText(await loadWinners());
+  // Filter few-shot winners by the SAME vertical key the funnel/hub use
+  // (verticalFromQuery == contacts.industry), not the priced matchVertical name,
+  // so winner.vertical and the lead's key agree (F8).
+  const wt = winnersText(await loadWinners(), verticalFromQuery(lead.discovery_query));
   const input: AiInput = {
     ourOffer: cfg.OUR_OFFER,
     lead,
