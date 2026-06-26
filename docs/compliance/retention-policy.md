@@ -21,7 +21,7 @@ Opero processes personal data for B2B outreach (UK clinics/allied-health) and in
 - **Outbound tracker** CSV (manual channel) — named individuals; subject to the same periods.
 
 ## Erasure / DSAR
-Anyone can ask us to access or delete their data (via the site request form or by reply). We action it promptly using the **erase procedure** (`scripts/erase-contact` in opero-ops) which removes the person from `contacts`, `leads`, the tracker, and — except for the minimal suppression record — everywhere. We add them to suppression so we never re-contact them.
+Anyone can ask us to access or delete their data (via the site request form or by reply). We action it promptly using the **erase procedure** (opero-ops `docs/erase-procedure.md`) which removes the person from `contacts`, `leads`, the tracker, and — except for the minimal suppression record — everywhere. We add them to suppression so we never re-contact them.
 
 ## Review
 Re-confirm these periods before any volume increase and at least annually.

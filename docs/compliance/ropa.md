@@ -27,4 +27,4 @@ _Drafted 2026-06-25. UK GDPR Art. 30 record. Engineering draft; DPA/solicitor to
 LLM providers (Google Gemini, OpenRouter) and some tools may process data outside the UK/EU. **Action:** confirm adequacy / Standard Contractual Clauses for these transfers, and disclose them plainly in the site privacy policy (do not claim EU-only processing where it isn't true). Flagged for DPA review.
 
 ## Data subject rights
-Access / erasure / objection actioned via the site request form or reply, using the erase procedure (opero-ops `scripts/erase-contact`).
+Access / erasure / objection actioned via the site request form or reply, using the erase procedure (opero-ops `docs/erase-procedure.md`).
