@@ -24,7 +24,9 @@ import {
   gmailInboxes,
   inboxByEmail,
   sweepUnsubscribes,
+  markUnsubProcessed,
   type Inbox,
+  type UnsubRequest,
 } from "./gmail.js";
 import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
@@ -34,7 +36,7 @@ import { isEmailableEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
 import { verifyEmail } from "../verify-email.js";
 import { spamLint } from "../spamlint.js";
-import { emitReply, emitEvent, emitInboxHealth } from "../ops-emit.js";
+import { emitReply, emitEvent, emitInboxHealth, emitSuppress, fetchSuppression } from "../ops-emit.js";
 import { verticalFromQuery } from "../vertical.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -152,6 +154,14 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   }
 
   const suppression = await loadSuppression(cfg.SUPPRESSION_PATH);
+
+  // D1: merge the hub's cross-channel suppression (contacts.suppressed in Supabase —
+  // opt-outs from the site, manual outreach, or replies the ops hub recorded). The
+  // local file is per-machine; the hub is the single source of truth across channels,
+  // so an opt-out on ANY channel blocks the cold machine. Best-effort: if the hub is
+  // unreachable we fall back to the local file rather than block the run.
+  const hubSuppressed = await fetchSuppression();
+  if (hubSuppressed) for (const e of hubSuppressed) suppression.add(e.toLowerCase());
 
   // 1) POLL replies on everything awaiting a response → stop sequences,
   //    handle bounces, and draft suggested responses to interested leads.
@@ -410,6 +420,7 @@ async function pollReplies(
         logEvent(lead, "bounced", reply.from);
         await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "bounce");
         suppression.add(lead.email.toLowerCase());
+        await emitSuppress(lead.email, "bounce"); // D1: write-through to the hub
         console.log(`[campaign] bounce for ${lead.company} — suppressed`);
         continue;
       }
@@ -430,6 +441,7 @@ async function pollReplies(
         lead.status = "opted_out";
         await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
         suppression.add(lead.email.toLowerCase());
+        await emitSuppress(lead.email, "opt-out"); // D1: write-through to the hub
       } else {
         lead.status = "replied";
       }
@@ -499,24 +511,33 @@ async function sweepUnsubscribeRequests(
   inboxes: Inbox[],
 ): Promise<void> {
   for (const inbox of inboxes) {
-    let senders: string[] = [];
+    let requests: UnsubRequest[] = [];
     try {
-      senders = await sweepUnsubscribes(cfg, inbox);
+      requests = await sweepUnsubscribes(cfg, inbox);
     } catch (err) {
       console.warn(`[unsub-sweep] ${inbox.email} failed: ${(err as Error).message}`);
       continue;
     }
-    for (const email of senders) {
-      if (suppression.has(email)) continue;
-      await addToSuppression(cfg.SUPPRESSION_PATH, email, "unsubscribe-header");
-      suppression.add(email);
-      for (const lead of Object.values(state.leads)) {
-        if (lead.email.toLowerCase() === email && lead.status !== "opted_out") {
-          lead.status = "opted_out";
-          logEvent(lead, "reply", "not_interested");
+    for (const { email, msgId } of requests) {
+      try {
+        if (!suppression.has(email)) {
+          // Persist FIRST (D5: only mark the message read once the opt-out is durable).
+          await addToSuppression(cfg.SUPPRESSION_PATH, email, "unsubscribe-header");
+          suppression.add(email);
+          await emitSuppress(email, "unsubscribe-header"); // D1: write-through to the hub
+          for (const lead of Object.values(state.leads)) {
+            if (lead.email.toLowerCase() === email && lead.status !== "opted_out") {
+              lead.status = "opted_out";
+              logEvent(lead, "reply", "not_interested");
+            }
+          }
+          console.log(`[unsub-sweep] honored unsubscribe from ${email} — suppressed`);
         }
+        await markUnsubProcessed(cfg, inbox, msgId);
+      } catch (err) {
+        // Leave the message UNREAD so the next sweep retries — never lose an opt-out.
+        console.warn(`[unsub-sweep] ${email} not finalized (will retry): ${(err as Error).message}`);
       }
-      console.log(`[unsub-sweep] honored unsubscribe from ${email} — suppressed`);
     }
   }
 }

@@ -227,13 +227,19 @@ function addressFromHeader(header: string): string | undefined {
  * it. This sweeps those out so the opt-out is honored. Returns the sender
  * addresses found and marks the messages read so they aren't reprocessed.
  */
-export async function sweepUnsubscribes(cfg: AppConfig, inbox: Inbox): Promise<string[]> {
+/** One opt-out request found in the inbox: the sender + the Gmail message id. */
+export interface UnsubRequest {
+  email: string;
+  msgId: string;
+}
+
+export async function sweepUnsubscribes(cfg: AppConfig, inbox: Inbox): Promise<UnsubRequest[]> {
   const auth = await getGmailClient(cfg, inbox);
   const gmail = google.gmail({ version: "v1", auth });
   const q = "subject:unsubscribe is:unread newer_than:14d";
   const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 50 });
   const messages = list.data.messages ?? [];
-  const senders: string[] = [];
+  const out: UnsubRequest[] = [];
   for (const m of messages) {
     if (!m.id) continue;
     try {
@@ -246,17 +252,28 @@ export async function sweepUnsubscribes(cfg: AppConfig, inbox: Inbox): Promise<s
       const fromHeader =
         meta.data.payload?.headers?.find((h) => /^from$/i.test(h.name ?? ""))?.value ?? "";
       const addr = addressFromHeader(fromHeader);
-      if (addr && addr.toLowerCase() !== inbox.email.toLowerCase()) senders.push(addr.toLowerCase());
-      await gmail.users.messages.modify({
-        userId: "me",
-        id: m.id,
-        requestBody: { removeLabelIds: ["UNREAD"] },
-      });
+      if (addr && addr.toLowerCase() !== inbox.email.toLowerCase()) {
+        out.push({ email: addr.toLowerCase(), msgId: m.id });
+      }
+      // D5: do NOT mark read here. The caller marks the message read ONLY after the
+      // opt-out is durably persisted to suppression — otherwise a failed append would
+      // hide the request from the next `is:unread` sweep and the opt-out would be lost.
     } catch (err) {
       console.warn(`[unsub-sweep] ${inbox.email} msg ${m.id} failed: ${(err as Error).message}`);
     }
   }
-  return senders;
+  return out;
+}
+
+/** Mark a swept unsubscribe message read — call ONLY after its opt-out is persisted. */
+export async function markUnsubProcessed(cfg: AppConfig, inbox: Inbox, msgId: string): Promise<void> {
+  const auth = await getGmailClient(cfg, inbox);
+  const gmail = google.gmail({ version: "v1", auth });
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: msgId,
+    requestBody: { removeLabelIds: ["UNREAD"] },
+  });
 }
 
 export async function getThreadReply(

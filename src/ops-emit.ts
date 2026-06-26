@@ -51,6 +51,44 @@ export async function fetchWinners(): Promise<unknown[] | null> {
   }
 }
 
+/**
+ * D1: read the hub's cross-channel suppression — emails/domains marked
+ * `contacts.suppressed` in Supabase (opt-outs from the site, manual outreach, or
+ * recorded replies). The hub is the single source of truth across channels; the
+ * cold machine merges this into its local never-contact set so an opt-out on ANY
+ * channel blocks it. Best-effort GET; null when the hub isn't configured/reachable.
+ */
+export async function fetchSuppression(): Promise<string[] | null> {
+  const base = process.env.OPERO_OPS_URL;
+  const token = process.env.INGEST_BEARER_TOKEN;
+  if (!base || !token) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/suppression`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(4000),
+    });
+    const data = (await res.json().catch(() => null)) as
+      | { entries?: string[] }
+      | string[]
+      | null;
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.entries)) return data.entries;
+    return null;
+  } catch (err) {
+    console.warn(`[ops-emit] fetchSuppression failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * D1: write a cold-machine opt-out/bounce/unsubscribe THROUGH to the hub so
+ * `contacts.suppressed` becomes the single cross-channel source of truth (the
+ * site/manual channels read the same flag). Best-effort; never throws.
+ */
+export async function emitSuppress(email: string, reason: string): Promise<void> {
+  await post({ type: "suppress", payload: { email: email.toLowerCase(), reason } });
+}
+
 /** Report a fatal pipeline error to the hub (-> bug + push). */
 export async function emitError(err: unknown): Promise<void> {
   const e = err as { name?: string; message?: string };
