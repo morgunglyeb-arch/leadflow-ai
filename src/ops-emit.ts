@@ -89,6 +89,15 @@ export async function emitSuppress(email: string, reason: string): Promise<void>
   await post({ type: "suppress", payload: { email: email.toLowerCase(), reason } });
 }
 
+/**
+ * R4: back up the campaign state (warmup_day, per-inbox counters, send history) to
+ * the hub once per run, so the Mac dying doesn't reset warmup to day 1 (the local
+ * file in data/campaign/ is the only copy otherwise). Best-effort; never throws.
+ */
+export async function emitStateBackup(state: unknown): Promise<void> {
+  await post({ type: "state_backup", payload: { state } });
+}
+
 /** Report a fatal pipeline error to the hub (-> bug + push). */
 export async function emitError(err: unknown): Promise<void> {
   const e = err as { name?: string; message?: string };

@@ -36,7 +36,17 @@ import { isEmailableEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
 import { verifyEmail } from "../verify-email.js";
 import { spamLint } from "../spamlint.js";
-import { emitReply, emitEvent, emitInboxHealth, emitSuppress, fetchSuppression } from "../ops-emit.js";
+import {
+  emitReply,
+  emitEvent,
+  emitInboxHealth,
+  emitSuppress,
+  fetchSuppression,
+  emitRunStart,
+  emitRunEnd,
+  emitError,
+  emitStateBackup,
+} from "../ops-emit.js";
 import { verticalFromQuery } from "../vertical.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -102,7 +112,23 @@ export interface CampaignFlags {
 }
 
 export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise<void> {
+  // R2: bookend the campaign/send run so it shows up in the hub and can't zombie as
+  // `running` forever on a hard kill (prospect.ts already does this; campaign never
+  // did → every real send-run would otherwise hang `running`).
+  const runId = await emitRunStart("campaign");
+  try {
+    const sent = await runCampaignBody(cfg, flags);
+    await emitRunEnd(runId, { status: "done", sent });
+  } catch (err) {
+    await emitRunEnd(runId, { status: "failed" });
+    await emitError(err);
+    throw err;
+  }
+}
+
+async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<number> {
   const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
+  let sentCount = 0;
   // Cold-send ramp counter (warmup_day) must only advance on days we actually
   // send cold mail — otherwise it climbs during the dry-run/peer-warmup window
   // and the cold ramp starts mid-curve (e.g. day 14 = full cap) instead of low
@@ -294,6 +320,11 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       remaining.set(box.email, (remaining.get(box.email) ?? 1) - 1);
       const d = domainOf(box.email);
       domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
+      sentCount++;
+      // R5: persist the 'sent' status BEFORE the next send so a crash can't replay
+      // it (re-sending the same mail = reputation + PECR risk). State machine alone
+      // left a window between sendEmail() and the end-of-run saveState().
+      await saveState(cfg.CAMPAIGN_STATE_PATH, state);
     }
     if (sendLead) await sleep(jitterMs(cfg));
   }
@@ -320,6 +351,8 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       remaining.set(chosen.email, (remaining.get(chosen.email) ?? 1) - 1);
       const d = domainOf(chosen.email);
       domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
+      sentCount++;
+      await saveState(cfg.CAMPAIGN_STATE_PATH, state); // R5: persist before next send
     }
     if (sendableNow) await sleep(jitterMs(cfg));
   }
@@ -356,6 +389,8 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
     `[campaign] done.${needAction > 0 ? ` ${needAction} INTERESTED replies need your reply (see data/campaign/replies.md).` : ""}` +
       `${flagged > 0 ? ` ${flagged} flagged for manual review.` : ""} state → ${cfg.CAMPAIGN_STATE_PATH}`,
   );
+  await emitStateBackup(state); // R4: off-Mac backup so warmup state survives a dead machine
+  return sentCount;
 }
 
 function jitterMs(cfg: AppConfig): number {
@@ -542,7 +577,7 @@ async function sweepUnsubscribeRequests(
   }
 }
 
-async function sendStep(
+export async function sendStep(
   cfg: AppConfig,
   lead: CampaignLead,
   which: "initial" | "followup_1" | "followup_2",
