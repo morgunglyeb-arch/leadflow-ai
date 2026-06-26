@@ -8,7 +8,11 @@ loadEnv({ override: true });
 const schema = z.object({
   // "anthropic" | "groq" | "openai" (any OpenAI-compatible endpoint:
   // Gemini, Cerebras, OpenRouter, Together, GitHub Models, OpenAI itself…)
-  LLM_PROVIDER: z.enum(["anthropic", "groq", "openai"]).default("anthropic"),
+  // Default is the FREE OpenAI-compatible provider (Gemini), never "anthropic":
+  // Anthropic costs money and is owner's-call-only (it's deliberately excluded
+  // from the free fallback chain — ai.ts). Defaulting to "anthropic" was a latent
+  // foot-gun — if .env ever lost LLM_PROVIDER, runs would silently bill Anthropic.
+  LLM_PROVIDER: z.enum(["anthropic", "groq", "openai"]).default("openai"),
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default("claude-sonnet-4-6"),
   GROQ_API_KEY: z.string().optional(),
