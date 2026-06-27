@@ -83,9 +83,16 @@ async function main(): Promise<void> {
       ...(r.reviews ? { reviews: Number(r.reviews) } : {}),
     });
   }
-  console.log(`[regen] ${leads.length} unique leads with email — re-personalizing (no Serper/Hunter)`);
+  // Optional batch cap (REGEN_LIMIT env or first CLI arg) so we don't burn the whole
+  // daily LLM quota / flood Рассылка in one run. 0 / unset = all.
+  const limit = Number(process.env.REGEN_LIMIT ?? process.argv[2] ?? "0") || 0;
+  const batch = limit > 0 ? leads.slice(0, limit) : leads;
+  console.log(
+    `[regen] ${leads.length} unique leads with email; processing ${batch.length}` +
+      `${limit > 0 ? ` (capped at ${limit})` : ""} — re-personalizing (no Serper/Hunter)`,
+  );
 
-  const rows = await processLeads(cfg, leads, {
+  const rows = await processLeads(cfg, batch, {
     mock: false,
     force: false, // use the enrichment cache when warm = zero site fetches
     concurrency: 2,

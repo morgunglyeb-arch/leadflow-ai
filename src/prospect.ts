@@ -4,7 +4,7 @@ import { discoverLeads } from "./discover/index.js";
 import { loadExistingKeys } from "./output.js";
 import { finalizeOutput, printTable, processLeads } from "./pipeline.js";
 import { sendDigest, writeDigestFile } from "./digest.js";
-import { assembleDraft, assembleDraftRu } from "./outreach.js";
+import { assembleDraft, assembleDraftRu, writeDrafts } from "./outreach.js";
 import { drainTokenUsage, translate } from "./ai.js";
 import { existingAutomations } from "./enrich.js";
 import { deriveOwnerEmail } from "./owner-email.js";
@@ -204,9 +204,10 @@ export async function runProspecting(cfg: AppConfig, flags: ProspectFlags): Prom
   const stats: { discovered?: number } = {};
   try {
     const rows = await runProspectingCore(cfg, flags, stats);
-    // Push each qualified lead's pre-generated message to the hub's "Рассылка"
-    // review tab so the owner can check + send it by hand. Skip mock data.
-    if (!flags.mock) await emitDrafts(cfg, rows);
+    // Non-dry runs already pushed each batch's drafts to the hub's "Рассылка" tab
+    // incrementally (per-batch checkpoint in runProspectingCore), so only dry runs
+    // still emit here — they skip the checkpoint to stay side-effect-light.
+    if (!flags.mock && flags.dry) await emitDrafts(cfg, rows);
     await emitRunEnd(runId, {
       status: "done",
       discovered: stats.discovered ?? 0,
@@ -239,14 +240,17 @@ const OWNER_DERIVE_BUDGET = 15;
 /** For role-only, corporate (Ltd) leads in the final set, try to reach the owner
  * directly: Companies House director → likely personal address → SMTP-verify. On a
  * verified hit, swap the role inbox for the owner's address. Best-effort + capped. */
-async function deriveOwnerEmails(cfg: AppConfig, rows: OutputRow[]): Promise<void> {
-  let budget = OWNER_DERIVE_BUDGET;
+async function deriveOwnerEmails(
+  cfg: AppConfig,
+  rows: OutputRow[],
+  budgetRef: { n: number },
+): Promise<void> {
   for (const row of rows) {
-    if (budget <= 0) break;
+    if (budgetRef.n <= 0) break;
     if (!row.email_is_role) continue; // already a personal/named inbox
     if (row.is_ltd === false) continue; // sole trader → review, don't chase (PECR)
     if (!row.domain) continue;
-    budget--;
+    budgetRef.n--;
     try {
       const personal = await deriveOwnerEmail(cfg, row.company, row.domain);
       if (personal) {
@@ -381,6 +385,9 @@ async function runProspectingCore(
   const allRows: OutputRow[] = [];
   let processed = 0;
   const chunkSize = Math.max(concurrency * 2, 6);
+  // Owner-email derivation is capped (Hunter free ~25/mo). The per-batch checkpoint
+  // shares ONE budget across all batches so it can't reset and overspend.
+  const deriveBudget = { n: OWNER_DERIVE_BUDGET };
 
   for (const batch of chunk(pool, chunkSize)) {
     if (qualified.length >= target) break;
@@ -394,13 +401,39 @@ async function runProspectingCore(
       label: "prospect",
     });
     processed += batch.length;
+    const fresh: OutputRow[] = [];
     for (const r of rows) {
       allRows.push(r);
-      if (isQualified(r, cfg, minFit)) qualified.push(r);
+      if (isQualified(r, cfg, minFit)) {
+        qualified.push(r);
+        fresh.push(r);
+      }
     }
     console.log(
       `[prospect] processed ${processed}/${pool.length} · qualified ${qualified.length}/${target}`,
     );
+
+    // CHECKPOINT after every batch: enrich → append CSV → emit this batch's
+    // qualified leads to the hub NOW. Previously ALL persistence happened once at
+    // the very end, so a kill/crash mid-run discarded every qualified lead. Now a
+    // kill loses at most the in-flight batch. emitDraft is idempotent by dedup_key,
+    // so re-running is safe. Best-effort: a checkpoint failure never aborts the run.
+    // Dry/mock runs skip this (handled at the end / never persist).
+    if (!flags.dry && !flags.mock && fresh.length > 0) {
+      try {
+        await deriveOwnerEmails(cfg, fresh, deriveBudget);
+        await attachDigestExtras(cfg, fresh, concurrency);
+        await finalizeOutput(cfg, fresh, {
+          force: false,
+          sendTest: false,
+          label: "prospect",
+          writeDraftsQueue: false,
+        });
+        await emitDrafts(cfg, fresh);
+      } catch (err) {
+        console.warn(`[prospect] checkpoint failed (continuing): ${(err as Error).message}`);
+      }
+    }
   }
 
   if (qualified.length < target) {
@@ -427,34 +460,30 @@ async function runProspectingCore(
     });
   }
 
-  // 4. final set: qualified, highest ROI first, capped to target
+  // 4. final set: qualified, highest ROI first, capped to target. For non-dry runs
+  //    the CSV rows + hub drafts were already persisted per-batch above (checkpoint).
   const rows = qualified.sort((a, b) => roiScore(b) - roiScore(a)).slice(0, target);
 
-  // 4a. OWNER-REACHABILITY (P0b) — for the final set only (token-cheap), try to
-  //     reach the decision-maker directly: a role-only inbox on a corporate (Ltd)
-  //     lead → derive the director's personal address (Companies House) + verify.
-  if (!flags.mock) await deriveOwnerEmails(cfg, rows);
-
-  // 4b. enrich the final set with operator-only digest extras (market price,
-  //     what they already have, and a translation of the outgoing email).
-  //     MUST run before the dry-run return — dry runs still emit drafts to the
-  //     hub, and those need the Russian translation (message_ru).
-  await attachDigestExtras(cfg, rows, concurrency);
-
   if (flags.dry) {
+    // Dry runs skip the per-batch checkpoint, so enrich the set here for the preview
+    // + the hub emit that runProspecting does for dry runs (needs message_ru).
+    if (!flags.mock) await deriveOwnerEmails(cfg, rows, { n: OWNER_DERIVE_BUDGET });
+    await attachDigestExtras(cfg, rows, concurrency);
     console.log("\n--- DRY RUN OUTPUT ---\n");
     printTable(rows);
     console.log("\n--- END ---\n");
     return rows;
   }
 
-  // 5. write enriched CSV + draft queue (drafts for review — no auto-send)
-  await finalizeOutput(cfg, rows, {
-    force: flags.force,
-    sendTest: flags.sendTest,
-    label: "prospect",
-    writeDraftsQueue: true,
-  });
+  // 5. local drafts-queue preview (.md files + drafts.csv) — overwrites with the
+  //    full set. Best-effort: the hub already has every draft from the checkpoints,
+  //    so a failure here (or a kill before here) costs only the local dev preview.
+  try {
+    await writeDrafts(cfg, rows);
+    console.log(`[prospect] wrote ${rows.length} local draft previews → ${cfg.DRAFTS_DIR}/`);
+  } catch (err) {
+    console.warn(`[prospect] local drafts-queue write failed: ${(err as Error).message}`);
+  }
 
   // 6. digest: always write a local preview file; email it if --digest
   const previewPath = await writeDigestFile(cfg, rows);
