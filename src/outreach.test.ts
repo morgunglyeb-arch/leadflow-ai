@@ -69,7 +69,7 @@ describe("RU review body — fixed menu RU, hook translated separately", () => {
   it("uses the FIXED CLINIC_MENU_RU (not an LLM mistranslation) + the passed hook", () => {
     const ru = assembleDraftRu(row("brightsmile.co.uk"), cfg, "Заметил, что вы продвигаете импланты.");
     expect(ru).toContain(`• ${CLINIC_MENU_RU[0]}`);
-    expect(ru).toContain("Дожимаем неоплаченные планы лечения до записи");
+    expect(ru).toContain(`• ${CLINIC_MENU_RU[2]}`); // a fixed RU menu line (the "chase" one)
     expect(ru).toContain("Заметил, что вы продвигаете импланты."); // translated hook spliced in
     expect(ru).toContain(`— ${cfg.SENDER_SIGNATURE}`);
     expect(ru).not.toMatch(/преследовани/i); // the bad "chase"→stalking translation

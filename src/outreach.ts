@@ -18,18 +18,19 @@ export interface EmailSequence {
 }
 
 /**
- * The ONE curated list of automations shown to every clinic (owner-locked
- * 2026-06-24). The model kept inventing weak/generic menu items, so the menu is
- * now fixed + strong; only the HOOK above it is personalised per clinic. The
- * first item is the headline "agent" offer — there is no separate offer sentence.
- * Edit this list to change what every clinic is offered.
+ * The ONE curated list of automations shown to every business (owner-locked;
+ * generic service-business menu since the 2026-06-27 pivot to trades + professional
+ * services). The model kept inventing weak/generic items, so the menu is fixed +
+ * strong; only the HOOK above it is personalised per business. The first item is
+ * the headline "assistant" offer — there is no separate offer sentence.
+ * Edit this list to change what every business is offered.
  */
 export const CLINIC_MENU: string[] = [
-  "An AI agent that takes bookings and answers patients 24/7",
-  "Win back patients who haven't been in for a while",
-  "Auto-fill last-minute cancellations from a waitlist",
-  "Chase unbooked treatment plans until patients book",
-  "A weekly report: bookings, no-shows, and who's due a recall",
+  "An assistant that answers new enquiries and books you in 24/7",
+  "Instant text-back to missed calls — so the caller books you, not the next company",
+  "Chase quotes and enquiries that went quiet, until they reply",
+  "Win back past customers who haven't been back in a while",
+  "Automatic review requests after each job, plus a weekly report",
 ];
 
 /**
@@ -39,11 +40,11 @@ export const CLINIC_MENU: string[] = [
  * stalking). Keep 1:1 aligned with CLINIC_MENU above.
  */
 export const CLINIC_MENU_RU: string[] = [
-  "ИИ-агент, который принимает записи и отвечает пациентам 24/7",
-  "Возвращаем пациентов, которые давно не были",
-  "Заполняем освободившиеся окна из листа ожидания",
-  "Дожимаем неоплаченные планы лечения до записи",
-  "Еженедельный отчёт: записи, неявки и кому пора на повторный приём",
+  "Ассистент, который отвечает на новые заявки и записывает 24/7",
+  "Мгновенный авто-SMS на пропущенный звонок — чтобы клиент записался к вам, а не к следующим",
+  "Дожимаем заявки и сметы, которые затихли, до ответа",
+  "Возвращаем прошлых клиентов, которые давно не обращались",
+  "Автозапрос отзыва после работы + еженедельный отчёт",
 ];
 
 // FIXED Russian copy for the other LOCKED parts of the email, for the owner's

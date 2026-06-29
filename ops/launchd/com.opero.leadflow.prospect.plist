@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.opero.leadflow.prospect</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd /Users/a1/LeadFlow-AI &amp;&amp; /usr/local/bin/npm run prospect &gt;&gt; /Users/a1/LeadFlow-AI/data/campaign/prospect-cron.log 2&gt;&amp;1</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>12</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+    <key>StandardErrorPath</key>
+    <string>/Users/a1/LeadFlow-AI/data/campaign/prospect-launchd.err</string>
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>
