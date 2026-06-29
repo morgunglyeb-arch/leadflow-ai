@@ -478,7 +478,11 @@ function retryDelayMs(err: unknown, attempt: number): number {
   const msg = err instanceof Error ? err.message : String(err);
   const m = msg.match(/try again in ([\d.]+)\s*s/i);
   if (m && m[1]) return Math.ceil(Number.parseFloat(m[1]) * 1000) + 250;
-  return Math.min(8000, 600 * 2 ** attempt); // 0.6s, 1.2s, 2.4s…
+  // A 429 with NO parseable hint (e.g. Gemini's empty-body 429) is the per-MINUTE
+  // free-tier limit. Cool ~60s so the window actually resets — a short backoff
+  // just re-bursts the same key inside the same minute and cascades to fallback.
+  if (isRateLimit(err)) return 60_000;
+  return Math.min(8000, 600 * 2 ** attempt); // non-rate-limit transient backoff
 }
 
 function isRateLimit(err: unknown): boolean {
