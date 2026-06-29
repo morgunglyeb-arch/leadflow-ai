@@ -44,6 +44,7 @@ export async function attachDigestExtras(
   cfg: AppConfig,
   rows: OutputRow[],
   concurrency: number,
+  opts: { skipReviewRu?: boolean } = {},
 ): Promise<void> {
   const limit = pLimit(Math.max(1, Math.min(concurrency, 4)));
   await Promise.all(
@@ -58,9 +59,14 @@ export async function attachDigestExtras(
         const already = existingAutomations((row.signals ?? "").split("|").filter(Boolean));
         if (already.length > 0) row.already_automated = already.join(", ");
 
-        // Owner-facing RU review (fixed menu RU + translated hook; see buildReviewRu).
-        const ru = await buildReviewRu(cfg, row);
-        if (ru) row.email_translation = ru;
+        // Owner-facing RU review (fixed menu RU + translated hook). This is a SECOND
+        // LLM call per lead — on the daily banking pass we SKIP it (skipReviewRu) to
+        // halve the per-minute Gemini load so the quality-critical personalization
+        // lands on Gemini, not the openrouter fallback. RU is filled later, on demand.
+        if (!opts.skipReviewRu) {
+          const ru = await buildReviewRu(cfg, row);
+          if (ru) row.email_translation = ru;
+        }
       }),
     ),
   );
@@ -425,7 +431,7 @@ async function runProspectingCore(
     if (!flags.dry && !flags.mock && fresh.length > 0) {
       try {
         await deriveOwnerEmails(cfg, fresh, deriveBudget);
-        await attachDigestExtras(cfg, fresh, concurrency);
+        await attachDigestExtras(cfg, fresh, concurrency, { skipReviewRu: true });
         await finalizeOutput(cfg, fresh, {
           force: false,
           sendTest: false,
