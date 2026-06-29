@@ -60,6 +60,11 @@ export interface CampaignState {
   last_run_date?: string; // YYYY-MM-DD — to advance warmup once/day
   // per-inbox sends today (multi-inbox daily cap), keyed by inbox email
   inbox_sent?: Record<string, { date: string; count: number }>;
+  // inbox email → reputation pause (auto-set by the inbox-guard on a DNSBL hit or
+  // high bounce rate; auto-cleared when `until` passes). A paused inbox is pulled
+  // from cold sending but keeps warming, so its reputation recovers, then it
+  // auto-resumes. Keyed by lowercased inbox email.
+  inbox_pauses?: Record<string, { until: string; reason: string }>;
   leads: Record<string, CampaignLead>; // keyed by domain
 }
 
@@ -73,6 +78,7 @@ export async function loadState(path: string): Promise<CampaignState> {
       warmup_day: parsed.warmup_day ?? 1,
       last_run_date: parsed.last_run_date,
       inbox_sent: parsed.inbox_sent ?? {},
+      inbox_pauses: parsed.inbox_pauses ?? {},
       leads: parsed.leads ?? {},
     };
   } catch {

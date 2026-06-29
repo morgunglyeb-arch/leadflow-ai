@@ -264,6 +264,19 @@ const schema = z.object({
     .optional()
     .default("")
     .transform((s) => s.split(/[\s,]+/).map((x) => x.trim()).filter(Boolean)),
+  // ── Auto inbox-health guard (self-healing reputation auto-pause) ──────────
+  // Each campaign run, the guard inspects every sending inbox: if its domain is
+  // on a DNSBL, or its lifetime bounce rate exceeds INBOX_BOUNCE_PAUSE_RATE (once
+  // it has at least INBOX_BOUNCE_MIN_SENT sends), it AUTO-PAUSES that inbox for
+  // INBOX_PAUSE_DAYS and alerts the owner. A paused inbox keeps warming but stops
+  // cold sends, so its reputation recovers; the pause auto-clears on expiry.
+  INBOX_GUARD_ENABLED: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  INBOX_BOUNCE_PAUSE_RATE: z.coerce.number().min(0).max(1).default(0.06),
+  INBOX_BOUNCE_MIN_SENT: z.coerce.number().int().min(1).default(20),
+  INBOX_PAUSE_DAYS: z.coerce.number().int().min(1).default(2),
   // Days to wait before each follow-up if no reply (comma-separated).
   FOLLOWUP_GAP_DAYS: z.string().default("3,10"),
   // Deliverability GATE (deliverability-audit skill, enforced in code): before

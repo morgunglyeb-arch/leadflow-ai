@@ -32,6 +32,7 @@ import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { passingSendingDomains, domainOf } from "./deliverability.js";
+import { evaluateInboxGuard, checkDomainBlacklist } from "./inbox-guard.js";
 import { isEmailableEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
 import { verifyEmail } from "../verify-email.js";
@@ -148,6 +149,30 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
         `[campaign] SEND_EXCLUDE_INBOXES pulled ${before - inboxes.length} inbox(es): ${[...excluded].join(", ")}`,
       );
   }
+  // Auto inbox-health guard — self-healing reputation protection. Pauses an inbox
+  // (DNSBL hit / high bounce rate) for INBOX_PAUSE_DAYS so it recovers, and auto-
+  // resumes it when the pause expires. Runs every campaign run = a daily check.
+  if (cfg.INBOX_GUARD_ENABLED) {
+    const blacklisted = flags.mock
+      ? new Set<string>()
+      : await checkDomainBlacklist(inboxes.map((b) => domainOf(b.email)));
+    const guard = evaluateInboxGuard(state, inboxes.map((b) => b.email), blacklisted, cfg, new Date());
+    if (guard.activePaused.size > 0) {
+      const before = inboxes.length;
+      inboxes = inboxes.filter((b) => !guard.activePaused.has(b.email.toLowerCase()));
+      if (inboxes.length < before)
+        console.warn(`[inbox-guard] ${before - inboxes.length} inbox(es) paused for reputation recovery`);
+    }
+    for (const p of guard.pausedNow) {
+      console.warn(`[inbox-guard] PAUSED ${p.inbox} for ${cfg.INBOX_PAUSE_DAYS}d — ${p.reason}`);
+      await emitError(
+        new Error(
+          `inbox-guard: PAUSED ${p.inbox} for ${cfg.INBOX_PAUSE_DAYS}d — ${p.reason}. It keeps warming; cold sends auto-resume after.`,
+        ),
+      );
+    }
+    for (const r of guard.resumedNow) console.log(`[inbox-guard] RESUMED ${r} (reputation pause expired)`);
+  }
   // Deliverability gate — drop inboxes whose sending domain fails SPF/DKIM/DMARC
   // (warmup is pointless if auth is broken; sending from one burns reputation).
   if (cfg.DELIVERABILITY_GATE && !flags.mock && inboxes.length > 0) {
@@ -203,22 +228,33 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   if (flags.topUp) {
     const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
     if (queued < combinedCap * 2) {
-      const rows = await runProspecting(cfg, {
-        dry: false,
-        mock: flags.mock,
-        force: false,
-        sendTest: false,
-        digest: false,
-        limit: combinedCap * 3,
-        minFit: cfg.MIN_FIT,
-        ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
-      });
-      const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
-      const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
-      console.log(
-        `[campaign] enqueued ${added} new leads (queue was ${queued}, cap ${cap}` +
-          `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
-      );
+      // Daily generation is best-effort: if it fails or hits LLM/discovery limits,
+      // we do NOT abort the run — we send from whatever is already banked in the
+      // queue ("Рассылка"). Tomorrow the limits reset and the next run re-tops-up.
+      try {
+        const rows = await runProspecting(cfg, {
+          dry: false,
+          mock: flags.mock,
+          force: false,
+          sendTest: false,
+          digest: false,
+          limit: combinedCap * 3,
+          minFit: cfg.MIN_FIT,
+          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
+        });
+        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
+        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
+        console.log(
+          `[campaign] enqueued ${added} new leads (queue was ${queued}, cap ${cap}` +
+            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
+        );
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        console.warn(
+          `[campaign] top-up generation failed (${msg}) — sending from ${queued} already-banked lead(s) in the queue`,
+        );
+        await emitError(new Error(`top-up generation failed; sending from ${queued} banked leads: ${msg}`));
+      }
     }
   }
 
