@@ -607,6 +607,37 @@ export function drainTokenUsage(): number {
   return t;
 }
 
+// Per-key cooldown ACROSS leads: a 429 is the per-MINUTE free-tier limit (~20/min/
+// key, "retry in Ns") and a dead key (401/403) won't recover this run — so we mark
+// the key unavailable until its window clears and SKIP it, instead of every lead
+// re-hammering key #1 and bursting past the combined per-minute cap into fallback.
+// See [[reference-gemini-rpm]]. keyCursor (module-level) gives round-robin spread.
+const keyCooldownUntil = new Map<string, number>();
+const keyId = (k: string | undefined): string => k ?? "__default__";
+
+/** Round-robin pick of the next key that is NOT cooling down. If every key is
+ * cooling, returns the soonest-free key + how long to wait for it (so we pace to
+ * the per-minute window rather than spin). */
+function pickReadyKey(keys: (string | undefined)[]): { index: number; waitMs: number } {
+  const now = Date.now();
+  let soonest = Number.POSITIVE_INFINITY;
+  let soonestIdx = keyCursor % keys.length;
+  for (let i = 0; i < keys.length; i++) {
+    const idx = (keyCursor + i) % keys.length;
+    const until = keyCooldownUntil.get(keyId(keys[idx])) ?? 0;
+    if (until <= now) {
+      keyCursor = idx + 1;
+      return { index: idx, waitMs: 0 };
+    }
+    if (until < soonest) {
+      soonest = until;
+      soonestIdx = idx;
+    }
+  }
+  keyCursor = soonestIdx + 1;
+  return { index: soonestIdx, waitMs: Math.max(0, soonest - now) };
+}
+
 async function callOpenAIRaw(
   cfg: AppConfig,
   system: string,
@@ -619,13 +650,18 @@ async function callOpenAIRaw(
     { role: "user" as const, content: userContent },
   ];
 
-  // Try every key on a 429 before sleeping: a different key may have quota.
-  // Only once we've cycled through all keys do we back off and retry.
-  const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length);
-  const start = keyCursor++; // round-robin: each call begins at the next key
+  // Pick the next READY key (skipping ones still cooling down from a 429 or a dead
+  // key), pacing to the per-minute window instead of bursting. allow a few extra
+  // attempts so we can wait out a cooldown when every key is briefly busy.
+  const maxAttempts = Math.max(cfg.LLM_MAX_RETRIES + 1, keys.length + 2);
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const apiKey = keys[(start + attempt) % keys.length];
+    const pick = pickReadyKey(keys);
+    if (pick.waitMs > 0) {
+      console.warn(`[ai] all keys cooling, waiting ${(pick.waitMs / 1000).toFixed(1)}s…`);
+      await sleep(pick.waitMs);
+    }
+    const apiKey = keys[pick.index];
     const client = new OpenAI({ apiKey, baseURL: opts.baseURL });
     try {
       const res = await client.chat.completions.create({
@@ -644,18 +680,17 @@ async function callOpenAIRaw(
       return PersonalizedSchema.parse(coerceToSchema(parsed));
     } catch (err) {
       lastErr = err;
-      // Rotate to the next key on ANY key/provider error (rate limit, dead key,
-      // exhausted quota, outage) — not just 429. A single bad key never stops us.
       if (isKeyError(err) && attempt < maxAttempts - 1) {
-        const cycledAllKeys = (attempt + 1) % keys.length === 0;
-        // Only BACK OFF for real rate limits (429). Dead/invalid keys (401/402)
-        // won't recover by waiting, so just skip to the next key immediately.
-        if (cycledAllKeys && isRateLimit(err)) {
+        if (isRateLimit(err)) {
+          // 429 = per-minute limit. Cool THIS key for its "retry in Ns" window so
+          // we skip it (across leads too) instead of re-hammering and bursting.
           const delay = retryDelayMs(err, attempt);
-          console.warn(`[ai] all keys rate-limited, retrying in ${(delay / 1000).toFixed(1)}s…`);
-          await sleep(delay);
+          keyCooldownUntil.set(keyId(apiKey), Date.now() + delay);
+          console.warn(`[ai] key rate-limited, cooling ~${(delay / 1000).toFixed(0)}s, rotating…`);
         } else {
-          console.warn(`[ai] key error (${(err as { status?: number }).status ?? "?"}), rotating…`);
+          // dead/invalid key (401/402/403) — skip it for the rest of the run.
+          keyCooldownUntil.set(keyId(apiKey), Date.now() + 60 * 60 * 1000);
+          console.warn(`[ai] key error (${(err as { status?: number }).status ?? "?"}), skipping for run…`);
         }
         continue;
       }
