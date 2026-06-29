@@ -388,6 +388,9 @@ async function runProspectingCore(
   // Owner-email derivation is capped (Hunter free ~25/mo). The per-batch checkpoint
   // shares ONE budget across all batches so it can't reset and overspend.
   const deriveBudget = { n: OWNER_DERIVE_BUDGET };
+  // EARLY-STOP: count consecutive batches where (almost) every draft fell back to
+  // the no-LLM opener — the signal that the daily Gemini quota is spent.
+  let llmDeadStreak = 0;
 
   for (const batch of chunk(pool, chunkSize)) {
     if (qualified.length >= target) break;
@@ -433,6 +436,25 @@ async function runProspectingCore(
       } catch (err) {
         console.warn(`[prospect] checkpoint failed (continuing): ${(err as Error).message}`);
       }
+    }
+
+    // EARLY-STOP on LLM exhaustion: once the daily Gemini quota is spent every draft
+    // falls back to the no-LLM opener (fit<minFit → not qualified), so continuing
+    // just burns discovery/enrichment/time for zero output. Take the max clean
+    // drafts the day's quota allows, then stop. (Daily run banks the max; resets daily.)
+    const drafted = rows.filter((r) => r.ai_provider);
+    const fellBackNow = drafted.filter((r) => r.ai_provider === "fallback").length;
+    if (llmReady && drafted.length >= 3 && fellBackNow / drafted.length >= 0.75) {
+      llmDeadStreak += 1;
+      if (llmDeadStreak >= 2) {
+        console.warn(
+          `[prospect] LLM quota looks exhausted (2 batches ≥75% fallback) — stopping early ` +
+            `with ${qualified.length} clean qualified leads banked.`,
+        );
+        break;
+      }
+    } else {
+      llmDeadStreak = 0;
     }
   }
 
