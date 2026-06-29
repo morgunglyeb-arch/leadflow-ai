@@ -72,7 +72,78 @@ function coerceToSchema(raw: unknown): unknown {
   return obj;
 }
 
-function buildSystemPrompt(outreachLang: string, digestLang: string): string {
+export type Segment = "trade" | "proserv" | "clinic";
+
+/** Classify a lead's vertical (priced name or query) into a copy segment, so the
+ * system prompt pitches the RIGHT automations + pain (a plumber must never be told
+ * to think about "patients / recall / treatment-plans"). Defaults to "trade" (the
+ * broadest active ICP); medical → "clinic" (parked but kept working). */
+export function segmentOf(vertical?: string): Segment {
+  const v = (vertical ?? "").toLowerCase();
+  if (
+    /account|bookkeep|estate|letting|lettings|property manage|broker|mortgage|insuranc|financ|advis|wealth|ifa|solicitor|\blaw\b|legal|conveyanc/.test(
+      v,
+    )
+  )
+    return "proserv";
+  if (
+    /dental|dentist|clinic|physio|chiro|osteo|\bgp\b|medical|doctor|optician|optometr|\bvet|veterinary|fertility|ivf|aesthetic|botox|salon|barber|surgery|practice|hygienist/.test(
+      v,
+    )
+  )
+    return "clinic";
+  return "trade";
+}
+
+// What to pitch, per segment — the single most important fix: the clinic list
+// (patients/recall/treatment-plan/intake) misfires on a plumber or an accountant.
+const MENU_BLOCK: Record<Segment, string> = {
+  trade: `⭐ For the MENU and the main OFFER, PREFER these high-value automations — rarely already in place for a trades/home-services business, and worth real money:
+- MISSED-CALL TEXT-BACK (the wedge — usually the single biggest leak): the second a call goes unanswered, auto-text the caller ("sorry we missed you — what's the job + postcode? we'll call you straight back") so they book YOU, not the next number on Google. For TRADES this is NOT saturated — most still don't have it; lead with it unless they clearly already do.
+- QUOTE / ESTIMATE FOLLOW-UP: chase every quote that went quiet until they say yes or no — most trades send a price once and never follow up, and the job goes to whoever chased.
+- INSTANT WEB-ENQUIRY / "request a quote" reply: answer enquiry forms within seconds, day or night.
+- REVIEW ASK after each job: auto-text for a Google review when the work's done — reviews are how the next customer picks you.
+- REBOOK / SERVICE REMINDER: nudge past customers for the annual boiler service, gutter clean, or recheck.`,
+  proserv: `⭐ For the MENU and the main OFFER, PREFER these high-value automations — rarely already in place for an accountant / agent / broker / adviser, and worth real money:
+- INSTANT LEAD RESPONSE & qualify: the first firm to reply to a new enquiry usually wins it — auto-answer and qualify new enquiries in seconds so the client doesn't go to whoever replied first.
+- PROPOSAL / FEE-QUOTE FOLLOW-UP: chase sent proposals and quotes that went quiet, until they convert.
+- ONBOARDING / DOCUMENT CHASING: automatically collect the paperwork a new client owes (ID, statements, signed engagement letter) so nobody chases by hand.
+- MISSED-CALL TEXT-BACK + after-hours capture: never lose an enquiry that rang out.
+- RENEWAL / DEADLINE / ANNUAL-REVIEW reminders (tax deadline, policy renewal, mortgage rate end) that bring clients back.`,
+  clinic: `⭐ For the MENU (and as alternative offers when an agent doesn't fit), PREFER these LESS-OBVIOUS, higher-value automations — rarely already in place, worth real money:
+- REACTIVATION / RECALL: automatically reach out to patients overdue for a check-up, cleaning, eye test or review and get them rebooked — lapsed patients are the biggest untapped revenue and almost nobody automates it
+- FILL CANCELLATIONS: when a slot frees up, auto-offer it to a waitlist so last-minute gaps don't sit empty
+- TREATMENT-PLAN / QUOTE FOLLOW-UP: gently chase patients given a plan or quote who never booked, until they convert
+- NEW-PATIENT INTAKE & FORMS: send and collect medical-history / consent / pre-visit forms automatically, so reception isn't chasing paperwork
+- POST-VISIT REVIEWS + feedback: auto-request a Google review after each visit, and catch unhappy feedback privately first
+- COMMON-QUESTION handling: answer pricing / insurance / parking / hours questions instantly, day and night
+- a simple weekly REPORT of enquiries, bookings, no-shows and who's due a recall
+
+SATURATED — use only as a last resort, NEVER the default: instant text-back to missed calls, basic appointment reminders. Most clinics ALREADY have these, so they make a weak, obvious pitch.`,
+};
+
+// A concrete GOOD-hook example the model imitates — must match the segment.
+const GOOD_HOOK: Record<Segment, string> = {
+  trade: `- GOOD hook example (specific, loss-framed, NO rating): icebreaker "Your site leads with emergency call-outs and free quotes." opener "The calls that ring out while you're on a job just dial the next plumber on Google — that's a booked job gone, and you never even saw it."`,
+  proserv: `- GOOD hook example (specific, loss-framed, NO rating): icebreaker "You offer a free first consultation for new clients." opener "A new enquiry usually goes with whoever replies first — a form that comes in at 6pm and sits till morning is often already booked someone else by then."`,
+  clinic: `- GOOD hook example (specific, loss-framed, NO rating): icebreaker "Your site pushes Invisalign and free consults hard." opener "The consults that don't book on the day usually go cold — nobody chases them, and an Invisalign case is months of revenue gone quiet."`,
+};
+
+// Tone differs: a tradesperson reads on their phone between jobs.
+const TONE_LINE: Record<Segment, string> = {
+  trade:
+    "TONE: the reader is a tradesperson reading on their phone between jobs — short, blunt, plain, even shorter than usual (~50-65 words). No polish; sound like a text from someone who gets their trade.",
+  proserv:
+    "TONE: the reader is a professional (accountant / agent / broker / adviser) — tight but a touch more considered; one clean specific line beats slang.",
+  clinic:
+    "TONE: the reader is a busy practice owner/manager — warm, plain, concrete; respect their time.",
+};
+
+function buildSystemPrompt(
+  outreachLang: string,
+  digestLang: string,
+  segment: Segment = "trade",
+): string {
   const outName = LANG_NAME[outreachLang] ?? "English";
   const digName = LANG_NAME[digestLang] ?? "Russian";
   return `You are a senior consultant for a studio that builds custom AI assistants and automations for small businesses. For each lead you find the SINGLE most valuable thing this business has NOT yet automated — something we can build and sell them — and write a short, plain cold email that sells it.
@@ -82,17 +153,7 @@ What we can build — pick the ONE best fit as the main OFFER (the \`automation\
 The strongest headline OFFER is usually a smart AGENT — one assistant that does, automatically, the customer-facing thing the business now does by hand:
 - a booking / enquiry AGENT that answers and books appointments by itself on the channel their customers actually use — their website chat or phone, or social DMs (Instagram/WhatsApp) where DM-booking is genuinely how that business takes bookings. Describe it as ONE thing ("an agent that takes bookings on your site automatically"), don't stretch it across three menu bullets.
 
-⭐ For the MENU (and as alternative offers when an agent doesn't fit), PREFER these LESS-OBVIOUS, higher-value automations — rarely already in place, worth real money:
-- REACTIVATION / RECALL: automatically reach out to patients overdue for a check-up, cleaning, eye test or review and get them rebooked — lapsed patients are the biggest untapped revenue and almost nobody automates it
-- FILL CANCELLATIONS: when a slot frees up, auto-offer it to a waitlist so last-minute gaps don't sit empty
-- TREATMENT-PLAN / QUOTE FOLLOW-UP: gently chase patients given a plan or quote who never booked, until they convert
-- NEW-PATIENT INTAKE & FORMS: send and collect medical-history / consent / pre-visit forms automatically, so reception isn't chasing paperwork
-- POST-VISIT REVIEWS + feedback: auto-request a Google review after each visit, and catch unhappy feedback privately first
-- UNPAID-BALANCE / DEPOSIT reminders: chase outstanding payments and take deposits up front to cut no-shows
-- COMMON-QUESTION handling: answer pricing / insurance / parking / hours questions instantly, day and night
-- a simple weekly REPORT of enquiries, bookings, no-shows and who's due a recall
-
-SATURATED — use only as a last resort, NEVER the default: instant text-back to missed calls, basic appointment reminders. Most clinics ALREADY have these, so they make a weak, obvious pitch.
+${MENU_BLOCK[segment]}
 
 GROUNDING (no hallucination):
 - Use ONLY the company context + DETECTED SIGNALS provided. Never invent facts, numbers, tools, or channels that aren't evidenced.
@@ -137,7 +198,8 @@ STRUCTURE (the shape that gets replies — proven on small-business cold email):
 OPENING LINE (decides if they read on):
 - Show you actually looked at a SPECIFIC detail (a service, a page, what a review says) — and vary HOW you open across leads (don't start every email with "Saw…"; a question, a direct observation, or a "most clinics like yours…" frame all work). Convey RESEARCH, not hope.
 - BANNED openers (instantly read as a mass-mail and binned): "Loved your post…", "Congrats on…", "I hope you're well", "I came across your website", "As a [role], you…". ALSO BANNED — opening on or praising the RATING / REVIEW COUNT: "your impressive/fantastic/amazing/exceptional 4.9 rating", "your 82 five-star reviews show…", "clearly a busy/well-regarded practice". Praising numbers everyone has = worse than no personalization, and spam filters flag it as sales-speak.
-- GOOD hook example (specific, loss-framed, NO rating): icebreaker "Your site pushes Invisalign and free consults hard." opener "The consults that don't book on the day usually go cold — nobody chases them, and an Invisalign case is months of revenue gone quiet."
+${GOOD_HOOK[segment]}
+- ${TONE_LINE[segment]}
 
 THE ASK — exactly ONE soft, binary question (this is the single biggest reply lever):
 - One CTA only. Make it a low-friction yes/no they can answer in one word — e.g. "Want me to send a 2-minute example built for {Business}?" or "Worth a look at winning back patients who've drifted off?"
@@ -235,6 +297,7 @@ interface AiInput {
   webContext?: string;
   verticalFacts?: string;
   winnersText?: string;
+  segment?: Segment;
   outreachLang: string;
   digestLang: string;
 }
@@ -403,7 +466,7 @@ async function callAnthropicRaw(
 function callAnthropic(cfg: AppConfig, input: AiInput): Promise<Personalized> {
   return callAnthropicRaw(
     cfg,
-    buildSystemPrompt(input.outreachLang, input.digestLang),
+    buildSystemPrompt(input.outreachLang, input.digestLang, input.segment ?? "trade"),
     buildUserMessage(input),
   );
 }
@@ -607,7 +670,7 @@ function callOpenAICompatible(
   input: AiInput,
   opts: { apiKeys: (string | undefined)[]; baseURL: string; model: string },
 ): Promise<Personalized> {
-  const system = buildSystemPrompt(input.outreachLang, input.digestLang);
+  const system = buildSystemPrompt(input.outreachLang, input.digestLang, input.segment ?? "trade");
   const userContent = `${buildUserMessage(input)}\n\n${JSON_KEYS_HINT}`;
   return callOpenAIRaw(cfg, system, userContent, opts);
 }
@@ -738,7 +801,7 @@ async function selfCritique(
   input: AiInput,
   draft: Personalized,
 ): Promise<Personalized> {
-  const system = `${buildSystemPrompt(input.outreachLang, input.digestLang)}\n\n${CRITIQUE_RUBRIC}`;
+  const system = `${buildSystemPrompt(input.outreachLang, input.digestLang, input.segment ?? "trade")}\n\n${CRITIQUE_RUBRIC}`;
   const userContent =
     `${buildUserMessage(input)}\n\nCURRENT DRAFT (review against the checks, fix only what fails):\n` +
     JSON.stringify(draft);
@@ -772,6 +835,7 @@ export async function personalize(
     outreachLang: cfg.OUTREACH_LANG,
     digestLang: cfg.DIGEST_LANG,
     verticalFacts: verticalFacts(vertical),
+    segment: segmentOf(lead.discovery_query),
     ...(icpNote ? { icpNote } : {}),
     ...(reviewsText ? { reviewsText } : {}),
     ...(webContext ? { webContext } : {}),
