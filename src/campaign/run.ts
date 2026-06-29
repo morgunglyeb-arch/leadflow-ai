@@ -312,24 +312,32 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   // send window (anti-burst). 0 = off → use the full remaining room.
   const runRoom =
     cfg.SEND_PER_RUN_CAP > 0 ? Math.min(totalRoom, cfg.SEND_PER_RUN_CAP) : totalRoom;
-  let firstTouches = coldAllowed ? selectFirstTouches(state, cfg, runRoom) : [];
-  // Compliance gate (PECR) — only auto-send to clearly-incorporated entities.
-  // Prefer the flag resolved at enqueue (Companies House / heuristic); resolve +
-  // cache it on the lead for any older queued lead that predates the flag.
-  if (cfg.SEND_CORPORATE_ONLY) {
-    const before = firstTouches.length;
-    const kept: CampaignLead[] = [];
-    for (const l of firstTouches) {
-      if (l.is_ltd === undefined && !flags.mock) {
-        l.is_ltd = await isEmailableEntity(cfg, l.company);
+  // Over-select candidates, then enforce PECR WHILE filling the day's room — so a
+  // sole-trader caught by the PECR gate doesn't WASTE a send slot. The slot is
+  // backfilled by the next clearly-incorporated lead in the queue. PECR stays
+  // strict (held leads are never sent); we just don't leave the cap unfilled when
+  // eligible incorporated leads are still queued. is_ltd is resolved lazily (and
+  // cached on the lead) only until the room is filled, to bound Companies House calls.
+  let firstTouches: CampaignLead[] = [];
+  if (coldAllowed) {
+    const pool = selectFirstTouches(state, cfg, runRoom * 5);
+    let pecrHeld = 0;
+    for (const l of pool) {
+      if (firstTouches.length >= runRoom) break;
+      if (cfg.SEND_CORPORATE_ONLY) {
+        if (l.is_ltd === undefined && !flags.mock) {
+          l.is_ltd = await isEmailableEntity(cfg, l.company);
+        }
+        if (!l.is_ltd) {
+          pecrHeld++;
+          continue; // held — backfill the slot from the next eligible lead
+        }
       }
-      if (l.is_ltd) kept.push(l);
+      firstTouches.push(l);
     }
-    firstTouches = kept;
-    const held = before - firstTouches.length;
-    if (held > 0)
+    if (pecrHeld > 0)
       console.log(
-        `[compliance] ${held} first-touch(es) held — not clearly incorporated (PECR: sole traders need consent). Set SEND_CORPORATE_ONLY=false to override.`,
+        `[compliance] ${pecrHeld} sole-trader(s) held (PECR: need consent) — room backfilled with incorporated leads. SEND_CORPORATE_ONLY=false to override.`,
       );
   }
   console.log(
