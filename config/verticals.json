@@ -162,6 +162,33 @@
       "automations": ["instant web-enquiry replies & qualification", "missed-call text-back", "follow-ups on quotes in progress"],
       "avg_ticket": "£300–£3,000 commission per client",
       "service_price": "Enquiry qualifier + quote follow-ups: ~£800–£2,500 setup + £150–£450/mo. One extra client covers it."
+    },
+    {
+      "match": ["building contractor", "builder", "construction company", "cleaning", "cleaner", "landscap", "gardening", "garden services", "kitchen", "bathroom fitter", "joinery", "carpenter", "tiler", "plasterer", "decorator", "handyman"],
+      "name": "trades / home-services company",
+      "money_channel": "the PHONE and website 'request a quote' forms — speed wins the job",
+      "booking_culture": "customers call or fill a quote form when they need work done, and ring the next company if no answer; nobody books a builder/cleaner on Instagram",
+      "automations": ["instant text-back to every missed call", "instant reply to web quote requests", "follow-up on quotes/estimates that went quiet", "review request after each job"],
+      "avg_ticket": "£150–£3,000+ per job",
+      "service_price": "Missed-call text-back + quote follow-ups: ~£300–£1,000 setup + £120–£350/mo. One recovered job pays the month."
+    },
+    {
+      "match": ["estate agent", "letting agent", "lettings", "property management", "estate & letting"],
+      "name": "estate / letting agent",
+      "money_channel": "phone, website enquiry forms, and portal leads (Rightmove/Zoopla)",
+      "booking_culture": "buyers/tenants enquire by phone, web form and portal — the FIRST agent to respond books the viewing; speed wins the instruction",
+      "automations": ["instant reply & qualify to portal/web enquiries", "viewing reminders to cut no-shows", "follow-up on valuations that didn't list", "review request after a let/sale"],
+      "avg_ticket": "£1,500–£5,000+ commission per sale; ongoing % per let",
+      "service_price": "Instant lead responder + viewing reminders: ~£800–£2,500 setup + £150–£450/mo. One extra instruction covers it."
+    },
+    {
+      "match": ["financial advis", "wealth manage", "ifa", "financial planner"],
+      "name": "financial adviser / IFA",
+      "money_channel": "phone and website enquiry forms; referral-led",
+      "booking_culture": "clients enquire by form/phone for a high-trust, slow-decision service; fast, human follow-up wins",
+      "automations": ["instant enquiry reply & qualify", "nurturing slow-deciding enquiries", "annual review reminders", "document chasing for onboarding"],
+      "avg_ticket": "£1,000–£5,000+ initial + ongoing fee",
+      "service_price": "Enquiry qualifier + nurture: ~£1,000–£3,000 setup + £200–£500/mo."
     }
   ],
   "default": {

@@ -32,7 +32,7 @@ const SIGNAL_RULES: Array<{ key: string; pattern: RegExp }> = [
   {
     key: "owner_run",
     pattern:
-      /(family[- ](?:run|owned)|husband (?:and|&) wife|independent(?:ly[- ]owned)? (?:practice|clinic|dental|surgery)|locally[- ]owned|owner[- ]run|established (?:in )?(?:18|19|20)\d{2}|founded (?:in )?(?:18|19|20)\d{2}|since (?:18|19|20)\d{2}|Dr\.? [A-Z][\w'-]+'s (?:practice|clinic|surgery|dental))/i,
+      /(family[- ](?:run|owned)|husband (?:and|&) wife|independent(?:ly[- ]owned)? (?:practice|clinic|dental|surgery|firm|agency|business|tradesperson|builder)|locally[- ]owned|owner[- ]run|established (?:in )?(?:18|19|20)\d{2}|founded (?:in )?(?:18|19|20)\d{2}|since (?:18|19|20)\d{2}|[\w'-]+ (?:&|and) sons|[A-Z][\w'-]+'s (?:plumbing|electrical|electric|roofing|heating|building|cleaning|gardening|landscaping|joinery)|Dr\.? [A-Z][\w'-]+'s (?:practice|clinic|surgery|dental))/i,
   },
 ];
 
@@ -86,7 +86,7 @@ const CHANNEL_RULES: Array<{ key: string; pattern: RegExp }> = [
   {
     key: "franchise",
     pattern:
-      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family)|a member of the [\w'&-]+ group|nationwide network|our network of|(?:clinics|practices|centres|surgeries|branches) (?:nationwide|across the country)|(?:[3-9]|\d{2,})\+? (?:locations|clinics|branches|practices|surgeries|stores)|(?:clinics|practices|branches) across the uk)/i,
+      /(franchise|franchising opportunit|part of (?:the )?[\w'&-]+ (?:group|family|network)|a member of the [\w'&-]+ group|nationwide network|our network of|offices across the uk|find your (?:nearest|local) (?:branch|office)|(?:branches|offices|agents) (?:nationwide|across the country)|(?:clinics|practices|centres|surgeries|branches|offices) (?:nationwide|across the country)|(?:[3-9]|\d{2,})\+? (?:locations|clinics|branches|offices|practices|surgeries|stores)|(?:clinics|practices|branches|offices) across the uk)/i,
   },
   // DM-bot footprint: an Instagram/Messenger auto-responder is already in place,
   // so don't pitch a chat assistant for THAT channel — pitch what it doesn't
