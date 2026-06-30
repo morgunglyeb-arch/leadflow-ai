@@ -228,7 +228,12 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   //    sending pace, so we keep a backlog rather than a fixed count)
   if (flags.topUp) {
     const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
-    if (queued < combinedCap * 2) {
+    // POLICY (owner): generate the MAX leads daily to keep a DEEP buffer; SENDING is
+    // separately ramp-capped (warmupCap). Buffer target = MAX_LEADS, decoupled from
+    // the send cap — a big stock accrues so a generation-limited day still has plenty
+    // queued to send from.
+    const bufferTarget = cfg.MAX_LEADS;
+    if (queued < bufferTarget) {
       // Daily generation is best-effort: if it fails or hits LLM/discovery limits,
       // we do NOT abort the run — we send from whatever is already banked in the
       // queue ("Рассылка"). Tomorrow the limits reset and the next run re-tops-up.
@@ -239,7 +244,7 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
           force: false,
           sendTest: false,
           digest: false,
-          limit: combinedCap * 3,
+          limit: bufferTarget - queued,
           minFit: cfg.MIN_FIT,
           ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
         });
