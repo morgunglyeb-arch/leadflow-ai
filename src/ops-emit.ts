@@ -210,3 +210,21 @@ export interface DraftPayload {
 export async function emitDraft(d: DraftPayload): Promise<void> {
   await postTo("/api/ingest/draft", { ...d });
 }
+
+/**
+ * Mark that a cold first-touch was actually SENT (machine send), so the hub can
+ * show it in the "Контакты" tab — who we emailed, when, and the email itself.
+ * Matches/updates the existing draft by email (or inserts one) + advances the
+ * contact to "contacted". Best-effort; no-op without the env.
+ */
+export async function emitDraftSent(d: {
+  email?: string;
+  business?: string;
+  domain?: string;
+  subject?: string;
+  message: string;
+  sent_at: string;
+  sent_via?: string;
+}): Promise<void> {
+  await postTo("/api/ingest/draft-sent", { ...d });
+}

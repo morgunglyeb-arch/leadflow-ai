@@ -40,6 +40,7 @@ import { spamLint } from "../spamlint.js";
 import {
   emitReply,
   emitEvent,
+  emitDraftSent,
   emitInboxHealth,
   emitSuppress,
   fetchSuppression,
@@ -397,6 +398,17 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
       domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
       sentCount++;
       await saveState(cfg.CAMPAIGN_STATE_PATH, state); // R5: persist before next send
+      // Record the SENT first-touch to the hub → "Контакты" shows who/when + the
+      // email. Best-effort (postTo never throws); only real sends reach here.
+      await emitDraftSent({
+        email: lead.email,
+        business: lead.company,
+        domain: lead.domain,
+        ...(lead.subject ? { subject: lead.subject } : {}),
+        message: lead.emails.initial,
+        sent_at: new Date().toISOString(),
+        sent_via: chosen.email,
+      });
     }
     if (sendableNow) await sleep(jitterMs(cfg));
   }
