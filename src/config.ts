@@ -41,6 +41,11 @@ const schema = z.object({
 
   // Retry transient 429s (rate limits) before giving up to fallback
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  // Gentle global pacing between LLM calls (ms). On the FREE tier (a handful of
+  // keys, each ~20 req/min) a burst trips the per-minute limit and cascades to
+  // the fallback; a small inter-call gap keeps total rate under the combined
+  // limit so generation stays on the primary model. 0 = off (paid/uncapped).
+  LLM_MIN_INTERVAL_MS: z.coerce.number().int().min(0).default(0),
 
   // Second LLM pass that reviews each draft against a rubric (right money
   // channel? worth their money? concise? grounded?) and rewrites weak ones.

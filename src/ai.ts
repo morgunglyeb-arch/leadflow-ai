@@ -642,6 +642,17 @@ function pickReadyKey(keys: (string | undefined)[]): { index: number; waitMs: nu
   return { index: soonestIdx, waitMs: Math.max(0, soonest - now) };
 }
 
+// Gentle global pacing so we never burst all keys at once on the free tier.
+// Module-global last-call timestamp; paceCall waits out the remaining gap.
+let lastLlmCallAt = 0;
+async function paceCall(cfg: AppConfig): Promise<void> {
+  const gap = cfg.LLM_MIN_INTERVAL_MS ?? 0;
+  if (gap <= 0) return;
+  const wait = lastLlmCallAt + gap - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastLlmCallAt = Date.now();
+}
+
 async function callOpenAIRaw(
   cfg: AppConfig,
   system: string,
@@ -668,6 +679,7 @@ async function callOpenAIRaw(
     const apiKey = keys[pick.index];
     const client = new OpenAI({ apiKey, baseURL: opts.baseURL });
     try {
+      await paceCall(cfg); // gentle global throttle (free-tier: stay under combined RPM)
       const res = await client.chat.completions.create({
         model: opts.model,
         response_format: { type: "json_object" },
