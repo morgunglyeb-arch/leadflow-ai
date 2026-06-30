@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { runProspecting, roiScore as roiScoreOf } from "../prospect.js";
+import { loadBankLeads } from "./bank.js";
 import {
   loadState,
   saveState,
@@ -260,6 +261,33 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
           `[campaign] top-up generation failed (${msg}) — sending from ${queued} already-banked lead(s) in the queue`,
         );
         await emitError(new Error(`top-up generation failed; sending from ${queued} banked leads: ${msg}`));
+      }
+    }
+  }
+
+  // 2b) BANK BACKFILL — owner policy: if fresh generation couldn't fill the buffer
+  //     (LLM keys rate-limited/banned, verify down, slow free-tier, or a pure send
+  //     run with no --top-up), top the queue up from already-WRITTEN banked leads
+  //     (data/out/leads_enriched.csv) with ZERO LLM calls, so sending NEVER stalls
+  //     behind generation. Freshest banked leads first (newest subjects). enqueueLeads
+  //     dedups by email, so nothing already sent/queued re-enters. Runs every campaign.
+  {
+    const bankTarget = cfg.MAX_LEADS;
+    const queuedNow = Object.values(state.leads).filter((l) => l.status === "queued").length;
+    const gap = bankTarget - queuedNow;
+    if (gap > 0) {
+      const bank = loadBankLeads()
+        .reverse() // newest rows last in the append-only CSV → freshest first
+        .filter((r) => !isSuppressed(suppression, r.domain, r.email))
+        .slice(0, gap);
+      if (bank.length) {
+        const added = enqueueLeads(state, bank, roiScoreOf, cfg);
+        if (added > 0) {
+          await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+          console.log(
+            `[campaign] bank-backfill: enqueued ${added} banked lead(s) (queue was ${queuedNow}/${bankTarget}, ZERO LLM) — generation shortfall covered from stock`,
+          );
+        }
       }
     }
   }
