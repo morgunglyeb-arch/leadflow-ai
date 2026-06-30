@@ -238,6 +238,13 @@ const schema = z.object({
   // campaign -- --auth authorizes them all in turn). Empty = single inbox
   // (GMAIL_SENDER + GMAIL_TOKEN_PATH), unchanged.
   GMAIL_ACCOUNTS: z.string().optional(),
+  // Human display-names for the From header, comma-separated and ALIGNED 1:1 with
+  // GMAIL_ACCOUNTS order (e.g. "Anna Brown,Sofia ...,James ..."). NOT a secret —
+  // these are public sender names. If omitted/short, each inbox falls back to its
+  // local-part capitalised (anna@ → "Anna"), then to SENDER_NAME for generic
+  // mailboxes (info@, team@). Wiring: a bare-address From suppresses opens/trust;
+  // a real name reads as a 1:1 human. See gmail.ts buildMime.
+  GMAIL_NAMES: z.string().optional(),
 
   // The agent self-limits volume: it sends min(warmup-today, qualified leads
   // above the quality bar). Protects deliverability — never blasts.

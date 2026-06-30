@@ -20,10 +20,38 @@ const SCOPES = [
 export interface Inbox {
   email: string;
   tokenPath: string;
+  displayName?: string; // human From-name; falls back to local-part / SENDER_NAME
 }
 
 function sanitizeEmail(e: string): string {
   return e.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+}
+
+// Generic/role mailboxes that should NOT be turned into a fake "person" name —
+// they fall back to the brand SENDER_NAME instead.
+const GENERIC_LOCALPARTS = new Set([
+  "info", "hello", "hi", "me", "contact", "sales", "team", "admin",
+  "support", "noreply", "no-reply", "mail", "office", "enquiries", "hey",
+]);
+
+// Derive a human display-name from a mailbox: "anna@x.com" → "Anna",
+// "anna.brown@x.com" → "Anna Brown". Generic role addresses → brand SENDER_NAME.
+export function deriveDisplayName(email: string, cfg: AppConfig): string {
+  const local = (email.split("@")[0] ?? "").toLowerCase();
+  if (!local || GENERIC_LOCALPARTS.has(local)) return cfg.SENDER_NAME;
+  return local
+    .split(/[._-]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(" ");
+}
+
+// RFC 5322 From: a clean ASCII name goes unquoted; anything with specials is
+// quoted-string. No RFC 2047 needed for ASCII names.
+export function formatFrom(name: string | undefined, email: string): string {
+  if (!name) return email;
+  const safe = /^[A-Za-z][A-Za-z .'-]*$/.test(name) ? name : JSON.stringify(name);
+  return `${safe} <${email}>`;
 }
 
 function tokenPathFor(cfg: AppConfig, email: string): string {
@@ -42,14 +70,17 @@ export function gmailInboxes(cfg: AppConfig): Inbox[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+  // Optional explicit display-names, aligned 1:1 with GMAIL_ACCOUNTS order.
+  const names = (cfg.GMAIL_NAMES ?? "").split(",").map((s) => s.trim());
   if (list.length === 0) {
-    return [{ email: cfg.GMAIL_SENDER ?? "me", tokenPath: cfg.GMAIL_TOKEN_PATH }];
+    const email = cfg.GMAIL_SENDER ?? "me";
+    return [{ email, tokenPath: cfg.GMAIL_TOKEN_PATH, displayName: deriveDisplayName(email, cfg) }];
   }
-  return list.map((email) =>
-    email === cfg.GMAIL_SENDER
-      ? { email, tokenPath: cfg.GMAIL_TOKEN_PATH }
-      : { email, tokenPath: tokenPathFor(cfg, email) },
-  );
+  return list.map((email, i) => {
+    const tokenPath = email === cfg.GMAIL_SENDER ? cfg.GMAIL_TOKEN_PATH : tokenPathFor(cfg, email);
+    const displayName = names[i] || deriveDisplayName(email, cfg);
+    return { email, tokenPath, displayName };
+  });
 }
 
 /** Find the inbox a lead was sent from (so follow-ups/replies use the same one). */
@@ -140,13 +171,17 @@ export async function getGmailClient(cfg: AppConfig, inbox?: Inbox): Promise<OAu
 
 function buildMime(opts: {
   from: string;
+  fromName?: string;
   to: string;
   subject: string;
   body: string;
   inReplyTo?: string;
 }): string {
   const headers = [
-    `From: ${opts.from}`,
+    `From: ${formatFrom(opts.fromName, opts.from)}`,
+    // Replies go to the sending inbox explicitly (gmail threads them anyway, but
+    // this is cheap hygiene + survives any future From-name/alias change).
+    `Reply-To: ${opts.from}`,
     `To: ${opts.to}`,
     `Subject: ${opts.subject}`,
     'Content-Type: text/plain; charset="UTF-8"',
@@ -179,7 +214,8 @@ export async function sendEmail(
   const auth = await getGmailClient(cfg, inbox);
   const gmail = google.gmail({ version: "v1", auth });
   const from = inbox?.email ?? cfg.GMAIL_SENDER ?? "me";
-  const raw = buildMime({ from, ...opts });
+  const fromName = inbox?.displayName ?? deriveDisplayName(from, cfg);
+  const raw = buildMime({ from, fromName, ...opts });
   const res = await gmail.users.messages.send({
     userId: "me",
     requestBody: { raw, ...(opts.threadId ? { threadId: opts.threadId } : {}) },

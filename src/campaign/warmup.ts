@@ -15,7 +15,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { google } from "googleapis";
 import type { AppConfig } from "../config.js";
-import { getGmailClient, gmailInboxes, type Inbox } from "./gmail.js";
+import { getGmailClient, gmailInboxes, formatFrom, type Inbox } from "./gmail.js";
 import { emitEvent, emitInboxHealth } from "../ops-emit.js";
 
 export interface WarmupState {
@@ -120,13 +120,15 @@ function shuffle<T>(arr: T[]): T[] {
 
 function buildMime(opts: {
   from: string;
+  fromName?: string;
   to: string;
   subject: string;
   body: string;
   inReplyTo?: string;
 }): string {
   const headers = [
-    `From: ${opts.from}`,
+    `From: ${formatFrom(opts.fromName, opts.from)}`,
+    `Reply-To: ${opts.from}`,
     `To: ${opts.to}`,
     `Subject: ${opts.subject}`,
     'Content-Type: text/plain; charset="UTF-8"',
@@ -251,7 +253,7 @@ async function sendWarmup(
 ): Promise<void> {
   const auth = await getGmailClient(cfg, from);
   const gmail = google.gmail({ version: "v1", auth });
-  const raw = buildMime({ from: from.email, to, subject, body });
+  const raw = buildMime({ from: from.email, fromName: from.displayName, to, subject, body });
   await gmail.users.messages.send({ userId: "me", requestBody: { raw } });
 }
 
@@ -317,6 +319,7 @@ async function processInbox(
           const replySubject = /^re:/i.test(subjHeader) ? subjHeader : `Re: ${subjHeader}`;
           const raw = buildMime({
             from: box.email,
+            fromName: box.displayName,
             to: toAddr,
             subject: replySubject,
             body: pick(REPLIES),
