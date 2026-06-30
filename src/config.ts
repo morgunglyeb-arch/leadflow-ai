@@ -180,6 +180,21 @@ const schema = z.object({
     .default(
       "Want to see where you could save time or money? Go to {site}, type in your line of work, and it'll show the automations that fit your business. Or just reply to this email and we'll advise you.",
     ),
+  // Soft 1:1 CTA for format A/B variant B — one low-friction yes/no instead of the
+  // site CTA. {company} → short business name. Audit: a single soft ask out-replies
+  // a hard "go to the site" on cold mail.
+  CALL_TO_ACTION_SOFT: z
+    .string()
+    .default("Want me to send a quick mockup of how this would work for {company}? Just reply."),
+  // Format A/B (owner-authorized 2026-06-30). Half the leads (deterministic by
+  // domain) get variant B: hook merged into the FIRST line (better inbox preview),
+  // menu trimmed to EMAIL_MENU_MAX_B items, and the soft CTA above. Variant A = the
+  // current owner-locked format, unchanged. Judge by reply-rate. false = all get A.
+  EMAIL_FORMAT_AB: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  EMAIL_MENU_MAX_B: z.coerce.number().default(2),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.
   STUDIO_INTRO: z

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "./config";
 import type { OutputRow } from "./types";
-import { assembleSequence, assembleDraft, assembleDraftRu, CLINIC_MENU, CLINIC_MENU_RU } from "./outreach";
+import {
+  assembleSequence,
+  assembleDraft,
+  assembleDraftRu,
+  formatVariantFor,
+  CLINIC_MENU,
+  CLINIC_MENU_RU,
+} from "./outreach";
 
 const cfg = {
   SENDER_SIGNATURE: "Opero · opero-studio.com",
@@ -28,6 +35,44 @@ const row = (domain: string): OutputRow =>
   }) as unknown as OutputRow;
 
 const firstLine = (s: string): string => s.split("\n")[0] ?? "";
+
+describe("format A/B (owner-authorized): variant B = hook-in-preview + short menu + soft CTA", () => {
+  const cfgAB = {
+    ...cfg,
+    EMAIL_FORMAT_AB: true,
+    EMAIL_MENU_MAX_B: 2,
+    CALL_TO_ACTION_SOFT: "Want me to send a quick mockup of how this would work for {company}? Just reply.",
+  } as unknown as AppConfig;
+  // find one domain that hashes to each variant
+  const domains = ["a.co.uk", "b.co.uk", "c.co.uk", "d.co.uk", "e.co.uk", "f.co.uk"];
+  const aDom = domains.find((d) => formatVariantFor(row(d), cfgAB) === "A")!;
+  const bDom = domains.find((d) => formatVariantFor(row(d), cfgAB) === "B")!;
+
+  it("деление детерминировано по домену", () => {
+    expect(formatVariantFor(row(bDom), cfgAB)).toBe("B");
+    expect(formatVariantFor(row(bDom), cfgAB)).toBe("B"); // stable
+    expect(formatVariantFor(row("x.co.uk"), { ...cfgAB, EMAIL_FORMAT_AB: false } as AppConfig)).toBe("A");
+  });
+
+  it("variant B: крючок в ПЕРВОЙ строке (превью), меню ≤ 2, мягкий CTA, opt-out на месте", () => {
+    const r = row(bDom);
+    const body = assembleDraft(r, cfgAB).body;
+    expect(firstLine(body)).toContain(" — ");
+    expect(firstLine(body)).toContain(r.icebreaker!);
+    const bullets = body.split("\n").filter((l) => l.startsWith("• "));
+    expect(bullets.length).toBeLessThanOrEqual(2);
+    expect(body).toContain(`mockup of how this would work for Bright Smile Dental? Just reply.`);
+    expect(body).not.toContain("opero-studio.com, type in"); // no site CTA in B
+    expect(body.trimEnd().endsWith(cfg.OPT_OUT_TEXT as unknown as string)).toBe(true);
+  });
+
+  it("variant A под A/B: формат не меняется (полное меню из 5, site CTA)", () => {
+    const body = assembleDraft(row(aDom), cfgAB).body;
+    const bullets = body.split("\n").filter((l) => l.startsWith("• "));
+    expect(bullets.length).toBe(CLINIC_MENU.length);
+    expect(firstLine(body)).not.toContain(" — ");
+  });
+});
 
 describe("assembleSequence greeting variation (anti-fingerprint)", () => {
   it("одна и та же первая строка (greeting) в initial и обоих фоллоуапах — консистентность треда", () => {

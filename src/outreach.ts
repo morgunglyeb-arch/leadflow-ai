@@ -132,12 +132,20 @@ function seedFrom(s: string): number {
  * doesn't prefix every single send — a templated-mail / fingerprint tell that
  * hurts deliverability when one inbox streams identical skeletons.
  */
+// Tidy short business name (drop suffixes/separators) — shared by the greeting and
+// the soft-CTA {company} token so they read consistently.
+function shortName(company: string): string {
+  return (
+    company
+      .split(/[-–—|,:]/)[0]
+      ?.replace(/\b(ltd|limited|llp|inc|llc)\b\.?/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim() ?? ""
+  );
+}
+
 function greeting(company: string, seed = 0): string {
-  const short = company
-    .split(/[-–—|,:]/)[0]
-    ?.replace(/\b(ltd|limited|llp|inc|llc)\b\.?/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const short = shortName(company);
   if (!short || short.length < 2) {
     const bare = ["Hello,", "Hi there,", "Hi,"];
     return bare[seed % bare.length]!;
@@ -157,46 +165,69 @@ function greeting(company: string, seed = 0): string {
  * One unified format for every lead: hook → who-we-are → ONE curated menu
  * → sales-y site CTA → signature.
  */
+// Format A/B selector (owner-authorized). Deterministic per lead by domain, so a
+// thread's follow-ups + the review card stay on ONE variant. B is the audit's
+// open/conversion variant; A is the current owner-locked format.
+export function formatVariantFor(row: OutputRow, cfg: AppConfig): "A" | "B" {
+  if (!cfg.EMAIL_FORMAT_AB) return "A";
+  return seedFrom(row.domain) % 2 === 1 ? "B" : "A";
+}
+
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   const subject = row.subject ?? `quick idea for ${row.company}`;
+  const variant = formatVariantFor(row, cfg);
   const lines: string[] = [];
-  lines.push(greeting(row.company, seedFrom(row.domain)));
-  lines.push("");
+  const greet = greeting(row.company, seedFrom(row.domain));
 
-  // Body shape (owner spec): personalized hook FIRST (earns the read), then a
-  // one-line "who we are" (no per-lead offer sentence), then the ONE curated menu
-  // (CLINIC_MENU — its first item IS the headline agent offer), then the CTA, then
-  // the Opero + site signature + opt-out. The hook must stay first — leading with
-  // the self-intro reads as mass-mail and buries the reason they'd reply.
+  // Personalized hook (the only model-written part). Leads the body either way —
+  // the self-intro first would read as mass-mail and bury the reason they'd reply.
   const observation = [row.icebreaker, row.opener]
     .map((s) => s?.trim())
     .filter((s): s is string => Boolean(s))
     .join(" ");
-  if (observation) {
-    lines.push(observation);
-    lines.push("");
-  }
-
-  // Who we are — JUST the studio intro, NO per-lead offer sentence (owner spec
-  // 2026-06-24): the offer is now the FIRST item of the single curated list
-  // below, so the email reads as one list, not "offer paragraph + menu".
+  // Who we are — JUST the studio intro (owner spec 2026-06-24): the offer is the
+  // first menu item below, so the email reads as one list, not "offer + menu".
   const intro = (cfg.STUDIO_INTRO ?? "").trim();
-  if (intro) {
-    lines.push(intro);
-    lines.push("");
-  }
-
-  // ONE curated list (CLINIC_MENU) — fixed, strong, owner-locked. Not model-
-  // generated (the model kept inventing weak/generic items). The hook above is
-  // what's personalised; this list is the consistent high-value offering.
   const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
-  if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU.length > 0) {
-    lines.push(servicesIntro);
-    for (const s of CLINIC_MENU) lines.push(`• ${s}`);
+
+  if (variant === "B") {
+    // Variant B (A/B): hook on the FIRST line so the inbox PREVIEW shows the hook
+    // (not the greeting), a SHORTER menu, and one soft 1:1 CTA instead of the site
+    // CTA. Same locked menu source (CLINIC_MENU) — just trimmed; we do NOT re-enable
+    // the model-generated menu (it produced weak items — owner decision stands).
+    lines.push(observation ? `${greet.replace(/[,\s]+$/, "")} — ${observation}` : greet);
     lines.push("");
+    if (intro) {
+      lines.push(intro);
+      lines.push("");
+    }
+    const menuB = CLINIC_MENU.slice(0, Math.max(0, cfg.EMAIL_MENU_MAX_B));
+    if (cfg.SHOW_SERVICES_MENU && menuB.length > 0) {
+      lines.push(servicesIntro);
+      for (const s of menuB) lines.push(`• ${s}`);
+      lines.push("");
+    }
+    lines.push((cfg.CALL_TO_ACTION_SOFT ?? "").replace("{company}", shortName(row.company) || "you"));
+  } else {
+    // Variant A — current owner-locked format, byte-for-byte unchanged.
+    lines.push(greet);
+    lines.push("");
+    if (observation) {
+      lines.push(observation);
+      lines.push("");
+    }
+    if (intro) {
+      lines.push(intro);
+      lines.push("");
+    }
+    if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU.length > 0) {
+      lines.push(servicesIntro);
+      for (const s of CLINIC_MENU) lines.push(`• ${s}`);
+      lines.push("");
+    }
+    lines.push((cfg.CALL_TO_ACTION ?? "").replace("{site}", cfg.SITE_URL ?? ""));
   }
 
-  lines.push((cfg.CALL_TO_ACTION ?? "").replace("{site}", cfg.SITE_URL ?? ""));
   lines.push("");
   lines.push(`— ${cfg.SENDER_SIGNATURE}`);
   // Opt-out is part of the LOCKED format and a PECR/CAN-SPAM requirement. It must
@@ -225,7 +256,7 @@ function draftMarkdown(row: OutputRow, draft: EmailDraft, cfg: AppConfig): strin
       ? `**To:** ${draft.to}${row.email_source === "site" ? " _(found on site)_" : ""}`
       : "**To:** _(no email — find before sending)_",
     row.phone ? `**Phone:** ${row.phone}` : "",
-    `**Fit:** ${row.fit_score ?? "?"} / 5 · **Status:** ${row.status}`,
+    `**Fit:** ${row.fit_score ?? "?"} / 5 · **Status:** ${row.status} · **Формат:** ${formatVariantFor(row, cfg)}`,
     `**Source:** ${row.discovery_source}${row.discovery_query ? ` · "${row.discovery_query}"` : ""}`,
     row.signals ? `**Signals:** ${row.signals}` : "",
   ]
