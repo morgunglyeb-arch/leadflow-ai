@@ -168,9 +168,13 @@ function greeting(company: string, seed = 0): string {
 // Format A/B selector (owner-authorized). Deterministic per lead by domain, so a
 // thread's follow-ups + the review card stay on ONE variant. B is the audit's
 // open/conversion variant; A is the current owner-locked format.
-export function formatVariantFor(row: OutputRow, cfg: AppConfig): "A" | "B" {
+export function formatVariantForDomain(domain: string, cfg: AppConfig): "A" | "B" {
   if (!cfg.EMAIL_FORMAT_AB) return "A";
-  return seedFrom(row.domain) % 2 === 1 ? "B" : "A";
+  return seedFrom(domain) % 2 === 1 ? "B" : "A";
+}
+
+export function formatVariantFor(row: OutputRow, cfg: AppConfig): "A" | "B" {
+  return formatVariantForDomain(row.domain, cfg);
 }
 
 export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {

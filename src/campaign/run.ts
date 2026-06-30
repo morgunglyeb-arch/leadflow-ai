@@ -33,6 +33,7 @@ import { classifyReply, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { passingSendingDomains, domainOf } from "./deliverability.js";
+import { formatVariantForDomain } from "../outreach.js";
 import { evaluateInboxGuard, checkDomainBlacklist } from "./inbox-guard.js";
 import { isEmailableEntity } from "../compliance.js";
 import { suggestReply } from "../ai.js";
@@ -743,10 +744,16 @@ export async function sendStep(
     }
   }
 
-  // A/B: on the first touch, randomly pick subject A or B and record it so the
-  // learning loop can compare reply rates by variant.
+  // A/B: on the first touch, record which variant was sent so the learning loop
+  // can compare reply rates by variant. When the FORMAT A/B is active, the tracked
+  // variant MUST be the body-format one (formatVariantForDomain — the same
+  // deterministic-by-domain selector that baked lead.emails), so reply-rate-by-
+  // variant measures the format test (locked menu vs open variant), not the
+  // subject. Otherwise fall back to the subject A/B.
   if (which === "initial" && !lead.variant) {
-    if (lead.subjectB && Math.random() < 0.5) {
+    if (cfg.EMAIL_FORMAT_AB) {
+      lead.variant = formatVariantForDomain(lead.domain, cfg);
+    } else if (lead.subjectB && Math.random() < 0.5) {
       lead.variant = "B";
       lead.subject = lead.subjectB;
     } else {

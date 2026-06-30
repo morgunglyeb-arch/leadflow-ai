@@ -56,7 +56,9 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
 
   const pct = (a: number, b: number): string => (b === 0 ? "—" : `${Math.round((a / b) * 100)}%`);
 
-  // A/B subject performance
+  // A/B variant performance. lead.variant now carries the FORMAT variant when
+  // EMAIL_FORMAT_AB is on (A = owner-locked menu, B = open/conversion), else the
+  // subject A/B — so this section measures whichever A/B is active.
   const ab: Record<string, { sent: number; replied: number }> = {
     A: { sent: 0, replied: 0 },
     B: { sent: 0, replied: 0 },
@@ -75,7 +77,7 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
     ``,
     `- Sent: **${sentLeads.length}** · Replied: **${replied.length}** (${pct(replied.length, sentLeads.length)}) · Interested: **${interested.length}** (${pct(interested.length, sentLeads.length)})`,
     ``,
-    `## A/B subject lines`,
+    `## A/B variant (format: A=locked menu · B=open; or subject if format-AB off)`,
     `- Variant A: sent ${ab.A!.sent}, replied ${pct(ab.A!.replied, ab.A!.sent)}`,
     `- Variant B: sent ${ab.B!.sent}, replied ${pct(ab.B!.replied, ab.B!.sent)}`,
     ``,
