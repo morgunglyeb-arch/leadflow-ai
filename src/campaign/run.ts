@@ -1,6 +1,6 @@
 import type { AppConfig } from "../config.js";
 import { runProspecting, roiScore as roiScoreOf } from "../prospect.js";
-import { loadBankLeads } from "./bank.js";
+import { loadBankLeads, segmentOf } from "./bank.js";
 import {
   loadState,
   saveState,
@@ -276,9 +276,20 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
     const queuedNow = Object.values(state.leads).filter((l) => l.status === "queued").length;
     const gap = bankTarget - queuedNow;
     if (gap > 0) {
+      // Order: proserv first, then trade, then other. Professional-services leads are
+      // more often LIMITED COMPANIES, which the PECR corporate-only gate lets us send;
+      // trades skew sole-trader (PECR-held → wasted slots). The email machine is also
+      // proserv-leaning by strategy (trades go via manual channels). Within a segment,
+      // freshest first. When supply < cap nothing is dropped — this only sets priority.
+      const SEG_PRIORITY: Record<string, number> = { proserv: 0, trade: 1, other: 2, clinic: 3 };
       const bank = loadBankLeads()
         .reverse() // newest rows last in the append-only CSV → freshest first
         .filter((r) => !isSuppressed(suppression, r.domain, r.email))
+        .sort(
+          (a, b) =>
+            (SEG_PRIORITY[segmentOf(a.discovery_query ?? "")] ?? 9) -
+            (SEG_PRIORITY[segmentOf(b.discovery_query ?? "")] ?? 9),
+        )
         .slice(0, gap);
       if (bank.length) {
         const added = enqueueLeads(state, bank, roiScoreOf, cfg);
@@ -444,6 +455,27 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
       });
     }
     if (sendableNow) await sleep(jitterMs(cfg));
+  }
+
+  // 4b) CAP-SHORTFALL VISIBILITY (owner policy: hit the daily ceiling EXACTLY). When
+  //     we're live in send hours with cold sending allowed but couldn't fill this
+  //     run's cold allowance, the limiter is SUPPLY — the queue ran dry of
+  //     PECR-eligible (incorporated) leads — NOT the warmup ramp. Surface it loudly:
+  //     otherwise a 0/few-lead day sends silently and looks like a healthy small ramp,
+  //     hiding that generation (Gemini billing / verify credits) is the real blocker.
+  if (live && sendableNow && coldAllowed) {
+    const shortfall = runRoom - firstTouches.length;
+    if (shortfall > 0) {
+      const stillQueued = Object.values(state.leads).filter((l) => l.status === "queued").length;
+      console.warn(
+        `[campaign] CAP SHORTFALL: filled ${firstTouches.length}/${runRoom} cold slot(s) — out of PECR-eligible leads (${stillQueued} held/queued, bank empty of fresh). SUPPLY is the limiter, not the ramp → need generation (Gemini billing / verify credits).`,
+      );
+      await emitError(
+        new Error(
+          `send cap shortfall: ${firstTouches.length}/${runRoom} cold slots filled — engine out of fresh PECR-eligible leads. Generation is the blocker (Gemini billing / verify credits).`,
+        ),
+      );
+    }
   }
 
   // 5) LEARN + write replies-to-action for the operator
