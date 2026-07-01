@@ -11,7 +11,7 @@ import {
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
-import { verifyEmail, hunterDomainSearch, guessDomainEmail } from "./verify-email.js";
+import { verifyEmail, hunterDomainSearch, guessDomainEmail, normalizeEmail } from "./verify-email.js";
 import { isCorporateEntity, isEmailableEntity } from "./compliance.js";
 import { searchBusinessContext, searchBusinessNews } from "./web-search.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
@@ -108,7 +108,7 @@ export async function processLeads(
           email = undefined;
           for (const cand of candidates) {
             if ((await verifyEmail(cfg, cand)).ok) {
-              email = cand;
+              email = normalizeEmail(cand) || cand; // store the clean form we verified
               break;
             }
           }

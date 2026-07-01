@@ -4,6 +4,7 @@ import type { AppConfig } from "./config.js";
 import type { Enrichment } from "./types.js";
 import { loadCachedEnrichment, saveCachedEnrichment } from "./cache.js";
 import { normalizeDomain } from "./sources/index.js";
+import { normalizeEmail } from "./verify-email.js";
 import FirecrawlApp from "@mendable/firecrawl-js";
 
 const MAX_TEXT_CHARS = 4000;
@@ -291,9 +292,14 @@ export function isRoleInbox(email: string): boolean {
 /** Extract + rank emails from raw HTML (mailto links + body text). */
 export function extractEmails(html: string, siteDomain: string): string[] {
   const found = new Set<string>();
-  // mailto: links first (most reliable)
+  // mailto: links first (most reliable). normalizeEmail URL-decodes + trims so a
+  // `mailto:%20info@x` link yields a clean `info@x` (not the `%20info@x` artifact
+  // that leaked into the bank) — and drops anything unsalvageable.
   const mailto = html.matchAll(/mailto:([^"'?>\s]+)/gi);
-  for (const m of mailto) if (m[1]) found.add(m[1].toLowerCase());
+  for (const m of mailto) {
+    const e = normalizeEmail(m[1] ?? "");
+    if (e) found.add(e);
+  }
   for (const m of html.matchAll(EMAIL_RE)) found.add(m[0].toLowerCase());
 
   const root = siteDomain.replace(/^www\./, "");

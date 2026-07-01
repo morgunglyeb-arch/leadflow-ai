@@ -9,6 +9,25 @@ export interface VerifyResult {
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
 const mxCache = new Map<string, boolean>();
 
+/**
+ * Normalize a raw email token before it's trusted or stored. URL-decodes
+ * (`%20`→space etc.), strips wrapping <>/quotes/whitespace, lowercases, and
+ * extracts the address token. RECOVERS scrape artifacts like a `mailto:%20info@x`
+ * link (→ `info@x`) instead of dropping the lead — the `%20info@…` addresses that
+ * leaked into the bank came from exactly this. Returns "" if nothing salvageable.
+ */
+export function normalizeEmail(raw: string): string {
+  let s = (raw ?? "").trim().replace(/^[<"'\s]+|[>"'\s]+$/g, "");
+  try {
+    s = decodeURIComponent(s);
+  } catch {
+    /* malformed %-sequence → keep as-is */
+  }
+  s = s.trim().toLowerCase();
+  const m = s.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
+  return m ? m[0] : "";
+}
+
 /** Free check: does the email's domain have a mail server (MX record)? */
 export async function domainHasMx(domain: string): Promise<boolean> {
   const d = domain.toLowerCase();
@@ -273,7 +292,8 @@ export async function hunterDomainSearch(
  * Conservative: only fails on clear signals, so we don't drop good leads.
  */
 export async function verifyEmail(cfg: AppConfig, email: string): Promise<VerifyResult> {
-  if (!EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
+  email = normalizeEmail(email); // recover %20/whitespace artifacts before trusting
+  if (!email || !EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
 
   // MyEmailVerifier first — highest free quota (100/day/key), spares the scarce ones.
   const mev = await myEmailVerifierCheck(cfg, email);

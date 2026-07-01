@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "./config";
-import { hunterKeys } from "./verify-email";
+import { hunterKeys, normalizeEmail } from "./verify-email";
+
+describe("normalizeEmail — recover scrape artifacts", () => {
+  it("URL-decodes a %20-prefixed mailto artifact into a clean address", () => {
+    expect(normalizeEmail("%20info@sjwplumbing.co.uk")).toBe("info@sjwplumbing.co.uk");
+    expect(normalizeEmail("%20hello@arkdentistry.co.uk")).toBe("hello@arkdentistry.co.uk");
+  });
+  it("trims whitespace and strips wrapping <>/quotes, lowercases", () => {
+    expect(normalizeEmail("  Info@Example.COM ")).toBe("info@example.com");
+    expect(normalizeEmail("<jane@example.com>")).toBe("jane@example.com");
+  });
+  it("returns the clean address for already-valid input (idempotent)", () => {
+    expect(normalizeEmail("info@example.com")).toBe("info@example.com");
+  });
+  it("returns '' for anything without a salvageable address", () => {
+    expect(normalizeEmail("not-an-email")).toBe("");
+    expect(normalizeEmail("")).toBe("");
+  });
+});
 
 const HEX_A = "a".repeat(40);
 const HEX_B = "b".repeat(40);
