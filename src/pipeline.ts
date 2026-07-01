@@ -11,7 +11,7 @@ import {
 } from "./output.js";
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
-import { verifyEmail, hunterDomainSearch } from "./verify-email.js";
+import { verifyEmail, hunterDomainSearch, guessDomainEmail } from "./verify-email.js";
 import { isCorporateEntity, isEmailableEntity } from "./compliance.js";
 import { searchBusinessContext, searchBusinessNews } from "./web-search.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
@@ -84,6 +84,19 @@ export async function processLeads(
             const merged = [...new Set([...hunterEmails, ...enrichment.emails])];
             enrichment.emails = merged;
             email = merged[0];
+          }
+        }
+
+        // FREE fallback — Hunter unavailable/empty (429/quota) shouldn't cost us the
+        // lead: if the domain accepts mail (free MX check), guess the universal UK-SMB
+        // role inbox `info@<domain>`. Keeps reach up while paid finders are throttled.
+        // PECR Ltd-gate still filters sole-traders downstream.
+        if (!email && !opts.mock && cfg.EMAIL_GUESS_ROLE_FALLBACK) {
+          const guessed = await guessDomainEmail(lead.domain);
+          if (guessed) {
+            enrichment.emails = [...new Set([guessed, ...enrichment.emails])];
+            email = guessed;
+            console.log(`[mx-guess] ${lead.domain}: no findable email → ${guessed} (MX ok)`);
           }
         }
 

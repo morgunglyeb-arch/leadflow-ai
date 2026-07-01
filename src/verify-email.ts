@@ -292,3 +292,22 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   const mx = await domainHasMx(domain);
   return { ok: mx, reason: mx ? "mx-ok" : "no-mx" };
 }
+
+/**
+ * FREE email-discovery fallback for when scraping and Hunter domain-search turn up
+ * nothing (Hunter 429 / quota exhausted). If the domain accepts mail — a free
+ * MX-record lookup — return the universal UK-SMB role inbox `info@<domain>`.
+ *
+ * Why `info@` on MX alone is acceptable here (vs owner-email.ts, which refuses to
+ * bless a GUESSED address on MX): `info@` is a ROLE inbox that virtually every
+ * business domain running a public website actually operates, so it rarely bounces
+ * — the reputation risk an MX-only guess would otherwise carry. A guessed PERSONAL
+ * address (`john@`) has no such guarantee, so that path still demands a mailbox
+ * verdict. Returns null if the domain has no mail server → caller skips the lead.
+ */
+export async function guessDomainEmail(domain: string): Promise<string | null> {
+  const root = (domain || "").replace(/^www\./, "").toLowerCase().trim();
+  if (!root.includes(".") || /\s/.test(root)) return null;
+  if (!(await domainHasMx(root))) return null;
+  return `info@${root}`;
+}

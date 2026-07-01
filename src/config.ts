@@ -114,6 +114,17 @@ const schema = z.object({
   MYEMAILVERIFIER_API_KEY: z.string().optional(),
   MYEMAILVERIFIER_API_KEYS: z.string().optional(),
 
+  // FREE email-discovery fallback. When on-site scraping AND Hunter domain-search
+  // find no address (e.g. Hunter 429/quota out), and the domain accepts mail (a
+  // free MX-record check passes), guess the near-universal UK-SMB role inbox
+  // `info@<domain>`. MX blesses the guess; bounce risk on info@ is low (unlike a
+  // personal guess). Keeps reach up when paid finders are throttled. Default on;
+  // set false to stay scrape+Hunter only. PECR Ltd-gate still applies downstream.
+  EMAIL_GUESS_ROLE_FALLBACK: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+
   // Hunter.io — email finder + deliverability verification (free: 25 req/mo)
   // Domain search finds emails we missed; verify checks if a specific address
   // is deliverable (SMTP-level, much better than MX-only).
