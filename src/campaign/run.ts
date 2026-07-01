@@ -1,6 +1,7 @@
 import type { AppConfig } from "../config.js";
 import { runProspecting, roiScore as roiScoreOf } from "../prospect.js";
 import { loadBankLeads, segmentOf } from "./bank.js";
+import { acquireRunLock } from "./lock.js";
 import {
   loadState,
   saveState,
@@ -119,18 +120,30 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // R2: bookend the campaign/send run so it shows up in the hub and can't zombie as
   // `running` forever on a hard kill (prospect.ts already does this; campaign never
   // did → every real send-run would otherwise hang `running`).
-  const runId = await emitRunStart("campaign");
+  // Single-writer lock: never let two campaign runs (cron + manual, or overlapping
+  // crons) send concurrently — that double-emails the same prospects and clobbers
+  // state.json. If another LIVE run holds it, skip this one entirely.
+  const release = acquireRunLock();
+  if (!release) {
+    console.warn("[campaign] another campaign run is active (lock held) — skipping this run");
+    return;
+  }
   try {
-    const { sent, refill } = await runCampaignBody(cfg, flags);
-    // Record the run (sent count → hub / Mini App "отправлено сегодня") BEFORE the
-    // slow, killable bank refill — so a throttled/interrupted generation can't lose
-    // the send count. The refill is best-effort after reporting.
-    await emitRunEnd(runId, { status: "done", sent });
-    await refill();
-  } catch (err) {
-    await emitRunEnd(runId, { status: "failed" });
-    await emitError(err);
-    throw err;
+    const runId = await emitRunStart("campaign");
+    try {
+      const { sent, refill } = await runCampaignBody(cfg, flags);
+      // Record the run (sent count → hub / Mini App "отправлено сегодня") BEFORE the
+      // slow, killable bank refill — so a throttled/interrupted generation can't lose
+      // the send count. The refill is best-effort after reporting.
+      await emitRunEnd(runId, { status: "done", sent });
+      await refill();
+    } catch (err) {
+      await emitRunEnd(runId, { status: "failed" });
+      await emitError(err);
+      throw err;
+    }
+  } finally {
+    release();
   }
 }
 
