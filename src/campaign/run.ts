@@ -487,7 +487,7 @@ async function runCampaignBody(
   // the inbox-health/backup emits. Send → learn → emit → THEN best-effort refill.
 
   // 5) LEARN + write replies-to-action for the operator
-  await summarizeAndLearn(state);
+  await summarizeAndLearn(state, cfg);
   await writeRepliesToAction(cfg, state);
 
   await saveState(cfg.CAMPAIGN_STATE_PATH, state);

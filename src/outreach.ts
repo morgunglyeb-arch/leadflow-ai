@@ -105,12 +105,17 @@ export function assembleSequence(row: OutputRow, cfg: AppConfig): EmailSequence 
     ? (cfg.SITE_CTA_LINE ?? "").replace("{site}", cfg.SITE_URL ?? "")
     : "";
   const fu1Body = siteCta || row.followup_1;
+  // Soft price anchor on the LAST touch only (never the first — keeps E1 clean).
+  // Reduces "how much even is this?" friction. Off unless PRICE_ANCHOR is set.
+  const anchor = (cfg.PRICE_ANCHOR ?? "").trim();
+  const fu2Base = row.followup_2;
+  const fu2Body = fu2Base && anchor ? `${fu2Base}\n\n${anchor}` : fu2Base;
   return {
     ...(row.email ? { to: row.email } : {}),
     subject: initialDraft.subject,
     initial,
     followup_1: fu1Body ? fu(fu1Body) : "",
-    followup_2: row.followup_2 ? fu(row.followup_2) : "",
+    followup_2: fu2Body ? fu(fu2Body) : "",
   };
 }
 
@@ -193,6 +198,10 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   // first menu item below, so the email reads as one list, not "offer + menu".
   const intro = (cfg.STUDIO_INTRO ?? "").trim();
   const servicesIntro = cfg.SERVICES_INTRO ?? "A few things we could set up for you:";
+  // OFFER mode: "single" (post-E1 experiment) pitches the ONE per-lead automation
+  // instead of the fixed menu. Default "menu" → unchanged. Empty automation falls
+  // back to the menu so a lead is never left with no offer.
+  const singleOffer = cfg.EMAIL_OFFER_MODE === "single" ? (row.automation ?? "").trim() : "";
 
   if (variant === "B") {
     // Variant B (A/B): hook on the FIRST line so the inbox PREVIEW shows the hook
@@ -205,11 +214,17 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
       lines.push(intro);
       lines.push("");
     }
-    const menuB = CLINIC_MENU.slice(0, Math.max(0, cfg.EMAIL_MENU_MAX_B));
-    if (cfg.SHOW_SERVICES_MENU && menuB.length > 0) {
+    if (singleOffer) {
       lines.push(servicesIntro);
-      for (const s of menuB) lines.push(`• ${s}`);
+      lines.push(`• ${singleOffer}`);
       lines.push("");
+    } else {
+      const menuB = CLINIC_MENU.slice(0, Math.max(0, cfg.EMAIL_MENU_MAX_B));
+      if (cfg.SHOW_SERVICES_MENU && menuB.length > 0) {
+        lines.push(servicesIntro);
+        for (const s of menuB) lines.push(`• ${s}`);
+        lines.push("");
+      }
     }
     lines.push((cfg.CALL_TO_ACTION_SOFT ?? "").replace("{company}", shortName(row.company) || "you"));
   } else {
@@ -224,7 +239,11 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
       lines.push(intro);
       lines.push("");
     }
-    if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU.length > 0) {
+    if (singleOffer) {
+      lines.push(servicesIntro);
+      lines.push(`• ${singleOffer}`);
+      lines.push("");
+    } else if (cfg.SHOW_SERVICES_MENU && CLINIC_MENU.length > 0) {
       lines.push(servicesIntro);
       for (const s of CLINIC_MENU) lines.push(`• ${s}`);
       lines.push("");

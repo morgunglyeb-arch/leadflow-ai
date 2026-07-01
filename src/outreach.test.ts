@@ -186,3 +186,26 @@ describe("site-CTA в follow-up #1 (ссылка НЕ в первом письм
     expect(seq.followup_1).toContain("type your trade");
   });
 });
+
+describe("EMAIL_OFFER_MODE + PRICE_ANCHOR (audit follow-ups, default-off = E1-safe)", () => {
+  it("EMAIL_OFFER_MODE=single pitches the ONE per-lead automation, drops the fixed menu", () => {
+    const c = { ...cfg, EMAIL_MENU_MAX_B: 2, EMAIL_OFFER_MODE: "single" } as unknown as AppConfig;
+    const body = assembleDraft(row("single-offer.co.uk"), c).body;
+    expect(body).toContain("missed-call text-back"); // the row.automation
+    expect(body).not.toContain(CLINIC_MENU[3] ?? "«no-such»"); // a menu item is gone
+  });
+
+  it("default offer mode keeps a menu (single automation NOT forced)", () => {
+    const c = { ...cfg, EMAIL_MENU_MAX_B: 3 } as unknown as AppConfig; // no EMAIL_OFFER_MODE
+    const body = assembleDraft(row("menu-mode.co.uk"), c).body;
+    expect(body).toContain(CLINIC_MENU[0] ?? "");
+  });
+
+  it("PRICE_ANCHOR appends to follow-up #2 ONLY — never the first touch", () => {
+    const c = { ...cfg, PRICE_ANCHOR: "From about £150 one-off." } as unknown as AppConfig;
+    const seq = assembleSequence(row("anchor.co.uk"), c);
+    expect(seq.followup_2).toContain("From about £150 one-off.");
+    expect(seq.initial).not.toContain("£150");
+    expect(seq.followup_1).not.toContain("£150");
+  });
+});

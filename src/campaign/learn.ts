@@ -1,7 +1,17 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import type { AppConfig } from "../config.js";
 import { verticalFromQuery } from "../vertical.js";
 import type { CampaignLead, CampaignState } from "./store.js";
+
+// Sample-size gates from the experiment ledger: <200 = directional only (noise),
+// 200–999 = early signal, ≥1000 = sphere decision-ready, ≥3000 = format significance.
+function gateLabel(n: number): string {
+  if (n >= 3000) return "✅ N≥3000 (format-sig)";
+  if (n >= 1000) return "✅ N≥1000 (decision)";
+  if (n >= 200) return "📊 N≥200 (early)";
+  return `🔬 N=${n} (<200 directional)`;
+}
 
 const LEARNINGS_PATH = "data/campaign/learnings.md";
 const WINNERS_PATH = "data/campaign/winners.json";
@@ -25,11 +35,27 @@ function positive(l: CampaignLead): boolean {
  * vertical and by angle, and save the openers/subjects that earned positive
  * replies as few-shot "winners" the prompt can learn from.
  */
-export async function summarizeAndLearn(state: CampaignState): Promise<string> {
+export async function summarizeAndLearn(
+  state: CampaignState,
+  cfg?: AppConfig,
+): Promise<string> {
   const leads = Object.values(state.leads);
   const sentLeads = leads.filter(sent);
   const replied = leads.filter((l) => l.status === "replied");
   const interested = leads.filter(positive);
+
+  // E1 experiment cohort — when EXPERIMENT_VERTICALS is set, the sphere signal is
+  // buried in a mostly pre-test bank. Isolate the leads whose discovery_query
+  // matches a target vertical so the ledger reads the cohort, not the noise pool.
+  const exp = cfg?.EXPERIMENT_VERTICALS ?? [];
+  const inCohort = (l: CampaignLead): boolean => {
+    if (exp.length === 0) return false;
+    const q = (l.snapshot.discovery_query ?? "").toLowerCase();
+    return exp.some((v) => q.includes(v));
+  };
+  const cohortSent = sentLeads.filter(inCohort);
+  const cohortReplied = cohortSent.filter((l) => l.status === "replied");
+  const cohortInterested = cohortSent.filter(positive);
 
   const byVertical = new Map<string, { sent: number; replied: number; interested: number }>();
   for (const l of sentLeads) {
@@ -81,12 +107,32 @@ export async function summarizeAndLearn(state: CampaignState): Promise<string> {
     `- Variant A: sent ${ab.A!.sent}, replied ${pct(ab.A!.replied, ab.A!.sent)}`,
     `- Variant B: sent ${ab.B!.sent}, replied ${pct(ab.B!.replied, ab.B!.sent)}`,
     ``,
-    `## Reply rate by niche`,
+    ...(exp.length > 0
+      ? [
+          `## 🎯 E1 experiment cohort [${exp.join(", ")}]`,
+          `- Cohort sent: **${cohortSent.length}** ${gateLabel(cohortSent.length)} · replied ${pct(cohortReplied.length, cohortSent.length)} · interested ${pct(cohortInterested.length, cohortSent.length)}`,
+          ...(cohortSent.length < 200
+            ? ["- ⏳ Below the 200/segment directional floor — do NOT call a sphere winner yet."]
+            : cohortSent.length < 1000
+              ? ["- 📊 Past directional; sphere DECISION needs ~1000/segment. Keep going."]
+              : ["- ✅ Decision-ready: scale ≥3% positive-reply, kill <1%."]),
+          `- Per target vertical:`,
+          ...[...byVertical.entries()]
+            .filter(([v]) => exp.some((x) => v.toLowerCase().includes(x)))
+            .sort((a, b) => b[1].interested - a[1].interested)
+            .map(
+              ([v, e]) =>
+                `  - ${v}: sent ${e.sent} ${gateLabel(e.sent)}, replied ${pct(e.replied, e.sent)}, interested ${pct(e.interested, e.sent)}`,
+            ),
+          ``,
+        ]
+      : []),
+    `## Reply rate by niche (all)`,
     ...[...byVertical.entries()]
       .sort((a, b) => b[1].interested - a[1].interested)
       .map(
         ([v, e]) =>
-          `- ${v}: sent ${e.sent}, replied ${pct(e.replied, e.sent)}, interested ${pct(e.interested, e.sent)}`,
+          `- ${v}: sent ${e.sent} ${gateLabel(e.sent)}, replied ${pct(e.replied, e.sent)}, interested ${pct(e.interested, e.sent)}`,
       ),
     ``,
     `## Winning angles (got an interested reply)`,

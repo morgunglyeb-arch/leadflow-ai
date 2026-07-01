@@ -206,6 +206,20 @@ const schema = z.object({
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
   EMAIL_MENU_MAX_B: z.coerce.number().default(2),
+  // OFFER mode (prepared for the post-E1 offer experiment; default = current menu,
+  // so E1's first-touch copy is UNCHANGED). "single" swaps the fixed 5-item menu for
+  // the ONE per-lead automation (row.automation) — the audit's #1 conversion lever
+  // (specific gap beats generic menu). Flip to "single" only as its own A/B AFTER the
+  // sphere test concludes, so we never change two variables at once.
+  EMAIL_OFFER_MODE: z
+    .string()
+    .default("menu")
+    .transform((s) => (s.toLowerCase() === "single" ? "single" : "menu")),
+  // Soft price anchor, appended to the FOLLOW-UP only (never the E1 first touch, to
+  // keep the sphere test clean). Empty = off (code stays price-free — the value lives
+  // in .env per the owner's live decision to anchor in email). Reverses the standing
+  // "no numbers in outreach" rule ON PURPOSE (owner-confirmed 2026-07-01).
+  PRICE_ANCHOR: z.string().default(""),
   // EXPERIMENT — sphere test (E1, [[plan-experiment-ledger]]). Comma-separated
   // substrings matched (case-insensitive) against a lead's discovery_query. When
   // set, COLD first-touches are restricted to leads whose query matches ANY of them
