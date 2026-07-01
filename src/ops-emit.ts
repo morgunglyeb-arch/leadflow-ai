@@ -144,6 +144,8 @@ export interface InboxHealthRow {
   sent?: number; // lifetime sends from this inbox (rate denominator)
   bounces?: number;
   replies?: number;
+  sent_today?: number; // TODAY's NEW first-touches from this inbox
+  followups_today?: number; // TODAY's follow-ups from this inbox (share the same daily cap)
   // Warmup-window signal: of `received` peer mails, `rescued` were in spam. When
   // present the hub computes warmup reply_rate + spam_rate off `received` (the
   // cold-send `sent` denominator is 0 until real sending starts).

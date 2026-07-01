@@ -494,10 +494,19 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
 
   // Per-inbox deliverability snapshot → Opero Ops inbox_health (best-effort).
   // One row per inbox, from leads pinned to it; lifetime sent/bounces/replies so
-  // the hub can compute meaningful bounce/reply rates + status.
+  // the hub can compute meaningful bounce/reply rates + status. Plus TODAY's split
+  // (new first-touches vs follow-ups) so the Mini App shows how each inbox's daily
+  // cap divided — follow-ups take first claim, cold fills the remainder.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const isToday = (at?: string): boolean => (at ?? "").startsWith(todayStr);
   await emitInboxHealth(
     inboxes.map((b) => {
       const pinned = all.filter((l) => l.inbox === b.email);
+      const countEv = (pred: (ev: string) => boolean): number =>
+        pinned.reduce(
+          (n, l) => n + (l.history ?? []).filter((h) => isToday(h.at) && pred(h.event)).length,
+          0,
+        );
       return {
         domain: domainOf(b.email),
         inbox: b.email,
@@ -505,6 +514,8 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
         sent: pinned.filter((l) => l.step >= 1).length,
         bounces: pinned.filter((l) => l.status === "bounced").length,
         replies: pinned.filter((l) => l.status === "replied" || l.status === "opted_out").length,
+        sent_today: countEv((e) => e === "sent"),
+        followups_today: countEv((e) => e === "followup_1" || e === "followup_2"),
       };
     }),
   );
