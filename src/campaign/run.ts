@@ -121,8 +121,12 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   // did → every real send-run would otherwise hang `running`).
   const runId = await emitRunStart("campaign");
   try {
-    const sent = await runCampaignBody(cfg, flags);
+    const { sent, refill } = await runCampaignBody(cfg, flags);
+    // Record the run (sent count → hub / Mini App "отправлено сегодня") BEFORE the
+    // slow, killable bank refill — so a throttled/interrupted generation can't lose
+    // the send count. The refill is best-effort after reporting.
     await emitRunEnd(runId, { status: "done", sent });
+    await refill();
   } catch (err) {
     await emitRunEnd(runId, { status: "failed" });
     await emitError(err);
@@ -130,7 +134,10 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
   }
 }
 
-async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<number> {
+async function runCampaignBody(
+  cfg: AppConfig,
+  flags: CampaignFlags,
+): Promise<{ sent: number; refill: () => Promise<void> }> {
   const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
   let sentCount = 0;
   // Cold-send ramp counter (warmup_day) must only advance on days we actually
@@ -511,44 +518,45 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   );
   await emitStateBackup(state); // R4: off-Mac backup so warmup state survives a dead machine
 
-  // 6) REFILL THE BANK — post-send, TRULY LAST, best-effort. The day's ceiling is
-  //    already sent AND learn/emits/backup are done, so this SLOW step (LLM +
-  //    discovery; crawls when free Gemini keys are RPM-throttled, and can be killed
-  //    on a manual/cron overlap) can never delay the send or skip learn. A
+  // 6) REFILL THE BANK — returned as a DEFERRED thunk, not run here. The caller
+  //    (runCampaign) records the run via emitRunEnd(sent) FIRST, then awaits this.
+  //    So the sent count reaches the hub (Mini App "отправлено сегодня") even when
+  //    this SLOW step (LLM + discovery; crawls when Gemini is RPM-throttled, and
+  //    gets killed on a manual/cron overlap) never finishes. Best-effort: a
   //    failure/limit just leaves the deep bank as-is for tomorrow's backfill.
-  if (flags.topUp) {
+  const refill = async (): Promise<void> => {
+    if (!flags.topUp) return;
     const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
     const bufferTarget = cfg.MAX_LEADS;
-    if (queued < bufferTarget) {
-      try {
-        const rows = await runProspecting(cfg, {
-          dry: false,
-          mock: flags.mock,
-          force: false,
-          sendTest: false,
-          digest: false,
-          limit: bufferTarget - queued,
-          minFit: cfg.MIN_FIT,
-          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
-        });
-        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
-        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
-        console.log(
-          `[campaign] post-send buffer refill: enqueued ${added} new lead(s) (queue was ${queued}/${bufferTarget}` +
-            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
-        );
-        await saveState(cfg.CAMPAIGN_STATE_PATH, state);
-      } catch (e) {
-        const msg = (e as Error)?.message ?? String(e);
-        console.warn(
-          `[campaign] post-send buffer refill hit a limit (${msg}) — deep bank stays for tomorrow's backfill`,
-        );
-        await emitError(new Error(`post-send buffer refill failed (non-blocking; ceiling already sent): ${msg}`));
-      }
+    if (queued >= bufferTarget) return;
+    try {
+      const rows = await runProspecting(cfg, {
+        dry: false,
+        mock: flags.mock,
+        force: false,
+        sendTest: false,
+        digest: false,
+        limit: bufferTarget - queued,
+        minFit: cfg.MIN_FIT,
+        ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
+      });
+      const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
+      const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
+      console.log(
+        `[campaign] post-send buffer refill: enqueued ${added} new lead(s) (queue was ${queued}/${bufferTarget}` +
+          `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
+      );
+      await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      console.warn(
+        `[campaign] post-send buffer refill hit a limit (${msg}) — deep bank stays for tomorrow's backfill`,
+      );
+      await emitError(new Error(`post-send buffer refill failed (non-blocking; ceiling already sent): ${msg}`));
     }
-  }
+  };
 
-  return sentCount;
+  return { sent: sentCount, refill };
 }
 
 function jitterMs(cfg: AppConfig): number {
