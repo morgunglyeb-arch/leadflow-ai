@@ -18,6 +18,11 @@ describe("normalizeEmail — recover scrape artifacts", () => {
     expect(normalizeEmail("not-an-email")).toBe("");
     expect(normalizeEmail("")).toBe("");
   });
+  it("drops Cloudflare/obfuscation hex-hash localparts (machine junk → hard bounce)", () => {
+    expect(normalizeEmail("e42ae442664e4360b7809c127fb93618@leepaccountants.co.uk")).toBe("");
+    // but a short hex-ish real localpart is fine
+    expect(normalizeEmail("abc123@example.com")).toBe("abc123@example.com");
+  });
 });
 
 const HEX_A = "a".repeat(40);

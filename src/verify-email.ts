@@ -25,7 +25,15 @@ export function normalizeEmail(raw: string): string {
   }
   s = s.trim().toLowerCase();
   const m = s.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i);
-  return m ? m[0] : "";
+  if (!m) return "";
+  const addr = m[0];
+  // Cloudflare email-protection / obfuscation artifact: a long all-hex localpart
+  // (e.g. `e42ae442664e4360b7809c127fb93618@…`) is machine junk scraped off a
+  // page, never a real mailbox → a guaranteed hard bounce. Drop it. (Real localparts
+  // aren't 16+ pure hex chars.)
+  const local = addr.split("@")[0] ?? "";
+  if (/^[0-9a-f]{16,}$/.test(local)) return "";
+  return addr;
 }
 
 /** Free check: does the email's domain have a mail server (MX record)? */
