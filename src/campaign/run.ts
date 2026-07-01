@@ -333,7 +333,22 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   // cached on the lead) only until the room is filled, to bound Companies House calls.
   let firstTouches: CampaignLead[] = [];
   if (coldAllowed) {
-    const pool = selectFirstTouches(state, cfg, runRoom * 5);
+    // EXPERIMENT sphere filter (E1): when EXPERIMENT_VERTICALS is set, restrict cold
+    // first-touches to leads whose discovery_query matches — so the send population is
+    // a clean experiment cohort even while the deep mixed bank holds other segments.
+    // Over-select (all queued) before filtering so we can still fill the day's room.
+    const exp = cfg.EXPERIMENT_VERTICALS;
+    const rawPool = selectFirstTouches(state, cfg, exp.length ? 100_000 : runRoom * 5);
+    const pool = exp.length
+      ? rawPool.filter((l) => {
+          const q = (l.snapshot?.discovery_query ?? "").toLowerCase();
+          return exp.some((v) => q.includes(v));
+        })
+      : rawPool;
+    if (exp.length)
+      console.log(
+        `[experiment] cold sends restricted to [${exp.join(", ")}] — ${pool.length}/${rawPool.length} queued match`,
+      );
     let pecrHeld = 0;
     for (const l of pool) {
       if (firstTouches.length >= runRoom) break;
@@ -446,43 +461,10 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
     }
   }
 
-  // 5c) REFILL THE BANK — post-send, best-effort. Now that the day's ceiling is
-  //     already sent (from the deep bank above), generate fresh qualified leads to
-  //     top the buffer back toward MAX_LEADS for future runs. This is the SLOW step
-  //     (LLM + discovery; crawls when free Gemini keys are RPM-throttled) — running
-  //     it here means a throttled generation day never delays the send. Best-effort:
-  //     a failure/limit just leaves the deep bank as-is for tomorrow's backfill.
-  if (flags.topUp) {
-    const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
-    const bufferTarget = cfg.MAX_LEADS;
-    if (queued < bufferTarget) {
-      try {
-        const rows = await runProspecting(cfg, {
-          dry: false,
-          mock: flags.mock,
-          force: false,
-          sendTest: false,
-          digest: false,
-          limit: bufferTarget - queued,
-          minFit: cfg.MIN_FIT,
-          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
-        });
-        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
-        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
-        console.log(
-          `[campaign] post-send buffer refill: enqueued ${added} new lead(s) (queue was ${queued}/${bufferTarget}` +
-            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
-        );
-        await saveState(cfg.CAMPAIGN_STATE_PATH, state);
-      } catch (e) {
-        const msg = (e as Error)?.message ?? String(e);
-        console.warn(
-          `[campaign] post-send buffer refill hit a limit (${msg}) — deep bank stays for tomorrow's backfill`,
-        );
-        await emitError(new Error(`post-send buffer refill failed (non-blocking; ceiling already sent): ${msg}`));
-      }
-    }
-  }
+  // NOTE: the SLOW post-send buffer refill (generation) runs at the VERY END of the
+  // run (step 6 below), AFTER learn + emits + state backup — so a throttled/killed
+  // generation can never skip the learn step (which kept `learnings.md` stale) or
+  // the inbox-health/backup emits. Send → learn → emit → THEN best-effort refill.
 
   // 5) LEARN + write replies-to-action for the operator
   await summarizeAndLearn(state);
@@ -528,6 +510,44 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
       `${flagged > 0 ? ` ${flagged} flagged for manual review.` : ""} state → ${cfg.CAMPAIGN_STATE_PATH}`,
   );
   await emitStateBackup(state); // R4: off-Mac backup so warmup state survives a dead machine
+
+  // 6) REFILL THE BANK — post-send, TRULY LAST, best-effort. The day's ceiling is
+  //    already sent AND learn/emits/backup are done, so this SLOW step (LLM +
+  //    discovery; crawls when free Gemini keys are RPM-throttled, and can be killed
+  //    on a manual/cron overlap) can never delay the send or skip learn. A
+  //    failure/limit just leaves the deep bank as-is for tomorrow's backfill.
+  if (flags.topUp) {
+    const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
+    const bufferTarget = cfg.MAX_LEADS;
+    if (queued < bufferTarget) {
+      try {
+        const rows = await runProspecting(cfg, {
+          dry: false,
+          mock: flags.mock,
+          force: false,
+          sendTest: false,
+          digest: false,
+          limit: bufferTarget - queued,
+          minFit: cfg.MIN_FIT,
+          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
+        });
+        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
+        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
+        console.log(
+          `[campaign] post-send buffer refill: enqueued ${added} new lead(s) (queue was ${queued}/${bufferTarget}` +
+            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
+        );
+        await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        console.warn(
+          `[campaign] post-send buffer refill hit a limit (${msg}) — deep bank stays for tomorrow's backfill`,
+        );
+        await emitError(new Error(`post-send buffer refill failed (non-blocking; ceiling already sent): ${msg}`));
+      }
+    }
+  }
+
   return sentCount;
 }
 

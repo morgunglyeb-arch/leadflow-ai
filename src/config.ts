@@ -206,6 +206,21 @@ const schema = z.object({
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
   EMAIL_MENU_MAX_B: z.coerce.number().default(2),
+  // EXPERIMENT — sphere test (E1, [[plan-experiment-ledger]]). Comma-separated
+  // substrings matched (case-insensitive) against a lead's discovery_query. When
+  // set, COLD first-touches are restricted to leads whose query matches ANY of them
+  // — so the send population is a clean set of experiment verticals even while the
+  // deep mixed bank still holds other segments. Follow-ups continue regardless.
+  // Empty = no restriction (normal behavior). e.g. "solicitor,mortgage,account".
+  EXPERIMENT_VERTICALS: z
+    .string()
+    .default("")
+    .transform((s) =>
+      s
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.
   STUDIO_INTRO: z
