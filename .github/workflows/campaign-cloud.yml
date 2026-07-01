@@ -1,0 +1,63 @@
+# Cloud runner for the send/warmup crons — the GitHub Actions option from
+# docs/adr/0001-cloud-cron-migration.md (Mac SPOF fix). OFF by default: only the
+# manual `workflow_dispatch` trigger is active, so it can NEVER double-send with the
+# Mac crons until the owner deliberately enables the schedule below AND disables the
+# Mac launchd jobs. VPS is the recommended target for a long send loop; this is the
+# zero-infra fallback.
+#
+# ACTIVATE (owner):
+#   1. Create ONE repo secret `SECRETS_TARBALL` = base64 of a tar of the file-based
+#      secrets, from the repo root:
+#        tar czf - .env gmail_credentials.json gmail_token*.json | base64 | pbcopy
+#      (paste into GitHub → Settings → Secrets → Actions → SECRETS_TARBALL)
+#   2. Test with the manual trigger (Actions → this workflow → Run workflow → mode).
+#   3. When happy: uncomment the `schedule:` block, and DISABLE the Mac crons
+#      (`launchctl unload …send.plist …warmup.plist`) — only one host may run them
+#      (the run-lock is a local pidfile, it can't guard across hosts).
+name: campaign-cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "which run"
+        type: choice
+        options: [top-up, warmup]
+        default: top-up
+  # --- ENABLE ONLY AFTER the Mac crons are disabled (see header) ---
+  # GitHub cron is UTC — set these to match your SEND_WINDOW/SEND_TZ. Example below
+  # is for CEST (UTC+2): 8/12/14/16 local → 6/10/12/14 UTC. Adjust for your offset/DST.
+  # schedule:
+  #   - cron: "0 6,10,12,14 * * *"   # send
+  #   - cron: "30 5 * * *"           # warmup
+
+# Never let two cloud runs overlap (complements the local run-lock, which is
+# host-local and can't see a second GitHub runner).
+concurrency:
+  group: campaign-send
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Restore file-based secrets
+        env:
+          SECRETS_TARBALL: ${{ secrets.SECRETS_TARBALL }}
+        run: |
+          if [ -z "$SECRETS_TARBALL" ]; then
+            echo "::error::SECRETS_TARBALL secret is not set — see the workflow header to create it."
+            exit 1
+          fi
+          echo "$SECRETS_TARBALL" | base64 -d | tar xzf -
+          test -f .env || { echo "::error::.env missing from the tarball"; exit 1; }
+      - name: Run campaign (${{ github.event.inputs.mode || 'top-up' }})
+        env:
+          STATE_REMOTE: "true" # restore warmup/sequencing state from the hub (no local file here)
+        run: npm run campaign -- --${{ github.event.inputs.mode || 'top-up' }}
