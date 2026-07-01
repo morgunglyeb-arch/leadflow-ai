@@ -226,45 +226,12 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
   //     them — sweep + suppress so the one-click unsubscribe is genuinely honored.
   if (live && !flags.mock) await sweepUnsubscribeRequests(cfg, state, suppression, inboxes);
 
-  // 2) TOP UP the queue with fresh qualified leads (agent decides volume by
-  //    sending pace, so we keep a backlog rather than a fixed count)
-  if (flags.topUp) {
-    const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
-    // POLICY (owner): generate the MAX leads daily to keep a DEEP buffer; SENDING is
-    // separately ramp-capped (warmupCap). Buffer target = MAX_LEADS, decoupled from
-    // the send cap — a big stock accrues so a generation-limited day still has plenty
-    // queued to send from.
-    const bufferTarget = cfg.MAX_LEADS;
-    if (queued < bufferTarget) {
-      // Daily generation is best-effort: if it fails or hits LLM/discovery limits,
-      // we do NOT abort the run — we send from whatever is already banked in the
-      // queue ("Рассылка"). Tomorrow the limits reset and the next run re-tops-up.
-      try {
-        const rows = await runProspecting(cfg, {
-          dry: false,
-          mock: flags.mock,
-          force: false,
-          sendTest: false,
-          digest: false,
-          limit: bufferTarget - queued,
-          minFit: cfg.MIN_FIT,
-          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
-        });
-        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
-        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
-        console.log(
-          `[campaign] enqueued ${added} new leads (queue was ${queued}, cap ${cap}` +
-            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
-        );
-      } catch (e) {
-        const msg = (e as Error)?.message ?? String(e);
-        console.warn(
-          `[campaign] top-up generation failed (${msg}) — sending from ${queued} already-banked lead(s) in the queue`,
-        );
-        await emitError(new Error(`top-up generation failed; sending from ${queued} banked leads: ${msg}`));
-      }
-    }
-  }
+  // 2) FILL THE SEND QUEUE — fast, LLM-free, BEFORE sending. Fresh generation
+  //    (slow: LLM + discovery, and crawls when free keys are RPM-throttled) is
+  //    DEFERRED to step 5c, AFTER the day's ceiling is sent, so a rate-limited
+  //    generation day can never starve the send. Today's room is filled here from
+  //    the deep already-written bank (data/out/leads_enriched.csv), zero LLM.
+  //    See step 5c for the post-send buffer refill.
 
   // 2b) BANK BACKFILL — owner policy: if fresh generation couldn't fill the buffer
   //     (LLM keys rate-limited/banned, verify down, slow free-tier, or a pure send
@@ -476,6 +443,44 @@ async function runCampaignBody(cfg: AppConfig, flags: CampaignFlags): Promise<nu
           `send cap shortfall: ${firstTouches.length}/${runRoom} cold slots filled — engine out of fresh PECR-eligible leads. Generation is the blocker (Gemini billing / verify credits).`,
         ),
       );
+    }
+  }
+
+  // 5c) REFILL THE BANK — post-send, best-effort. Now that the day's ceiling is
+  //     already sent (from the deep bank above), generate fresh qualified leads to
+  //     top the buffer back toward MAX_LEADS for future runs. This is the SLOW step
+  //     (LLM + discovery; crawls when free Gemini keys are RPM-throttled) — running
+  //     it here means a throttled generation day never delays the send. Best-effort:
+  //     a failure/limit just leaves the deep bank as-is for tomorrow's backfill.
+  if (flags.topUp) {
+    const queued = Object.values(state.leads).filter((l) => l.status === "queued").length;
+    const bufferTarget = cfg.MAX_LEADS;
+    if (queued < bufferTarget) {
+      try {
+        const rows = await runProspecting(cfg, {
+          dry: false,
+          mock: flags.mock,
+          force: false,
+          sendTest: false,
+          digest: false,
+          limit: bufferTarget - queued,
+          minFit: cfg.MIN_FIT,
+          ...(flags.concurrency ? { concurrency: flags.concurrency } : {}),
+        });
+        const fresh = rows.filter((r) => !isSuppressed(suppression, r.domain, r.email));
+        const added = enqueueLeads(state, fresh, roiScoreOf, cfg);
+        console.log(
+          `[campaign] post-send buffer refill: enqueued ${added} new lead(s) (queue was ${queued}/${bufferTarget}` +
+            `${rows.length - fresh.length > 0 ? `, ${rows.length - fresh.length} suppressed` : ""})`,
+        );
+        await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        console.warn(
+          `[campaign] post-send buffer refill hit a limit (${msg}) — deep bank stays for tomorrow's backfill`,
+        );
+        await emitError(new Error(`post-send buffer refill failed (non-blocking; ceiling already sent): ${msg}`));
+      }
     }
   }
 
