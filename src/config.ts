@@ -277,6 +277,14 @@ const schema = z.object({
 
   // --- Autonomous campaign (Gmail send + follow-up + learning) -------------
   CAMPAIGN_STATE_PATH: z.string().default("data/campaign/state.json"),
+  // Cloud/replaced-Mac RESTORE: when true AND there's no local state.json (a fresh
+  // runner), pull the last off-Mac backup from the hub (GET /api/state/leadflow) so
+  // warmup/sequencing counters don't reset to day 1. Default false → the Mac (which
+  // has the local file) is unaffected. The foundation for running off the Mac.
+  STATE_REMOTE: z
+    .string()
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
   // Master safety switch — must be explicitly true for the agent to SEND.
   SENDING_ENABLED: z
     .string()

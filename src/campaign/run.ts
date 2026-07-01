@@ -51,6 +51,7 @@ import {
   emitRunEnd,
   emitError,
   emitStateBackup,
+  fetchRemoteState,
 } from "../ops-emit.js";
 import { verticalFromQuery } from "../vertical.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -151,7 +152,24 @@ async function runCampaignBody(
   cfg: AppConfig,
   flags: CampaignFlags,
 ): Promise<{ sent: number; refill: () => Promise<void> }> {
-  const state = await loadState(cfg.CAMPAIGN_STATE_PATH);
+  let state = await loadState(cfg.CAMPAIGN_STATE_PATH);
+  // Cloud/replaced-Mac RESTORE: a fresh runner has no local state.json → loadState
+  // returns an empty day-1 state. If STATE_REMOTE is on, pull the last off-Mac backup
+  // from the hub and persist it locally, so warmup/sequencing resume instead of
+  // resetting (which would re-warm from day 1 and re-send suppressed leads). Default
+  // off → the Mac (local file present) never hits this.
+  if (cfg.STATE_REMOTE && state.warmup_day <= 1 && Object.keys(state.leads).length === 0) {
+    const remote = await fetchRemoteState();
+    if (remote && typeof remote === "object") {
+      await saveState(cfg.CAMPAIGN_STATE_PATH, remote as CampaignState);
+      state = await loadState(cfg.CAMPAIGN_STATE_PATH); // re-shape via the loader
+      console.log(
+        `[state] restored from hub backup (STATE_REMOTE) — warmup day ${state.warmup_day}, ${Object.keys(state.leads).length} leads`,
+      );
+    } else {
+      console.warn("[state] STATE_REMOTE on but no hub backup available — starting fresh");
+    }
+  }
   let sentCount = 0;
   // Cold-send ramp counter (warmup_day) must only advance on days we actually
   // send cold mail — otherwise it climbs during the dry-run/peer-warmup window

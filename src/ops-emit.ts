@@ -27,6 +27,31 @@ async function post(body: Record<string, unknown>): Promise<unknown> {
 }
 
 /**
+ * RESTORE the off-Mac campaign-state backup from the hub (the read side of
+ * emitStateBackup). Returns the raw state object, or null if the hub isn't
+ * configured/reachable or has no backup yet. Used only when STATE_REMOTE is on and
+ * there's no local state.json — so a fresh/replaced Mac or a cloud runner resumes
+ * warmup/sequencing instead of resetting to day 1.
+ */
+export async function fetchRemoteState(): Promise<unknown | null> {
+  const base = process.env.OPERO_OPS_URL;
+  const token = process.env.INGEST_BEARER_TOKEN;
+  if (!base || !token) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/state/leadflow`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { ok?: boolean; state?: unknown } | null;
+    return json?.ok ? (json.state ?? null) : null;
+  } catch (err) {
+    console.warn(`[ops-emit] state restore failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
  * Read learned winners from the hub (F1) — per vertical × angle, learned on WON
  * across the persistent `contacts` funnel, min-N gated. The hub is the source of
  * truth (the local winners.json is recomputed from ephemeral state). Best-effort
