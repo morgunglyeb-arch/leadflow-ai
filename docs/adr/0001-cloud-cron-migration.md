@@ -25,7 +25,7 @@ Make the pipeline **runnable off the Mac**, in two shipped-now + one owner-gated
 | Option | Fit | Cost | Notes |
 |---|---|---|---|
 | **Small VPS** (Hetzner/DO, cron+launchd-equiv) | ✅ best for a long-running send loop | ~$4–6/mo | full node env, Gmail OAuth token file, `caffeinate` not needed. **Recommended.** |
-| GitHub Actions cron | ⚠️ ok but limits | free tier ~2000 min/mo | ephemeral FS (needs `STATE_REMOTE`), 5-min cron granularity is fine, but 4×/day × multi-min runs eats minutes; secrets in Actions. |
+| GitHub Actions cron | ⚠️ ok but limits | free tier ~2000 min/mo | ephemeral FS (needs `STATE_REMOTE`); 4×/day × multi-min runs eats minutes; secrets in Actions. **Ready-to-use workflow: `.github/workflows/campaign-cloud.yml`** (opt-in, one `SECRETS_TARBALL` secret). |
 | Fly.io / Railway | ✅ | ~$0–5/mo | persistent volume or `STATE_REMOTE`; simple deploy. |
 
 ## Runbook (owner, to activate)
