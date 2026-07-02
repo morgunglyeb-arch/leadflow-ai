@@ -120,6 +120,25 @@ export interface CampaignFlags {
   concurrency?: number;
 }
 
+// Post-send generation is best-effort; never let it hang the process (holding the
+// run-lock, blocking the next cron). 2026-07-02: throttled providers made it spin
+// ~80min, so the send crons queued behind the lock. Cap it — the send is already recorded.
+const REFILL_TIMEOUT_MS = 20 * 60_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) => {
+      const t = setTimeout(
+        () => reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s`)),
+        ms,
+      );
+      // don't let the timeout timer itself keep the process alive
+      (t as unknown as { unref?: () => void }).unref?.();
+    }),
+  ]);
+}
+
 export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise<void> {
   // R2: bookend the campaign/send run so it shows up in the hub and can't zombie as
   // `running` forever on a hard kill (prospect.ts already does this; campaign never
@@ -132,6 +151,22 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
     console.warn("[campaign] another campaign run is active (lock held) — skipping this run");
     return;
   }
+  // A graceful kill (launchctl kill / deploy / Ctrl-C) must NOT leave the lock held or
+  // the run stuck "running": release the lock + best-effort fail the run on the way
+  // out. (A hard SIGKILL can't run this — the hub-side watchdog reaps those.)
+  let activeRunId: string | null = null;
+  const onSignal = (sig: NodeJS.Signals): void => {
+    console.error(`[campaign] ${sig} — releasing lock + marking run failed, exiting`);
+    if (activeRunId) void emitRunEnd(activeRunId, { status: "failed" }).catch(() => {});
+    try {
+      release();
+    } catch {
+      /* already released */
+    }
+    process.exit(1);
+  };
+  process.once("SIGTERM", onSignal);
+  process.once("SIGINT", onSignal);
   try {
     // Poll-only: reply-check pass on a frequent cron. Shares the run-lock (so it never
     // races a real send on state.json) but does NOT record a leadflow_run (would spam
@@ -141,19 +176,26 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
       return;
     }
     const runId = await emitRunStart("campaign");
+    activeRunId = runId;
     try {
       const { sent, refill } = await runCampaignBody(cfg, flags);
       // Record the run (sent count → hub / Mini App "отправлено сегодня") BEFORE the
       // slow, killable bank refill — so a throttled/interrupted generation can't lose
       // the send count. The refill is best-effort after reporting.
       await emitRunEnd(runId, { status: "done", sent });
-      await refill();
+      // Cap the best-effort refill so a throttled generation can't hang the run and
+      // hold the lock (2026-07-02 incident) — the send is already recorded above.
+      await withTimeout(refill(), REFILL_TIMEOUT_MS, "post-send refill").catch((e) =>
+        console.warn(`[campaign] refill capped/failed: ${(e as Error).message}`),
+      );
     } catch (err) {
       await emitRunEnd(runId, { status: "failed" });
       await emitError(err);
       throw err;
     }
   } finally {
+    process.removeListener("SIGTERM", onSignal);
+    process.removeListener("SIGINT", onSignal);
     release();
   }
 }
