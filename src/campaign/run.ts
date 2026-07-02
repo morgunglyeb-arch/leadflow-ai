@@ -316,7 +316,7 @@ async function runCampaignBody(
   //    handle bounces, and draft suggested responses to interested leads.
   //    Runs on a live send-run AND on the poll-only reply cron (so replies are still
   //    detected + notified while cold sending is paused).
-  if (live || flags.pollOnly) await pollReplies(cfg, state, suppression);
+  const newBounces = live || flags.pollOnly ? await pollReplies(cfg, state, suppression) : 0;
 
   // 1b) SWEEP List-Unsubscribe mailto requests across every sending inbox.
   //     These arrive as fresh emails (not thread replies), so pollReplies misses
@@ -425,6 +425,20 @@ async function runCampaignBody(
     console.error(
       "[campaign] ⛔ HOLDING cold first-touches — WARMUP_ENABLED=false and SEND_WITHOUT_WARMUP is not set. " +
         "Enable peer-warmup, or set SEND_WITHOUT_WARMUP=true to send on the ramp alone (deliberately).",
+    );
+  }
+  // EMERGENCY STOP (brain-audit #5): if THIS run's reply-poll surfaced a burst of
+  // fresh hard bounces from prior sends, stop digging — hold cold first-touches this
+  // run and alert. Follow-ups (to already-contacted, non-bouncing leads) still go.
+  if (coldAllowed && cfg.EMERGENCY_BOUNCE_STOP > 0 && newBounces >= cfg.EMERGENCY_BOUNCE_STOP) {
+    coldAllowed = false;
+    console.error(
+      `[campaign] ⛔ EMERGENCY STOP — ${newBounces} fresh bounces this poll (≥${cfg.EMERGENCY_BOUNCE_STOP}); holding cold first-touches this run.`,
+    );
+    await emitEvent(
+      "bounce_emergency_stop",
+      { new_bounces: newBounces, threshold: cfg.EMERGENCY_BOUNCE_STOP },
+      `bounce_emergency_stop:${new Date().toISOString().slice(0, 13)}`,
     );
   }
   // Optional per-run sub-cap spreads the daily volume across hourly runs in the
@@ -691,7 +705,7 @@ async function pollReplies(
   cfg: AppConfig,
   state: CampaignState,
   suppression: Set<string>,
-): Promise<void> {
+): Promise<number> {
   // Poll leads mid-sequence (sent/fu1/fu2) AND leads in a LIVE conversation —
   // F2: once a lead is "replied" with an interested/objection sentiment the deal
   // is still open, so keep watching the thread for their NEXT message and keep
@@ -704,6 +718,7 @@ async function pollReplies(
       l.threadId &&
       (["sent", "followup_1", "followup_2"].includes(l.status) || isLiveConversation(l)),
   );
+  let newBounces = 0; // brain-audit #5: a burst of fresh bounces → emergency-stop cold sends this run
   for (const lead of awaiting) {
     try {
       const sender = lead.inbox ?? cfg.GMAIL_SENDER ?? "";
@@ -717,6 +732,7 @@ async function pollReplies(
       // Bounce → stop + suppress the address (protects sender reputation)
       if (isBounce(reply.from, reply.snippet)) {
         lead.status = "bounced";
+        newBounces += 1;
         logEvent(lead, "bounced", reply.from);
         await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "bounce");
         suppression.add(lead.email.toLowerCase());
@@ -810,6 +826,7 @@ async function pollReplies(
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);
     }
   }
+  return newBounces;
 }
 
 /**

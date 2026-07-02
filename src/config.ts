@@ -117,6 +117,10 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
+  // Emergency stop (brain-audit #5): if a single reply-poll surfaces ≥ this many
+  // FRESH hard bounces from prior sends, hold cold first-touches for that run (stop
+  // digging while something is clearly wrong) and alert. Follow-ups still go. 0 = off.
+  EMERGENCY_BOUNCE_STOP: z.coerce.number().int().min(0).default(5),
   ZEROBOUNCE_API_KEY: z.string().optional(),
   // Optional rotation list (any separator) — ZeroBounce free tier is 100
   // verifications/key, so several keys multiply the verification budget.
