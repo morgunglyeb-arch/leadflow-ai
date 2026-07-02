@@ -105,6 +105,18 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
+  // Fail-CLOSED verification (brain-audit #3, owner-approved 2026-07-03): when EVERY
+  // real mailbox verifier is unavailable (out of quota / rate-limited / unconfigured)
+  // and the check falls all the way to the MX-only record, HOLD the lead instead of
+  // sending blind. Prevents the 2026-07-02 pattern (unverifiable addresses → hard
+  // bounces) at the cost of pausing cold sends until a verifier works again — the
+  // intended safe behaviour. The hold is TRANSIENT (lead is not flagged) so it retries
+  // once verify recovers. Set false to send person-addresses on MX-only when verify is
+  // degraded (role addresses are always held).
+  EMAIL_VERIFY_STRICT: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
   ZEROBOUNCE_API_KEY: z.string().optional(),
   // Optional rotation list (any separator) — ZeroBounce free tier is 100
   // verifications/key, so several keys multiply the verification budget.

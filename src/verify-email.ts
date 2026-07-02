@@ -335,6 +335,12 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   // doesn't fully stall when verify credits are down.
   const local = (email.split("@")[0] ?? "").toLowerCase();
   if (ROLE_LOCALPARTS.has(local)) return { ok: false, reason: "mx-only-role" };
+  // FAIL-CLOSED (strict, #3): reaching here means NO real mailbox verifier was
+  // available, so we only have an MX record — the mailbox itself is UNCONFIRMED. In
+  // strict mode hold even a person-address rather than send blind; the caller treats
+  // "verify-unavailable" as transient (doesn't burn the lead) so it retries once a
+  // verifier is back. Off → trust MX-only for person-addresses (legacy behaviour).
+  if (cfg.EMAIL_VERIFY_STRICT) return { ok: false, reason: "verify-unavailable" };
   return { ok: true, reason: "mx-ok" };
 }
 

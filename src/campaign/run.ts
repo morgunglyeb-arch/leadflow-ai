@@ -891,10 +891,16 @@ export async function sendStep(
   if (which === "initial" && live && cfg.EMAIL_VERIFY) {
     const v = await verifyEmail(cfg, lead.email);
     if (!v.ok) {
-      lead.flagged = true;
+      // "verify-unavailable" (strict #3) is TRANSIENT — every verifier was down, not a
+      // bad address. Don't flag (that would permanently bench the lead); just skip this
+      // run so it retries once a verifier recovers. Real bad-address reasons (no-mx,
+      // mx-only-role, bad-syntax) still flag the lead out.
+      const transient = v.reason === "verify-unavailable";
+      if (!transient) lead.flagged = true;
       logEvent(lead, "verify_fail", v.reason);
       console.warn(
-        `[campaign] held first-touch → ${lead.company} <${lead.email}> — failed re-verify (${v.reason})`,
+        `[campaign] held first-touch → ${lead.company} <${lead.email}> — ` +
+          (transient ? "verify degraded, will retry when a verifier is back" : `failed re-verify (${v.reason})`),
       );
       return false;
     }
