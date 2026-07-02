@@ -169,6 +169,29 @@ export async function getGmailClient(cfg: AppConfig, inbox?: Inbox): Promise<OAu
   return client;
 }
 
+// Cold-email subjects must be 7-bit clean. LLMs love "smart" punctuation — most often
+// the NON-BREAKING HYPHEN U+2011 in words like "text‑back"/"call‑out" — and an
+// un-encoded Subject header carrying those raw UTF-8 bytes renders as mojibake in
+// Gmail/Outlook (e.g. "textÃ¢Â€Â‘back"). Map the common offenders to plain ASCII first.
+function normalizeHeaderText(s: string): string {
+  return s
+    .replace(/[‐-―−]/g, "-") // hyphen, nb-hyphen, figure/en/em dash, minus
+    .replace(/[‘’‚‛]/g, "'") // single curly quotes
+    .replace(/[“”„‟]/g, '"') // double curly quotes
+    .replace(/…/g, "...") // ellipsis
+    .replace(/[   ]/g, " ") // non-breaking / figure / narrow spaces
+    .trim();
+}
+
+// RFC 2047 encoded-word for any header value that STILL has non-ASCII after
+// normalization (e.g. an accented business name). Pure-ASCII passes through untouched
+// so ordinary subjects stay human-readable in transit and in logs.
+function encodeHeader(s: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching the 7-bit ASCII range is the intent
+  if (/^[\x00-\x7F]*$/.test(s)) return s;
+  return `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`;
+}
+
 function buildMime(opts: {
   from: string;
   fromName?: string;
@@ -183,7 +206,7 @@ function buildMime(opts: {
     // this is cheap hygiene + survives any future From-name/alias change).
     `Reply-To: ${opts.from}`,
     `To: ${opts.to}`,
-    `Subject: ${opts.subject}`,
+    `Subject: ${encodeHeader(normalizeHeaderText(opts.subject))}`,
     'Content-Type: text/plain; charset="UTF-8"',
     "MIME-Version: 1.0",
     // Deliverability: a one-click unsubscribe header is a strong positive signal
