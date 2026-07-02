@@ -17,6 +17,7 @@ function parseFlags(argv: string[]): { mode: Mode; flags: CampaignFlags } {
     if (a === "--auth") mode = "auth";
     else if (a === "--status") mode = "status";
     else if (a === "--warmup") mode = "warmup";
+    else if (a === "--poll") flags.pollOnly = true;
     else if (a === "--mock") flags.mock = true;
     else if (a === "--dry-run" || a === "--dry") flags.dryRun = true;
     else if (a === "--top-up") flags.topUp = true;
@@ -39,6 +40,7 @@ Usage:
   npm run campaign -- --top-up        Discover, send (needs SENDING_ENABLED=true + auth)
   npm run campaign -- --status        Show campaign state summary
   npm run campaign -- --warmup        Run one peer-warmup pass (needs WARMUP_ENABLED=true + re-auth)
+  npm run campaign -- --poll          Reply-check ONLY (poll replies + sweep opt-outs + notify, no send)
 
 The agent decides HOW MANY to send: today's warmup cap × leads above the
 quality bar (SEND_MIN_SCORE). It polls replies first (stops sequences on a

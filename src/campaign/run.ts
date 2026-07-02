@@ -114,6 +114,9 @@ export interface CampaignFlags {
   mock: boolean;
   dryRun: boolean; // compute + log what it WOULD send, don't actually send
   topUp: boolean; // discover + enqueue fresh leads before sending
+  pollOnly?: boolean; // ONLY poll replies + sweep opt-outs + notify — never send.
+  // Runs on a frequent cron (every ~30m) so reply notifications are near-immediate
+  // and KEEP WORKING while cold sending is paused (deliverability hold, nights, weekends).
   concurrency?: number;
 }
 
@@ -130,6 +133,13 @@ export async function runCampaign(cfg: AppConfig, flags: CampaignFlags): Promise
     return;
   }
   try {
+    // Poll-only: reply-check pass on a frequent cron. Shares the run-lock (so it never
+    // races a real send on state.json) but does NOT record a leadflow_run (would spam
+    // the run log ~48×/day) — reply notifications fire inside pollReplies via emitReply.
+    if (flags.pollOnly) {
+      await runCampaignBody(cfg, flags);
+      return;
+    }
     const runId = await emitRunStart("campaign");
     try {
       const { sent, refill } = await runCampaignBody(cfg, flags);
@@ -257,12 +267,23 @@ async function runCampaignBody(
 
   // 1) POLL replies on everything awaiting a response → stop sequences,
   //    handle bounces, and draft suggested responses to interested leads.
-  if (live) await pollReplies(cfg, state, suppression);
+  //    Runs on a live send-run AND on the poll-only reply cron (so replies are still
+  //    detected + notified while cold sending is paused).
+  if (live || flags.pollOnly) await pollReplies(cfg, state, suppression);
 
   // 1b) SWEEP List-Unsubscribe mailto requests across every sending inbox.
   //     These arrive as fresh emails (not thread replies), so pollReplies misses
   //     them — sweep + suppress so the one-click unsubscribe is genuinely honored.
-  if (live && !flags.mock) await sweepUnsubscribeRequests(cfg, state, suppression, inboxes);
+  if ((live || flags.pollOnly) && !flags.mock)
+    await sweepUnsubscribeRequests(cfg, state, suppression, inboxes);
+
+  // Poll-only cron stops here: replies checked + opt-outs swept, persist the updated
+  // reply/bounce statuses, then return WITHOUT sending or generating.
+  if (flags.pollOnly) {
+    await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+    console.log("[campaign] poll-only: replies checked + opt-outs swept + state saved (no send)");
+    return { sent: 0, refill: async () => {} };
+  }
 
   // 2) FILL THE SEND QUEUE — fast, LLM-free, BEFORE sending. Fresh generation
   //    (slow: LLM + discovery, and crawls when free keys are RPM-throttled) is
