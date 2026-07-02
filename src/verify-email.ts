@@ -299,6 +299,14 @@ export async function hunterDomainSearch(
  * Chain: syntax → Hunter.io verify (SMTP-level) → ZeroBounce → MX fallback.
  * Conservative: only fails on clear signals, so we don't drop good leads.
  */
+// Generic "role" mailboxes that are commonly GUESSED or scraped and frequently do
+// not exist — never trust these on an MX-only check (fail-closed). A specific-person
+// localpart on mx-ok is far likelier a real mailbox and still passes.
+const ROLE_LOCALPARTS = new Set([
+  "info", "admin", "contact", "hello", "enquiries", "enquiry", "office", "webmaster",
+  "support", "mail", "sales", "reception", "accounts", "team", "help", "general", "post",
+]);
+
 export async function verifyEmail(cfg: AppConfig, email: string): Promise<VerifyResult> {
   email = normalizeEmail(email); // recover %20/whitespace artifacts before trusting
   if (!email || !EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
@@ -315,10 +323,19 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   const zb = await zeroBounceCheck(cfg, email);
   if (zb) return zb;
 
-  // Free MX-record fallback (only confirms domain exists, not the mailbox)
+  // Free MX-record fallback (only confirms the DOMAIN exists, not the mailbox).
   const domain = email.split("@")[1] ?? "";
   const mx = await domainHasMx(domain);
-  return { ok: mx, reason: mx ? "mx-ok" : "no-mx" };
+  if (!mx) return { ok: false, reason: "no-mx" };
+  // FAIL-CLOSED for generic ROLE localparts (info@/admin@/…): with no real mailbox
+  // verifier available (all skipped / out of quota), MX-only is NOT enough — these are
+  // exactly the guessed/scraped role addresses that hard-bounce because the mailbox
+  // often doesn't exist. This is what caused the 2026-07-02 bounce spike (8–9%) on the
+  // fresh domains. A specific-person localpart on mx-ok still passes so the pipeline
+  // doesn't fully stall when verify credits are down.
+  const local = (email.split("@")[0] ?? "").toLowerCase();
+  if (ROLE_LOCALPARTS.has(local)) return { ok: false, reason: "mx-only-role" };
+  return { ok: true, reason: "mx-ok" };
 }
 
 /**
