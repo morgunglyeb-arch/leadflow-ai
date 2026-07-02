@@ -240,8 +240,9 @@ export async function emitRunEnd(runId: string | null, fields: RunEndFields): Pr
 export async function emitEvent(
   type: string,
   payload: Record<string, unknown> = {},
+  dedupKey?: string,
 ): Promise<void> {
-  await post({ type, payload }, { durable: true });
+  await post({ type, payload, ...(dedupKey ? { dedup_key: dedupKey } : {}) }, { durable: true });
 }
 
 export interface InboxHealthRow {

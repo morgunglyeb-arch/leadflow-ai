@@ -721,6 +721,19 @@ async function pollReplies(
         await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "bounce");
         suppression.add(lead.email.toLowerCase());
         await emitSuppress(lead.email, "bounce"); // D1: write-through to the hub
+        // Brain-audit #1b: emit a distinct BOUNCE outcome event (not just the
+        // suppress) so the hub can compute bounce rate over time + attribute it to
+        // inbox/vertical — the raw signal anomaly-detection (#4) reads. Idempotent.
+        await emitEvent(
+          "bounce",
+          {
+            email: lead.email,
+            domain: lead.domain,
+            inbox: lead.inbox ?? null,
+            query: lead.snapshot?.discovery_query ?? null,
+          },
+          `bounce:${lead.email.toLowerCase()}`,
+        );
         console.log(`[campaign] bounce for ${lead.company} — suppressed`);
         continue;
       }
