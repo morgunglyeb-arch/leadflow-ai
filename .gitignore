@@ -24,3 +24,6 @@ tools/
 # MCP config (contains API keys)
 .mcp.json
 .tmp/
+
+# durable telemetry fallback (runtime, replayed to the hub)
+data/telemetry-failed.jsonl

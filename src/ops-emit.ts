@@ -4,7 +4,29 @@
  * and never throws — pipeline behaviour must be completely unaffected by it.
  */
 
-async function postTo(path: string, body: Record<string, unknown>): Promise<unknown> {
+import { appendFile, readFile, writeFile } from "node:fs/promises";
+
+// Durable fallback for OUTCOME telemetry (replies, bounces, suppressions, drafts,
+// health): if the hub is unreachable (Mac offline / deploy / 5xx) the payload is
+// stashed here instead of being silently lost, then replayed by
+// replayFailedTelemetry() at the start of the next run. Transient signals
+// (run.start/end, state_backup) are NOT stashed — they'd duplicate or are
+// latest-wins, and the hub-side watchdog already reaps zombie runs.
+const FAILED_LOG = "data/telemetry-failed.jsonl";
+
+async function stashFailed(path: string, body: Record<string, unknown>): Promise<void> {
+  try {
+    await appendFile(FAILED_LOG, `${JSON.stringify({ t: new Date().toISOString(), path, body })}\n`);
+  } catch {
+    /* the stash itself is best-effort — never throw from telemetry */
+  }
+}
+
+async function postTo(
+  path: string,
+  body: Record<string, unknown>,
+  opts: { durable?: boolean } = {},
+): Promise<unknown> {
   const base = process.env.OPERO_OPS_URL;
   const token = process.env.INGEST_BEARER_TOKEN;
   if (!base || !token) return null;
@@ -15,15 +37,75 @@ async function postTo(path: string, body: Record<string, unknown>): Promise<unkn
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(4000),
     });
+    if (!res.ok) {
+      console.warn(`[ops-emit] ${path} → HTTP ${res.status}`);
+      if (opts.durable) await stashFailed(path, body);
+      return null;
+    }
     return await res.json().catch(() => null);
   } catch (err) {
     console.warn(`[ops-emit] failed: ${(err as Error).message}`);
+    if (opts.durable) await stashFailed(path, body);
     return null;
   }
 }
 
-async function post(body: Record<string, unknown>): Promise<unknown> {
-  return postTo("/api/ingest/leadflow", body);
+async function post(
+  body: Record<string, unknown>,
+  opts: { durable?: boolean } = {},
+): Promise<unknown> {
+  return postTo("/api/ingest/leadflow", body, opts);
+}
+
+/**
+ * Replay outcome telemetry that previously failed to reach the hub (stashed by
+ * stashFailed). Called at the start of each run so a backlog drains once
+ * connectivity returns — closes the "silent loss while offline" gap the brain audit
+ * flagged. Idempotent on the hub (dedup_key); entries older than 7d are dropped to
+ * bound the file. Best-effort; never throws.
+ */
+export async function replayFailedTelemetry(): Promise<number> {
+  const base = process.env.OPERO_OPS_URL;
+  const token = process.env.INGEST_BEARER_TOKEN;
+  if (!base || !token) return 0;
+  let lines: string[];
+  try {
+    lines = (await readFile(FAILED_LOG, "utf8")).split("\n").filter((l) => l.trim());
+  } catch {
+    return 0; // no backlog file
+  }
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const stillFailing: string[] = [];
+  let replayed = 0;
+  for (const line of lines) {
+    let rec: { t?: string; path?: string; body?: Record<string, unknown> };
+    try {
+      rec = JSON.parse(line);
+    } catch {
+      continue; // drop unparseable
+    }
+    if (!rec.path || !rec.body) continue;
+    if (rec.t && new Date(rec.t).getTime() < weekAgo) continue; // too old → drop
+    try {
+      const res = await fetch(`${base.replace(/\/$/, "")}${rec.path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify(rec.body),
+        signal: AbortSignal.timeout(4000),
+      });
+      if (res.ok) replayed++;
+      else stillFailing.push(line);
+    } catch {
+      stillFailing.push(line); // still unreachable — keep for next time
+    }
+  }
+  try {
+    await writeFile(FAILED_LOG, stillFailing.length ? `${stillFailing.join("\n")}\n` : "");
+  } catch {
+    /* best-effort */
+  }
+  if (replayed > 0) console.log(`[ops-emit] replayed ${replayed} stashed telemetry event(s)`);
+  return replayed;
 }
 
 /**
@@ -111,7 +193,7 @@ export async function fetchSuppression(): Promise<string[] | null> {
  * site/manual channels read the same flag). Best-effort; never throws.
  */
 export async function emitSuppress(email: string, reason: string): Promise<void> {
-  await post({ type: "suppress", payload: { email: email.toLowerCase(), reason } });
+  await post({ type: "suppress", payload: { email: email.toLowerCase(), reason } }, { durable: true });
 }
 
 /**
@@ -159,7 +241,7 @@ export async function emitEvent(
   type: string,
   payload: Record<string, unknown> = {},
 ): Promise<void> {
-  await post({ type, payload });
+  await post({ type, payload }, { durable: true });
 }
 
 export interface InboxHealthRow {
@@ -187,7 +269,7 @@ export interface InboxHealthRow {
  */
 export async function emitInboxHealth(rows: InboxHealthRow[]): Promise<void> {
   for (const row of rows) {
-    await postTo("/api/ingest/inbox-health", { type: "inbox-health", ...row });
+    await postTo("/api/ingest/inbox-health", { type: "inbox-health", ...row }, { durable: true });
   }
 }
 
@@ -213,7 +295,7 @@ export interface ReplyFields {
  * (Telegram, via the hub). The hub never auto-sends — the operator decides.
  */
 export async function emitReply(fields: ReplyFields): Promise<void> {
-  await post({ type: "reply", ...fields });
+  await post({ type: "reply", ...fields }, { durable: true });
 }
 
 export interface DraftPayload {
@@ -235,7 +317,7 @@ export interface DraftPayload {
  * hand. Idempotent by dedup_key on the hub. Best-effort; no-op without the env.
  */
 export async function emitDraft(d: DraftPayload): Promise<void> {
-  await postTo("/api/ingest/draft", { ...d });
+  await postTo("/api/ingest/draft", { ...d }, { durable: true });
 }
 
 /**
@@ -253,5 +335,5 @@ export async function emitDraftSent(d: {
   sent_at: string;
   sent_via?: string;
 }): Promise<void> {
-  await postTo("/api/ingest/draft-sent", { ...d });
+  await postTo("/api/ingest/draft-sent", { ...d }, { durable: true });
 }

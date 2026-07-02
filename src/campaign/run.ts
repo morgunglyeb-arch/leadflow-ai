@@ -52,6 +52,7 @@ import {
   emitError,
   emitStateBackup,
   fetchRemoteState,
+  replayFailedTelemetry,
 } from "../ops-emit.js";
 import { verticalFromQuery } from "../vertical.js";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -306,6 +307,10 @@ async function runCampaignBody(
   // unreachable we fall back to the local file rather than block the run.
   const hubSuppressed = await fetchSuppression();
   if (hubSuppressed) for (const e of hubSuppressed) suppression.add(e.toLowerCase());
+
+  // 0) Drain outcome telemetry that failed to reach the hub earlier (e.g. a reply/
+  //    bounce recorded during a Mac-offline window) — best-effort, so it isn't lost.
+  await replayFailedTelemetry().catch(() => 0);
 
   // 1) POLL replies on everything awaiting a response → stop sequences,
   //    handle bounces, and draft suggested responses to interested leads.
