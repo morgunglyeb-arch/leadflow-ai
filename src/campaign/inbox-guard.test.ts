@@ -57,6 +57,30 @@ describe("evaluateInboxGuard", () => {
     expect(r.pausedNow).toHaveLength(0);
   });
 
+  it("does NOT re-pause an inbox that just auto-resumed (fixed-cause incident doesn't loop)", () => {
+    const s = stateWith("emma@opero-team.com", 22, 2); // 9% LIFETIME — old logic would re-pause forever
+    s.inbox_pauses = { "emma@opero-team.com": { until: "2026-06-27T12:00:00Z", reason: "old incident" } };
+    const r = evaluateInboxGuard(s, ["emma@opero-team.com"], NONE, cfg, NOW);
+    expect(r.resumedNow).toContain("emma@opero-team.com");
+    expect(r.pausedNow).toHaveLength(0); // baseline snapshot → 0 NEW sends → not re-paused
+    expect(r.activePaused.size).toBe(0);
+    expect(s.inbox_reputation_baseline?.["emma@opero-team.com"]).toEqual({ sent: 22, bounces: 2 });
+  });
+
+  it("re-pauses only when NEW bounces since the resume baseline exceed the threshold", () => {
+    const s = stateWith("emma@opero-team.com", 45, 5); // since baseline {22,2}: 3/23 = 13% > 6%
+    s.inbox_reputation_baseline = { "emma@opero-team.com": { sent: 22, bounces: 2 } };
+    const r = evaluateInboxGuard(s, ["emma@opero-team.com"], NONE, cfg, NOW);
+    expect(r.pausedNow.map((p) => p.inbox)).toEqual(["emma@opero-team.com"]);
+  });
+
+  it("does NOT re-pause when activity since the baseline is clean", () => {
+    const s = stateWith("emma@opero-team.com", 45, 2); // both bounces are pre-baseline → 0 new bounces
+    s.inbox_reputation_baseline = { "emma@opero-team.com": { sent: 22, bounces: 2 } };
+    const r = evaluateInboxGuard(s, ["emma@opero-team.com"], NONE, cfg, NOW);
+    expect(r.pausedNow).toHaveLength(0);
+  });
+
   it("pauses a blacklisted domain regardless of bounce rate", () => {
     const s = stateWith("jack@withopero.com", 5, 0); // clean, tiny sample
     const r = evaluateInboxGuard(s, ["jack@withopero.com"], new Set(["withopero.com"]), cfg, NOW);

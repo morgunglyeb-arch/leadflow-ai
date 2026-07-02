@@ -65,6 +65,11 @@ export interface CampaignState {
   // from cold sending but keeps warming, so its reputation recovers, then it
   // auto-resumes. Keyed by lowercased inbox email.
   inbox_pauses?: Record<string, { until: string; reason: string }>;
+  // inbox email → reputation baseline snapshot taken when a pause auto-resumes.
+  // The guard then judges the bounce rate on activity SINCE the baseline (not
+  // lifetime), so a fixed-cause incident (e.g. a bad batch of addresses) can't
+  // keep an inbox paused forever: after resuming it only re-pauses on NEW bounces.
+  inbox_reputation_baseline?: Record<string, { sent: number; bounces: number }>;
   leads: Record<string, CampaignLead>; // keyed by domain
 }
 
@@ -79,6 +84,7 @@ export async function loadState(path: string): Promise<CampaignState> {
       last_run_date: parsed.last_run_date,
       inbox_sent: parsed.inbox_sent ?? {},
       inbox_pauses: parsed.inbox_pauses ?? {},
+      inbox_reputation_baseline: parsed.inbox_reputation_baseline ?? {},
       leads: parsed.leads ?? {},
     };
   } catch {

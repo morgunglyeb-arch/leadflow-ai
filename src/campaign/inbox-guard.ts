@@ -1,10 +1,13 @@
 // Self-healing inbox reputation guard.
 //
 // Every campaign run, the guard inspects each sending inbox and AUTO-PAUSES any
-// whose sending domain is on a DNSBL or whose lifetime bounce rate has crept past
-// the threshold. A paused inbox is pulled from cold sending (it keeps warming, so
-// its reputation recovers) for INBOX_PAUSE_DAYS, then AUTO-RESUMES when the pause
-// expires. Pauses live in CampaignState (persisted), so they survive restarts.
+// whose sending domain is on a DNSBL or whose bounce rate has crept past the
+// threshold. The rate is measured on activity SINCE the inbox last recovered (a
+// baseline snapshot taken on resume), NOT lifetime — otherwise a one-off bad batch
+// of addresses would keep an inbox paused forever (its old bounces never age out).
+// A paused inbox is pulled from cold sending (it keeps warming, so its reputation
+// recovers) for INBOX_PAUSE_DAYS, then AUTO-RESUMES when the pause expires. Pauses
+// + baselines live in CampaignState (persisted), so they survive restarts.
 //
 // The evaluation is a pure function (easy to test); the only impure part is the
 // best-effort DNSBL lookup, isolated in `checkDomainBlacklist`.
@@ -56,31 +59,45 @@ export function evaluateInboxGuard(
   now: Date,
 ): GuardResult {
   const pauses = (state.inbox_pauses ??= {});
+  const baselines = (state.inbox_reputation_baseline ??= {});
   const nowMs = now.getTime();
 
-  // 1) auto-resume any pause that has expired
+  // Lifetime sent/bounces per inbox, computed once.
+  const samples = inboxSamples(state, inboxEmails);
+  const sampleByKey = new Map(samples.map((s) => [s.inbox.toLowerCase(), s]));
+
+  // 1) auto-resume any pause that has expired. Snapshot a reputation BASELINE at the
+  //    moment of resume so the guard next judges only bounces that occur AFTER
+  //    recovery — a fixed-cause incident (e.g. a bad batch of guessed addresses) can
+  //    no longer keep an inbox paused forever via a stuck lifetime rate.
   const resumedNow: string[] = [];
   for (const [inbox, p] of Object.entries(pauses)) {
     if (new Date(p.until).getTime() <= nowMs) {
       delete pauses[inbox];
+      const s = sampleByKey.get(inbox);
+      if (s) baselines[inbox] = { sent: s.sent, bounces: s.bounces };
       resumedNow.push(inbox);
     }
   }
 
-  // 2) auto-pause inboxes that breach a reputation threshold
+  // 2) auto-pause inboxes that breach a reputation threshold — judged on activity
+  //    SINCE the last resume baseline (lifetime for inboxes that were never paused).
   const pausedNow: { inbox: string; reason: string }[] = [];
   if (cfg.INBOX_GUARD_ENABLED) {
-    for (const s of inboxSamples(state, inboxEmails)) {
+    for (const s of samples) {
       const key = s.inbox.toLowerCase();
       if (pauses[key]) continue; // already paused — don't extend
       const dom = emailDomain(s.inbox);
+      const base = baselines[key] ?? { sent: 0, bounces: 0 };
+      const sentSince = s.sent - base.sent;
+      const bouncesSince = s.bounces - base.bounces;
       let reason = "";
       if (blacklistedDomains.has(dom)) {
         reason = `domain ${dom} on DNSBL`;
-      } else if (s.sent >= cfg.INBOX_BOUNCE_MIN_SENT) {
-        const rate = s.bounces / s.sent;
+      } else if (sentSince >= cfg.INBOX_BOUNCE_MIN_SENT) {
+        const rate = bouncesSince / sentSince;
         if (rate > cfg.INBOX_BOUNCE_PAUSE_RATE) {
-          reason = `bounce rate ${(rate * 100).toFixed(1)}% > ${(cfg.INBOX_BOUNCE_PAUSE_RATE * 100).toFixed(0)}% (${s.bounces}/${s.sent})`;
+          reason = `bounce rate ${(rate * 100).toFixed(1)}% > ${(cfg.INBOX_BOUNCE_PAUSE_RATE * 100).toFixed(0)}% (${bouncesSince}/${sentSince})`;
         }
       }
       if (reason) {
