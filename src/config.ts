@@ -251,6 +251,13 @@ const schema = z.object({
         .map((x) => x.trim().toLowerCase())
         .filter(Boolean),
     ),
+  // When true, the sender pulls the ACTIVE experiment segment terms from the hub's
+  // /api/experiment (the tracker advances the wave autonomously by delivered-count),
+  // overriding EXPERIMENT_VERTICALS. Falls back to the env list on any hub miss.
+  EXPERIMENT_REMOTE: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true" || s === "1"),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.
   STUDIO_INTRO: z

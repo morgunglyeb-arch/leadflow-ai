@@ -134,6 +134,34 @@ export async function fetchRemoteState(): Promise<unknown | null> {
 }
 
 /**
+ * Read the ACTIVE experiment send-filter terms from the hub. The hub's experiment
+ * tracker advances the wave autonomously (by delivered-count); this lets the sender
+ * re-aim cold first-touches at the current wave WITHOUT a manual .env edit. Returns
+ * null (→ caller falls back to cfg.EXPERIMENT_VERTICALS) if unset/unreachable/empty.
+ */
+export async function fetchActiveVerticals(): Promise<string[] | null> {
+  const base = process.env.OPERO_OPS_URL;
+  const token = process.env.INGEST_BEARER_TOKEN;
+  if (!base || !token) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/experiment`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as { verticals?: unknown } | null;
+    const v = json?.verticals;
+    if (Array.isArray(v) && v.every((x) => typeof x === "string") && v.length > 0) {
+      return v as string[];
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[ops-emit] fetchActiveVerticals failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
  * Read learned winners from the hub (F1) — per vertical × angle, learned on WON
  * across the persistent `contacts` funnel, min-N gated. The hub is the source of
  * truth (the local winners.json is recomputed from ephemeral state). Best-effort

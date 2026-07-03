@@ -52,6 +52,7 @@ import {
   emitError,
   emitStateBackup,
   fetchRemoteState,
+  fetchActiveVerticals,
   replayFailedTelemetry,
 } from "../ops-emit.js";
 import { verticalFromQuery } from "../vertical.js";
@@ -457,7 +458,20 @@ async function runCampaignBody(
     // first-touches to leads whose discovery_query matches — so the send population is
     // a clean experiment cohort even while the deep mixed bank holds other segments.
     // Over-select (all queued) before filtering so we can still fill the day's room.
-    const exp = cfg.EXPERIMENT_VERTICALS;
+    // When EXPERIMENT_REMOTE is on, the hub's experiment tracker (which advances the
+    // wave autonomously by delivered-count) is the source of truth — fetch the active
+    // segment's terms so a wave-advance re-aims sending with no .env edit; fall back to
+    // the local env list on any miss so a hub outage never stops the send.
+    let exp = cfg.EXPERIMENT_VERTICALS;
+    if (cfg.EXPERIMENT_REMOTE) {
+      const remote = await fetchActiveVerticals();
+      if (remote) {
+        exp = remote;
+        console.log(`[experiment] active segment terms from hub: [${remote.join(", ")}]`);
+      } else {
+        console.warn("[experiment] hub terms unavailable — using local EXPERIMENT_VERTICALS");
+      }
+    }
     const rawPool = selectFirstTouches(state, cfg, exp.length ? 100_000 : runRoom * 5);
     const pool = exp.length
       ? rawPool.filter((l) => {
