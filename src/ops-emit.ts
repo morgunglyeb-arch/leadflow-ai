@@ -289,6 +289,7 @@ export interface ReplyFields {
   variant?: string; // A/B subject variant actually sent
   opener?: string; // the hook that was sent
   subject?: string; // the subject that was sent
+  reason?: string; // #1 learn-from-no: bucketed rejection reason (already_have/price/timing/not_relevant/opt_out)
 }
 
 /**

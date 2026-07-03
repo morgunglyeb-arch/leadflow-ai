@@ -20,6 +20,7 @@ export interface ReplyRecord {
   snippet: string;
   sentiment?: "interested" | "not_interested" | "soft_decline" | "objection" | "auto" | "unclear";
   suggested?: string; // a drafted response for the operator to send
+  reason?: string; // #1 learn-from-no: bucketed rejection reason (already_have/price/timing/not_relevant/opt_out)
   lastInboundId?: string; // Gmail message id of the inbound we last processed
   // (so multi-turn polling re-processes only NEW messages in the thread)
 }

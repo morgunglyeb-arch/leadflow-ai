@@ -50,6 +50,33 @@ export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   return "unclear";
 }
 
+/**
+ * Bucket WHY a negative reply said no, so the brain can learn "segment X rejects
+ * because they already have a tool / it's too dear / bad timing" — the only market
+ * feedback we get from cold. Heuristic (no LLM): reply snippets are short. Returns
+ * undefined for non-negative or truly opaque replies (a bare "no" with no reason).
+ * NEVER triggers an email — pure data capture (house rule: never auto-send to a no).
+ */
+export function classifyRejectionReason(snippet: string): string | undefined {
+  const s = snippet.toLowerCase();
+  if (/(already have|we use|we've got|in-house|do this ourselves|got (a|our) system|current provider|sorted)/.test(s)) {
+    return "already_have";
+  }
+  if (/(too expensive|no budget|can'?t afford|pricey|pricey|cost too|not worth)/.test(s)) {
+    return "price";
+  }
+  if (/(not right now|maybe later|not at the moment|bad time|too busy|revisit|down the line|in future)/.test(s)) {
+    return "timing";
+  }
+  if (/(not relevant|not for us|does ?n'?t apply|wrong (fit|business)|we don'?t (get|miss)|no missed)/.test(s)) {
+    return "not_relevant";
+  }
+  if (/(unsubscribe|remove me|take me off|stop )/.test(s)) {
+    return "opt_out";
+  }
+  return undefined; // negative but no stated reason (e.g. a bare "no")
+}
+
 export function isStopReply(sentiment: ReplyRecord["sentiment"]): boolean {
   // any genuine human reply stops the sequence; auto-replies do NOT
   return sentiment !== "auto";

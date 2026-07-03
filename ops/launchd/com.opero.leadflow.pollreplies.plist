@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  REPLY-POLL cron. Reply detection used to live only inside the send run, so
+  replies were checked at most 4×/day and NOT AT ALL while cold sending is
+  paused (deliverability hold, nights, weekends). This runs `--poll` (poll
+  replies + sweep opt-outs + notify, NO send) every 30 min so reply
+  notifications are near-immediate and survive a send pause.
+
+  Shares the campaign run-lock (never races a send on state.json). Safe to run
+  even with SENDING_ENABLED off — it only reads inboxes + emits notifications.
+
+  Install:  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.opero.leadflow.pollreplies.plist
+  Stop:     launchctl bootout   gui/$(id -u)/com.opero.leadflow.pollreplies
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.opero.leadflow.pollreplies</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>cd /Users/a1/LeadFlow-AI &amp;&amp; /usr/bin/caffeinate -i /usr/local/bin/npm run campaign -- --poll &gt;&gt; /Users/a1/LeadFlow-AI/data/campaign/poll-cron.log 2&gt;&amp;1</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>1800</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/Users/a1/LeadFlow-AI/data/campaign/poll-launchd.err</string>
+</dict>
+</plist>

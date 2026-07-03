@@ -30,7 +30,7 @@ import {
   type Inbox,
   type UnsubRequest,
 } from "./gmail.js";
-import { classifyReply, isStopReply, isBounce } from "./classify.js";
+import { classifyReply, classifyRejectionReason, isStopReply, isBounce } from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { passingSendingDomains, domainOf } from "./deliverability.js";
@@ -755,10 +755,20 @@ async function pollReplies(
       }
 
       const sentiment = classifyReply(reply.snippet);
+      // #1 learn-from-no: bucket WHY a negative reply declined, so the brain can
+      // learn rejection reasons per segment. Only meaningful for negatives; a
+      // positive/auto reply gets no reason. Pure capture — never triggers a send.
+      const isNegative =
+        sentiment === "not_interested" ||
+        sentiment === "soft_decline" ||
+        sentiment === "objection" ||
+        sentiment === "unclear";
+      const reason = isNegative ? classifyRejectionReason(reply.snippet) : undefined;
       lead.reply = {
         at: new Date().toISOString(),
         snippet: reply.snippet,
         sentiment,
+        ...(reason ? { reason } : {}),
         ...(reply.id ? { lastInboundId: reply.id } : {}),
       };
       if (!isStopReply(sentiment)) continue; // auto-replies: ignore, keep sequence
@@ -821,6 +831,7 @@ async function pollReplies(
         ...(lead.variant ? { variant: lead.variant } : {}),
         ...(lead.snapshot.opener ? { opener: lead.snapshot.opener } : {}),
         ...(lead.subject ? { subject: lead.subject } : {}),
+        ...(reason ? { reason } : {}),
       });
     } catch (err) {
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);
