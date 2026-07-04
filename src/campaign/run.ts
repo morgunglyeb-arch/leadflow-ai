@@ -645,6 +645,41 @@ async function runCampaignBody(
   );
   await emitStateBackup(state); // R4: off-Mac backup so warmup state survives a dead machine
 
+  // Bank-depth snapshot → Mini App «Полка» tile. queued = the immediate send buffer;
+  // ready = deeper enriched stock (in the CSV bank, not yet pulled into the pipeline);
+  // active_ready = of that stock, how many match the active experiment wave (i.e. what
+  // can actually send under the current EXPERIMENT_VERTICALS). No dedup_key → each run
+  // appends a fresh row and the read side takes the newest. Best-effort; never blocks.
+  try {
+    const bankStock = loadBankLeads();
+    const inPipeline = new Set(
+      all.map((l) => (l.email ?? "").toLowerCase()).filter(Boolean),
+    );
+    const ready = bankStock.filter((r) => !inPipeline.has((r.email ?? "").toLowerCase()));
+    const exp = (cfg.EXPERIMENT_VERTICALS ?? []).map((v) => v.toLowerCase());
+    const matchesActive = (q?: string): boolean => {
+      if (!exp.length) return true;
+      const s = (q ?? "").toLowerCase();
+      return exp.some((v) => s.includes(v));
+    };
+    const queuedLeads = all.filter((l) => l.status === "queued");
+    // active-wave supply spans BOTH the queued buffer and the deeper stock — a
+    // wave-matching lead can send whether it's already queued or still in the CSV.
+    const activeSupply =
+      queuedLeads.filter((l) => matchesActive(l.snapshot?.discovery_query)).length +
+      ready.filter((r) => matchesActive(r.discovery_query)).length;
+    await emitEvent("bank_depth", {
+      queued: queuedLeads.length,
+      ready: ready.length,
+      total: queuedLeads.length + ready.length,
+      active_ready: activeSupply,
+      active_verticals: cfg.EXPERIMENT_VERTICALS ?? [],
+      at: new Date().toISOString(),
+    });
+  } catch {
+    /* bank-depth telemetry is best-effort — never break the run */
+  }
+
   // 6) REFILL THE BANK — returned as a DEFERRED thunk, not run here. The caller
   //    (runCampaign) records the run via emitRunEnd(sent) FIRST, then awaits this.
   //    So the sent count reaches the hub (Mini App "отправлено сегодня") even when
