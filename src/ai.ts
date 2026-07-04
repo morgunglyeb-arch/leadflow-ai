@@ -680,11 +680,19 @@ async function callOpenAIRaw(
     const client = new OpenAI({ apiKey, baseURL: opts.baseURL });
     try {
       await paceCall(cfg); // gentle global throttle (free-tier: stay under combined RPM)
-      const res = await client.chat.completions.create({
+      // Gemini 2.5/3.x are "thinking" models — via the OpenAI-compat endpoint their
+      // internal reasoning EATS the output-token budget and truncates the JSON reply
+      // (e.g. 2.5-flash returned just "```json {" → parse fail → false "quota exhausted").
+      // reasoning_effort:"none" disables thinking so all tokens go to the answer.
+      const req = {
         model: opts.model,
-        response_format: { type: "json_object" },
+        response_format: { type: "json_object" as const },
         messages,
-      });
+      };
+      // reasoning_effort isn't in the SDK's typed params (Gemini extension); attach it
+      // at runtime so the create() overload still resolves to the non-streaming return.
+      (req as Record<string, unknown>).reasoning_effort = "none";
+      const res = await client.chat.completions.create(req);
       tokensThisRun += res.usage?.total_tokens ?? 0;
       const text = res.choices[0]?.message?.content ?? "";
       let parsed: unknown;
@@ -985,7 +993,11 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const client = new OpenAI({ apiKey: keys[(start + attempt) % keys.length], baseURL: p.baseURL });
       try {
-        const res = await client.chat.completions.create({ model: p.model, messages });
+        // reasoning_effort:"none" — see run(): stop Gemini 2.5/3.x thinking from
+        // eating the token budget and truncating the reply.
+        const req = { model: p.model, messages };
+        (req as Record<string, unknown>).reasoning_effort = "none";
+        const res = await client.chat.completions.create(req);
         tokensThisRun += res.usage?.total_tokens ?? 0;
         return (res.choices[0]?.message?.content ?? "").trim();
       } catch (err) {
