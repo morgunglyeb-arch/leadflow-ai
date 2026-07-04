@@ -110,17 +110,19 @@ interface ReoonResponse {
   error?: string;
 }
 
-/** Reoon keys (KEYS + legacy KEY), any separator, deduped. Alphanumeric tokens. */
+/** Reoon keys (KEYS + legacy KEY), quote/space tolerant, deduped. The single KEY var
+ * is taken as-is (Reoon keys can contain '-' / '_'), the KEYS list is split on
+ * separators — so a hyphenated key is never dropped by an over-strict charset filter. */
 export function reoonKeys(cfg: AppConfig): string[] {
-  const raw = `${cfg.REOON_API_KEYS ?? ""} ${cfg.REOON_API_KEY ?? ""}`;
-  return [
-    ...new Set(
-      raw
-        .split(/[\s,]+/)
-        .map((s) => s.trim())
-        .filter((k) => /^[A-Za-z0-9]{8,}$/.test(k)),
-    ),
-  ];
+  const clean = (s: string): string => s.trim().replace(/^["']+|["']+$/g, "");
+  const out = new Set<string>();
+  const single = clean(cfg.REOON_API_KEY ?? "");
+  if (single.length >= 8 && !/\s/.test(single)) out.add(single);
+  for (const t of (cfg.REOON_API_KEYS ?? "").split(/[\s,]+/)) {
+    const k = clean(t);
+    if (k.length >= 8) out.add(k);
+  }
+  return [...out];
 }
 
 async function reoonCheck(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
