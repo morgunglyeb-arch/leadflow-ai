@@ -114,7 +114,10 @@ interface ReoonResponse {
  * is taken as-is (Reoon keys can contain '-' / '_'), the KEYS list is split on
  * separators — so a hyphenated key is never dropped by an over-strict charset filter. */
 export function reoonKeys(cfg: AppConfig): string[] {
-  const clean = (s: string): string => s.trim().replace(/^["']+|["']+$/g, "");
+  // Strip wrapping quotes AND angle brackets — a key pasted from a `<placeholder>`
+  // (e.g. `REOON_API_KEY=<abc123>`) must not be sent to Reoon with the literal `<>`
+  // (→ invalid-key 401, silent fall-through to the next verifier). Bit us 2026-07-04.
+  const clean = (s: string): string => s.trim().replace(/^["'<]+|["'>]+$/g, "");
   const out = new Set<string>();
   const single = clean(cfg.REOON_API_KEY ?? "");
   if (single.length >= 8 && !/\s/.test(single)) out.add(single);
