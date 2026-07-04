@@ -26,6 +26,10 @@ const schema = z.object({
   // on 429 so a single exhausted key never stalls the run (see src/ai.ts).
   OPENAI_API_KEYS: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
+  // PAID overflow key (Tier-1). The FREE keys above are tried first; this one is
+  // used only when they hit their RPM/daily limit — so free quota burns first and
+  // the paid key is a reliable backstop (never 429s). Excluded from the free pool.
+  OPENAI_PAID_API_KEY: z.string().optional(),
   OPENAI_BASE_URL: z
     .string()
     .default("https://generativelanguage.googleapis.com/v1beta/openai/"),

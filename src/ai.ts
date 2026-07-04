@@ -673,7 +673,13 @@ async function callOpenAIRaw(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const pick = pickReadyKey(keys);
     if (pick.waitMs > 0) {
-      console.warn(`[ai] all keys cooling, waiting ${(pick.waitMs / 1000).toFixed(1)}s…`);
+      // Don't hang: only wait out a SHORT RPM cooldown. If the whole pool is deeply
+      // cooling / daily-exhausted, fail FAST so the chain falls through to the next
+      // provider (the paid overflow key) instead of sleeping for minutes.
+      if (pick.waitMs > 4000) {
+        throw new Error(`all keys cooling ~${(pick.waitMs / 1000).toFixed(0)}s — deferring to next provider`);
+      }
+      console.warn(`[ai] key cooling, waiting ${(pick.waitMs / 1000).toFixed(1)}s…`);
       await sleep(pick.waitMs);
     }
     const apiKey = keys[pick.index];
@@ -738,14 +744,24 @@ function callOpenAICompatible(
  * Keys for the OpenAI-compatible (Gemini) provider. Prefers OPENAI_API_KEYS
  * (comma/space separated) for rotation; falls back to the single OPENAI_API_KEY.
  */
+/** The PAID overflow key (OPENAI_PAID_API_KEY) — tried only after the free pool. */
+function openaiPaidKeys(cfg: AppConfig): (string | undefined)[] {
+  const found = (cfg.OPENAI_PAID_API_KEY ?? "").match(/AQ\.[A-Za-z0-9_-]+/g);
+  return found ? [...new Set(found)] : [];
+}
+
 function openaiKeys(cfg: AppConfig): (string | undefined)[] {
   // Gemini keys look like `AQ.Ab8…` (one dot after AQ, then alnum/_/-). Extract
   // every token so any separator the owner pastes by hand works — commas,
   // spaces, or stray trailing periods between keys. Dedup, preserve order.
+  // EXCLUDE the paid overflow key so the FREE pool burns first (it runs as a
+  // separate later provider in freeProviderChain).
   const raw = `${cfg.OPENAI_API_KEYS ?? ""} ${cfg.OPENAI_API_KEY ?? ""}`;
-  const found = raw.match(/AQ\.[A-Za-z0-9_-]+/g);
-  if (found && found.length) return [...new Set(found)];
-  return cfg.OPENAI_API_KEY ? [cfg.OPENAI_API_KEY] : [];
+  const paid = new Set(openaiPaidKeys(cfg).filter((k): k is string => Boolean(k)));
+  const found = (raw.match(/AQ\.[A-Za-z0-9_-]+/g) ?? []).filter((k) => !paid.has(k));
+  if (found.length) return [...new Set(found)];
+  const single = cfg.OPENAI_API_KEY;
+  return single && !paid.has(single) ? [single] : [];
 }
 
 /**
@@ -772,7 +788,7 @@ function openrouterKeys(cfg: AppConfig): (string | undefined)[] {
 }
 
 interface OAProvider {
-  name: "groq" | "openai" | "openrouter";
+  name: "groq" | "openai" | "openai-paid" | "openrouter";
   apiKeys: (string | undefined)[];
   baseURL: string;
   model: string;
@@ -809,6 +825,15 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
     baseURL: cfg.OPENAI_BASE_URL,
     model: cfg.OPENAI_MODEL,
   };
+  // PAID overflow — same endpoint/model, the Tier-1 key only. Sits AFTER the free
+  // Gemini provider so free quota is spent first, then this reliable key catches
+  // everything (it never 429s). Dropped from the chain if no paid key is set.
+  const geminiPaid: OAProvider = {
+    name: "openai-paid",
+    apiKeys: openaiPaidKeys(cfg),
+    baseURL: cfg.OPENAI_BASE_URL,
+    model: cfg.OPENAI_MODEL,
+  };
   const groq: OAProvider = {
     name: "groq",
     apiKeys: groqKeys(cfg),
@@ -824,7 +849,9 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
   // Primary two ordered by LLM_PROVIDER; OpenRouter is the final free fallback
   // (kicks in when Gemini is at its daily quota and Groq is down/banned).
   const ordered =
-    cfg.LLM_PROVIDER === "groq" ? [groq, gemini, openrouter] : [gemini, groq, openrouter];
+    cfg.LLM_PROVIDER === "groq"
+      ? [groq, gemini, geminiPaid, openrouter]
+      : [gemini, geminiPaid, groq, openrouter];
   return ordered.filter((p) => p.apiKeys.some(Boolean) && !deadProviders.has(p.name));
 }
 
@@ -920,7 +947,8 @@ export async function personalize(
             baseURL: p.baseURL,
             model: p.model,
           });
-          provider = p.name;
+          // label the paid-overflow provider as plain "openai" for telemetry types
+          provider = p.name === "openai-paid" ? "openai" : p.name;
           break;
         } catch (err) {
           lastErr = err;
