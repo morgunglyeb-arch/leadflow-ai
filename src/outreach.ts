@@ -18,6 +18,71 @@ export interface EmailSequence {
 }
 
 /**
+ * PAS (Problem-Agitate-Solve) bodies for the Wave-1 segments — the 2026 best-practice
+ * shape (short, one soft CTA, lead with the prospect's pain not our features). Offer =
+ * "never lose an inbound enquiry to slow reply" (instant auto-reply + quiet-lead chaser).
+ * Matched by discovery_query. Segments with no entry fall back to the menu format.
+ * (source: reference-wave1-playbook — 4-agent research, 2026 benchmarks.)
+ */
+interface PasBody {
+  match: RegExp;
+  problem: string;
+  solve: string;
+  cta: string;
+  ruProblem: string;
+  ruSolve: string;
+  ruCta: string;
+}
+const PAS_SEGMENTS: PasBody[] = [
+  {
+    match: /solicitor|law firm|conveyanc/,
+    problem:
+      "Most new-client enquiries arrive by web form or phone, and a good share land after hours or during court time. When nobody replies for hours, the caller has already instructed the firm that answered first — you never even knew they enquired.",
+    solve:
+      "Opero sends an instant, branded reply the second an enquiry lands, then chases quiet leads automatically, so slow response stops costing you instructions.",
+    cta: "Worth a quick look?",
+    ruProblem:
+      "Большинство обращений новых клиентов приходят через форму на сайте или по телефону, и часть — вне рабочих часов или пока вы в суде. Если ответа нет несколько часов, человек уже обратился в фирму, которая ответила первой — вы даже не узнали, что он писал.",
+    ruSolve:
+      "Opero отправляет мгновенный фирменный ответ в ту же секунду, как приходит заявка, и затем автоматически дожимает «тихие» лиды — чтобы медленный ответ перестал стоить вам клиентов.",
+    ruCta: "Стоит показать, как это выглядело бы у вас?",
+  },
+  {
+    match: /mortgage|broker/,
+    problem:
+      "A mortgage enquiry has a shelf life of minutes. Rate-anxious borrowers fill in three or four broker forms at once, and whoever replies first usually wins the case. If yours comes in while you're mid-appointment or after hours, that lead is gone.",
+    solve:
+      "Opero replies to every enquiry instantly and chases anyone who goes quiet, so you stop losing cases to slower brokers.",
+    cta: "Want to see it?",
+    ruProblem:
+      "У ипотечной заявки срок жизни — минуты. Тревожные из-за ставок заёмщики заполняют сразу три-четыре формы у разных брокеров, и сделку обычно получает тот, кто ответил первым. Если ваша заявка пришла, пока вы на встрече или вне часов — лид потерян.",
+    ruSolve:
+      "Opero отвечает на каждую заявку мгновенно и дожимает тех, кто затих, — чтобы вы перестали терять сделки более быстрым брокерам.",
+    ruCta: "Показать, как это работает?",
+  },
+  {
+    match: /estate agent|letting|property/,
+    problem:
+      "Portal enquiries spike evenings and weekends, exactly when the office is shut. A buyer or tenant messages about a listing, hears nothing for a day, and books a viewing with the agent who replied first. That's a lost instruction you never saw.",
+    solve:
+      "Opero replies to every enquiry the moment it arrives and chases quiet ones automatically, so after-hours leads stop slipping away.",
+    cta: "Care to see how?",
+    ruProblem:
+      "Заявки с порталов идут вечерами и в выходные — ровно когда офис закрыт. Покупатель или арендатор пишет по объявлению, сутки нет ответа — и записывается на просмотр к агенту, ответившему первым. Это упущенный клиент, которого вы не видели.",
+    ruSolve:
+      "Opero отвечает на каждую заявку в момент поступления и автоматически дожимает «тихие» — чтобы вечерние лиды перестали утекать.",
+    ruCta: "Показать, как это можно настроить у вас?",
+  },
+];
+
+/** Match a lead to its Wave-1 PAS body by discovery query; null → use the menu format. */
+function pasBodyFor(row: OutputRow): PasBody | null {
+  const q = (row.discovery_query ?? "").toLowerCase();
+  if (!q) return null;
+  return PAS_SEGMENTS.find((p) => p.match.test(q)) ?? null;
+}
+
+/**
  * The ONE curated list of automations shown to every business (owner-locked;
  * generic service-business menu since the 2026-06-27 pivot to trades + professional
  * services). The model kept inventing weak/generic items, so the menu is fixed +
@@ -71,6 +136,20 @@ export function assembleDraftRu(row: OutputRow, cfg: AppConfig, hookRu: string):
   if (hk) {
     lines.push(hk);
     lines.push("");
+  }
+  // PAS mode: mirror the EN PAS body so the owner's review card == what actually sends.
+  const pas = cfg.EMAIL_PAS_MODE ? pasBodyFor(row) : null;
+  if (pas) {
+    lines.push(pas.ruProblem);
+    lines.push("");
+    lines.push(pas.ruSolve);
+    lines.push("");
+    lines.push(pas.ruCta);
+    lines.push("");
+    lines.push(`— ${cfg.SENDER_SIGNATURE}`);
+    lines.push("");
+    lines.push(OPT_OUT_RU);
+    return lines.join("\n");
   }
   lines.push(STUDIO_INTRO_RU);
   lines.push("");
@@ -203,7 +282,19 @@ export function assembleDraft(row: OutputRow, cfg: AppConfig): EmailDraft {
   // back to the menu so a lead is never left with no offer.
   const singleOffer = cfg.EMAIL_OFFER_MODE === "single" ? (row.automation ?? "").trim() : "";
 
-  if (variant === "B") {
+  // PAS mode (2026 best-practice, Wave-1 segments): greeting + optional signal-anchor
+  // observation → problem → solve → ONE soft CTA. No menu, no site link on touch 1.
+  // Falls through to the menu format for segments with no PAS template.
+  const pas = cfg.EMAIL_PAS_MODE ? pasBodyFor(row) : null;
+  if (pas) {
+    lines.push(observation ? `${greet.replace(/[,\s]+$/, "")} — ${observation}` : greet);
+    lines.push("");
+    lines.push(pas.problem);
+    lines.push("");
+    lines.push(pas.solve);
+    lines.push("");
+    lines.push(pas.cta);
+  } else if (variant === "B") {
     // Variant B (A/B): hook on the FIRST line so the inbox PREVIEW shows the hook
     // (not the greeting), a SHORTER menu, and one soft 1:1 CTA instead of the site
     // CTA. Same locked menu source (CLINIC_MENU) — just trimmed; we do NOT re-enable

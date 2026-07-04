@@ -36,6 +36,35 @@ const row = (domain: string): OutputRow =>
 
 const firstLine = (s: string): string => s.split("\n")[0] ?? "";
 
+describe("EMAIL_PAS_MODE — Wave-1 segments get the PAS shape (no menu), others fall back", () => {
+  const pasCfg = { ...cfg, EMAIL_PAS_MODE: true } as unknown as AppConfig;
+  const seg = (q: string): OutputRow =>
+    ({ ...row("firm.co.uk"), discovery_query: q, icebreaker: "", automation: "" }) as OutputRow;
+
+  it("mortgage broker → PAS body, no services menu", () => {
+    const body = assembleDraft(seg("mortgage brokers in Leeds, United Kingdom"), pasCfg).body;
+    expect(body).toContain("shelf life of minutes");
+    expect(body).toContain("Want to see it?");
+    expect(body).not.toContain(cfg.SERVICES_INTRO);
+    expect(body.trimEnd().endsWith(cfg.OPT_OUT_TEXT)).toBe(true);
+  });
+
+  it("solicitor + estate/letting also match", () => {
+    expect(assembleDraft(seg("solicitors in Bath"), pasCfg).body).toContain("instructed the firm");
+    expect(assembleDraft(seg("letting agents in Hull"), pasCfg).body).toContain("Portal enquiries");
+  });
+
+  it("non-Wave-1 segment (dental) falls back to the menu format", () => {
+    const body = assembleDraft(seg("dental clinics in York"), pasCfg).body;
+    expect(body).toContain(cfg.SERVICES_INTRO);
+  });
+
+  it("PAS off → menu format even for a Wave-1 segment", () => {
+    const off = { ...cfg, EMAIL_PAS_MODE: false } as unknown as AppConfig;
+    expect(assembleDraft(seg("mortgage brokers in Leeds"), off).body).toContain(cfg.SERVICES_INTRO);
+  });
+});
+
 describe("format A/B (owner-authorized): variant B = hook-in-preview + short menu + soft CTA", () => {
   const cfgAB = {
     ...cfg,

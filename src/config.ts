@@ -258,6 +258,14 @@ const schema = z.object({
     .string()
     .default("false")
     .transform((s) => s === "true" || s === "1"),
+  // Adopt the 2026 best-practice email shape (PAS: Problem-Agitate-Solve, <80 words,
+  // ONE soft CTA, no menu) for the Wave-1 segments (solicitors/law · mortgage brokers
+  // · estate/letting). Our old value-menu/long/multi-CTA is the losing pattern per
+  // 2026 benchmarks. Segments with no PAS template fall back to the menu format.
+  EMAIL_PAS_MODE: z
+    .string()
+    .default("true")
+    .transform((s) => s === "true" || s === "1"),
   // One-line "who we are" so every email plainly says what we do. Sits after the
   // personalized hook (never first — the hook earns the read). Plain, no jargon.
   STUDIO_INTRO: z
