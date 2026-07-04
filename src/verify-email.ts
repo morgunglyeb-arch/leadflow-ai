@@ -368,19 +368,21 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   email = normalizeEmail(email); // recover %20/whitespace artifacts before trusting
   if (!email || !EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
 
-  // FREE-first (owner policy): burn the free verifiers before the paid Reoon quota.
-  // MyEmailVerifier — free 100/day/key.
+  // REOON-FIRST (owner policy 2026-07-04): the paid Reoon LTD is the MOST ACCURATE
+  // verifier (~99%, honest catch-all) and its 500/day quota is prepaid — so use it
+  // first for the lowest bounce risk (verify degradation caused the 2026-07-02 spike).
+  // When the daily quota is spent (reoonCheck → null on 429) the chain falls through
+  // to the free verifiers below, so nothing stalls.
+  const reoon = await reoonCheck(cfg, email);
+  if (reoon) return reoon;
+
+  // MyEmailVerifier — free 100/day/key. First free fallback once Reoon's quota is spent.
   const mev = await myEmailVerifierCheck(cfg, email);
   if (mev) return mev;
 
   // Hunter.io verify — free SMTP-level check.
   const hunter = await hunterVerify(cfg, email);
   if (hunter) return hunter;
-
-  // Reoon — PAID overflow (500/day + bonus): most accurate, ~99%, honest catch-all.
-  // Used only when the free verifiers are exhausted / gave no verdict.
-  const reoon = await reoonCheck(cfg, email);
-  if (reoon) return reoon;
 
   // ZeroBounce — legacy paid fallback (usually out of credits).
   const zb = await zeroBounceCheck(cfg, email);
