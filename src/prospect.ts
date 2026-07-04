@@ -396,7 +396,14 @@ async function runProspectingCore(
   const deriveBudget = { n: OWNER_DERIVE_BUDGET };
   // EARLY-STOP: count consecutive batches where (almost) every draft fell back to
   // the no-LLM opener — the signal that the daily Gemini quota is spent.
+  // With a Tier-1 paid overflow key the fallback is almost always TRANSIENT free-key
+  // RPM cooldown (the paid key serves the next batch), so a tight 2-batch stop
+  // needlessly halved yield — a 216-candidate run banked only 17 because it quit at
+  // 132. Require a much longer dead-streak when paid is configured; keep the tight 2
+  // for free-only setups (there, all-fallback really does mean the pool is spent).
   let llmDeadStreak = 0;
+  const hasPaidOverflow = (cfg.OPENAI_PAID_API_KEY ?? "").trim().length > 0;
+  const deadStreakLimit = hasPaidOverflow ? 5 : 2;
 
   for (const batch of chunk(pool, chunkSize)) {
     if (qualified.length >= target) break;
@@ -452,9 +459,10 @@ async function runProspectingCore(
     const fellBackNow = drafted.filter((r) => r.ai_provider === "fallback").length;
     if (llmReady && drafted.length >= 3 && fellBackNow / drafted.length >= 0.75) {
       llmDeadStreak += 1;
-      if (llmDeadStreak >= 2) {
+      if (llmDeadStreak >= deadStreakLimit) {
         console.warn(
-          `[prospect] LLM quota looks exhausted (2 batches ≥75% fallback) — stopping early ` +
+          `[prospect] LLM pool looks exhausted (${deadStreakLimit} batches ≥75% fallback` +
+            `${hasPaidOverflow ? ", incl. paid overflow" : ""}) — stopping early ` +
             `with ${qualified.length} clean qualified leads banked.`,
         );
         break;
