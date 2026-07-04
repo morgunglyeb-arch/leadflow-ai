@@ -129,6 +129,11 @@ const schema = z.object({
   // highest-volume free verifier, so it leads the verify chain. Singular + rotation.
   MYEMAILVERIFIER_API_KEY: z.string().optional(),
   MYEMAILVERIFIER_API_KEYS: z.string().optional(),
+  // Reoon Email Verifier — our primary paid verifier (LTD: 500/day + bonus pool).
+  // Power-mode SMTP check, ~99% accuracy, honest catch-all flag. Leads the chain.
+  // Singular + rotation list (any separator).
+  REOON_API_KEY: z.string().optional(),
+  REOON_API_KEYS: z.string().optional(),
 
   // FREE email-discovery fallback. When on-site scraping AND Hunter domain-search
   // find no address (e.g. Hunter 429/quota out), and the domain accepts mail (a

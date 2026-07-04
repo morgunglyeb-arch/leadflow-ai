@@ -99,6 +99,61 @@ async function zeroBounceCheck(cfg: AppConfig, email: string): Promise<VerifyRes
 }
 
 // ---------------------------------------------------------------------------
+// Reoon Email Verifier — our PRIMARY paid verifier (LTD: 500/day renewing + a
+// large bonus pool). Power mode = full SMTP check, ~99% accuracy, honest catch-all
+// flag. Leads the chain for the best bounce-safe verdict on every address.
+// https://www.reoon.com/articles/api-documentation-of-reoon-email-verifier/
+// ---------------------------------------------------------------------------
+
+interface ReoonResponse {
+  status?: string; // safe | invalid | disabled | disposable | inbox_full | catch_all | role_account | spamtrap | unknown
+  error?: string;
+}
+
+/** Reoon keys (KEYS + legacy KEY), any separator, deduped. Alphanumeric tokens. */
+export function reoonKeys(cfg: AppConfig): string[] {
+  const raw = `${cfg.REOON_API_KEYS ?? ""} ${cfg.REOON_API_KEY ?? ""}`;
+  return [
+    ...new Set(
+      raw
+        .split(/[\s,]+/)
+        .map((s) => s.trim())
+        .filter((k) => /^[A-Za-z0-9]{8,}$/.test(k)),
+    ),
+  ];
+}
+
+async function reoonCheck(cfg: AppConfig, email: string): Promise<VerifyResult | null> {
+  const keys = reoonKeys(cfg);
+  if (keys.length === 0) return null;
+  // Hard-bounce / reputation-killers → FAIL. Everything the server accepts
+  // (safe/inbox_full/catch_all/role_account) → pass; "unknown" → fall through.
+  const bad = new Set(["invalid", "disabled", "disposable", "spamtrap"]);
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const url = `https://emailverifier.reoon.com/api/v1/verify?email=${encodeURIComponent(email)}&key=${keys[i]}&mode=power`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) {
+        // out of daily credits / bad key → rotate or fall through to the next verifier
+        if ([429, 402, 401, 403].includes(res.status) && i < keys.length - 1) continue;
+        return null;
+      }
+      const json = (await res.json().catch(() => null)) as ReoonResponse | null;
+      const status = (json?.status ?? "").toLowerCase();
+      if (!json || json.error || !status || status === "unknown") {
+        if (i < keys.length - 1) continue;
+        return null; // inconclusive → let the chain continue (MEV/Hunter/MX)
+      }
+      return { ok: !bad.has(status), reason: `reoon:${status}` };
+    } catch {
+      if (i < keys.length - 1) continue;
+      return null;
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // MyEmailVerifier — free tier 100 verifications/DAY/key with API access. The
 // highest-volume free verifier → leads the chain so the scarcer Hunter/ZeroBounce
 // keys are spared. https://github.com/pat-myemailverifier/myemailverifier-api
@@ -296,7 +351,7 @@ export async function hunterDomainSearch(
 
 /**
  * Verify an email before we trust it for sending.
- * Chain: syntax → Hunter.io verify (SMTP-level) → ZeroBounce → MX fallback.
+ * Chain: syntax → Reoon (primary paid) → MyEmailVerifier (free) → Hunter → ZeroBounce → MX fallback.
  * Conservative: only fails on clear signals, so we don't drop good leads.
  */
 // Generic "role" mailboxes that are commonly GUESSED or scraped and frequently do
@@ -311,7 +366,13 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   email = normalizeEmail(email); // recover %20/whitespace artifacts before trusting
   if (!email || !EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
 
-  // MyEmailVerifier first — highest free quota (100/day/key), spares the scarce ones.
+  // Reoon first — our primary paid verifier (500/day + bonus): most accurate,
+  // ~99%, honest catch-all. Best bounce-safe verdict; the rest are fallbacks for
+  // when the daily 500 is spent or Reoon returns "unknown".
+  const reoon = await reoonCheck(cfg, email);
+  if (reoon) return reoon;
+
+  // MyEmailVerifier — free 100/day/key, catches Reoon's overflow / unknowns.
   const mev = await myEmailVerifierCheck(cfg, email);
   if (mev) return mev;
 
