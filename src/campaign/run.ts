@@ -260,10 +260,13 @@ async function runCampaignBody(
     }
     for (const p of guard.pausedNow) {
       console.warn(`[inbox-guard] PAUSED ${p.inbox} for ${cfg.INBOX_PAUSE_DAYS}d — ${p.reason}`);
-      await emitError(
-        new Error(
-          `inbox-guard: PAUSED ${p.inbox} for ${cfg.INBOX_PAUSE_DAYS}d — ${p.reason}. It keeps warming; cold sends auto-resume after.`,
-        ),
+      // Self-healing event, NOT a bug: the guard auto-resumes the inbox, so routing
+      // this to the bugs table (via emitError) just leaves a permanent "open" ghost.
+      // Emit as an event instead (deduped per inbox/day) — visible, not alarming.
+      await emitEvent(
+        "inbox_pause",
+        { inbox: p.inbox, days: cfg.INBOX_PAUSE_DAYS, reason: p.reason },
+        `inbox_pause:${p.inbox}:${new Date().toISOString().slice(0, 10)}`,
       );
     }
     for (const r of guard.resumedNow) console.log(`[inbox-guard] RESUMED ${r} (reputation pause expired)`);
@@ -597,10 +600,12 @@ async function runCampaignBody(
       console.warn(
         `[campaign] CAP SHORTFALL: filled ${firstTouches.length}/${runRoom} cold slot(s) — out of PECR-eligible leads (${stillQueued} held/queued, bank empty of fresh). SUPPLY is the limiter, not the ramp → need generation (Gemini billing / verify credits).`,
       );
-      await emitError(
-        new Error(
-          `send cap shortfall: ${firstTouches.length}/${runRoom} cold slots filled — engine out of fresh PECR-eligible leads. Generation is the blocker (Gemini billing / verify credits).`,
-        ),
+      // Self-healing / informational, NOT a bug — the next discovery run refills the
+      // bank. Emit as an event (deduped per hour) instead of a permanent "open" bug.
+      await emitEvent(
+        "cap_shortfall",
+        { filled: firstTouches.length, room: runRoom, queued: stillQueued },
+        `cap_shortfall:${new Date().toISOString().slice(0, 13)}`,
       );
     }
   }
@@ -633,12 +638,19 @@ async function runCampaignBody(
           (n, l) => n + (l.history ?? []).filter((h) => isToday(h.at) && pred(h.event)).length,
           0,
         );
+      // Report reputation SINCE the recovery baseline (same basis the send-guard
+      // judges on), so a one-off incident (e.g. 2026-07-02) can't pin a recovered
+      // inbox at "critical" on its LIFETIME rate forever. No baseline (never paused)
+      // → lifetime == recent. A genuine NEW bounce after recovery still shows.
+      const bl = state.inbox_reputation_baseline?.[b.email];
+      const sentLife = pinned.filter((l) => l.step >= 1).length;
+      const bounceLife = pinned.filter((l) => l.status === "bounced").length;
       return {
         domain: domainOf(b.email),
         inbox: b.email,
         warmup_day: state.warmup_day,
-        sent: pinned.filter((l) => l.step >= 1).length,
-        bounces: pinned.filter((l) => l.status === "bounced").length,
+        sent: bl ? Math.max(0, sentLife - bl.sent) : sentLife,
+        bounces: bl ? Math.max(0, bounceLife - bl.bounces) : bounceLife,
         replies: pinned.filter((l) => l.status === "replied" || l.status === "opted_out").length,
         sent_today: countEv((e) => e === "sent"),
         followups_today: countEv((e) => e === "followup_1" || e === "followup_2"),
