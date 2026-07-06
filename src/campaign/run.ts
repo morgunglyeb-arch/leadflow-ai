@@ -514,8 +514,21 @@ async function runCampaignBody(
   //     (F2: otherwise the ramp is fiction — a heavy follow-up day silently
   //     over-sends from an inbox). Cap reached → defer the follow-up to a later run.
   const followups = selectDueFollowups(state, cfg);
-  console.log(`[campaign] follow-ups due: ${followups.length}`);
+  // Reserve a share of the day's room for cold first-touches so a follow-up surge
+  // can't consume the whole cap and starve new outbound (2026-07-06: 115 follow-ups
+  // → ~0 cold). Cap TOTAL follow-ups this run so `coldGuarantee` slots stay for cold.
+  // Reserve only as many as there are cold leads (never waste room when cold is dry).
+  const coldGuarantee = Math.min(
+    firstTouches.length,
+    Math.floor(totalRoom * cfg.SEND_COLD_RESERVE_FRAC),
+  );
+  const fuBudget = Math.max(0, totalRoom - coldGuarantee);
+  let fuSent = 0;
+  console.log(
+    `[campaign] follow-ups due: ${followups.length} · fu budget ${fuBudget}/${totalRoom} (reserving ${coldGuarantee} for cold)`,
+  );
   for (const lead of followups) {
+    if (fuSent >= fuBudget) break; // leave the rest of the room for cold this run
     const which = lead.step === 1 ? "followup_1" : "followup_2";
     const box = inboxByEmail(cfg, lead.inbox);
     if (box) {
@@ -530,6 +543,7 @@ async function runCampaignBody(
       const d = domainOf(box.email);
       domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
       sentCount++;
+      fuSent++; // counts toward this run's follow-up budget (cold-reserve)
       // R5: persist the 'sent' status BEFORE the next send so a crash can't replay
       // it (re-sending the same mail = reputation + PECR risk). State machine alone
       // left a window between sendEmail() and the end-of-run saveState().

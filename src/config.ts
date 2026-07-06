@@ -371,6 +371,12 @@ const schema = z.object({
   // day's volume into small bursts (human-looking, protects deliverability)
   // instead of firing the whole cap at once. Per-inbox daily caps still apply.
   SEND_PER_RUN_CAP: z.coerce.number().int().min(0).default(0),
+  // Fraction of each inbox's DAILY cap RESERVED for cold first-touches, so a heavy
+  // follow-up day can't consume the whole cap and starve new outbound (0.5 = keep
+  // half the day's room for cold). Follow-ups stop once an inbox's remaining room
+  // hits the reserve; cold then uses it. Only reserved when cold leads exist (else
+  // follow-ups use the full room — no wasted capacity). 0 = old behaviour (fu first).
+  SEND_COLD_RESERVE_FRAC: z.coerce.number().min(0).max(1).default(0.5),
   // Manual kill-switch: comma/space-separated inbox addresses to PULL from sending
   // without de-authing them (e.g. one stuck in spam placement). They keep warming;
   // they just won't send cold mail. Empty = all authorized inboxes send.
