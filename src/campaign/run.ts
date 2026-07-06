@@ -531,6 +531,16 @@ async function runCampaignBody(
       // it (re-sending the same mail = reputation + PECR risk). State machine alone
       // left a window between sendEmail() and the end-of-run saveState().
       await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+      // Emit a distinct followup.sent event so the hub can split cold vs follow-up
+      // over any range (cold first-touches emit draft.sent below; follow-ups had NO
+      // event → the owner couldn't see how many of a day's sends were follow-ups).
+      await emitEvent("followup.sent", {
+        step: lead.step,
+        which,
+        email: lead.email,
+        domain: lead.domain,
+        inbox: box.email,
+      });
     }
     if (sendLead) await sleep(jitterMs(cfg));
   }
