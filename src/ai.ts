@@ -206,10 +206,10 @@ THE ASK — exactly ONE soft, binary question (this is the single biggest reply 
 - A reply-or-interest ask beats asking for a meeting by ~2.5x, and a soft ask beats a hard pitch ~3x. Never stack two asks. (Calls are already banned below — the ask is a reply or a sent example, never a call.)
 
 TRUST WITHOUT CASE STUDIES (we're new — no testimonials to lean on):
-- Earn it by being SPECIFIC about their exact situation (proves real research) and by REMOVING THEIR RISK: offer to show a short example/video built for them first, so they see it work before deciding anything. No obligation.
+- Earn it by being SPECIFIC about their exact situation (proves real research) and by REMOVING THEIR RISK: offer to show a short example/mockup built for them first, so they see it work before deciding anything. No obligation.
 - NEVER invent proof — no fake client counts, percentages, "trusted by 100s", or made-up results. Specificity + a free no-risk look is the credibility.
 
-NEVER PROPOSE A CALL OR MEETING. The sender does not take live calls. The only ask is a REPLY (e.g. "reply and I'll send a short example/video"). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat". Offering to SEND a short recorded video or example is fine (it's async).
+NEVER PROPOSE A CALL OR MEETING. The sender does not take live calls. The only ask is a REPLY (e.g. "reply and I'll send a short example/mockup"). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat". NEVER offer a video, recording, screen-share, screencast, or Loom — we do NOT send video. The only thing offered is a short written/visual EXAMPLE or MOCKUP built for them (async).
 
 SHOW A FEW SERVICES (people often don't know what's possible):
 - services: exactly 4 short, concrete automations we could set up for THIS business — FOUR DIFFERENT automations, each a separate idea, NOT four features of the main offer/agent (if the offer is a booking agent, the menu lists OTHER things, not "books appointments / answers chat / qualifies leads" — those are all just the agent). Draw from the LESS-OBVIOUS, higher-value list above — e.g. "Win back patients who haven't booked in a while", "Auto-fill last-minute cancellations from a waitlist", "Chase unbooked treatment plans until they convert", "Send & collect new-patient forms before the visit", "Ask for a Google review after each visit". Each <=12 words, plain, no jargon. AVOID the saturated obvious ones (missed-call text-back, basic reminders) unless clearly nothing else fits. Only list channels their customers actually use (don't list Instagram booking for a dentist). NO DUPLICATES: each menu item DIFFERENT from the others AND from the main offer.
@@ -219,7 +219,7 @@ KEEP IT SHORT (deliverability + reply rate):
 - If COMPLAINT reviews are provided, that real customer pain is your STRONGEST angle — name it (e.g. "a few reviewers mention struggling to get through by phone") without exaggerating or inventing.
 
 FOLLOW-UPS (sent later only if they don't reply):
-- followup_1: a 2-sentence nudge for ~3 days later. A DIFFERENT angle than the first email (e.g. a concrete proof offer: "happy to record a 2-minute video showing it working on your site") or a sharp one-line question. Not a repeat.
+- followup_1: a 2-sentence nudge for ~3 days later. A DIFFERENT angle than the first email (e.g. a concrete proof offer: "happy to send a quick mockup showing it working for your site") or a sharp one-line question. Not a repeat. NEVER offer a video/recording — a mockup or written example only.
 - followup_2: a 1-2 sentence polite break-up for ~4 days after that ("I'll assume the timing isn't right — happy to leave the door open"). Low-pressure, classy.
 - Both in ${outName}, plain language, no greeting line (the app adds it), no signature.
 
@@ -234,10 +234,10 @@ Fields:
 - fit_score: 1 (no fit) to 5 (excellent). High when there is a clear unautomated, sellable gap.
 - reason: one line justifying the score, grounded in evidence.
 - process: the EXACT unautomated, manual thing they do now — stated as fact, naming the channel from the signals. No hedging. If no specific gap is visible, use the sector-typical manual task (see INDUSTRY FACTS) rather than "unclear from site".
-- automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an assistant that automatically messages patients who haven't been in for a while and offers them a slot — so lapsed patients rebook themselves, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon. DESCRIBE ONLY WHAT WE'D BUILD — do NOT add any ask, reply request, or demo/example offer here ("just reply", "reply yes", "I can send you a demo/example/video"). The email has exactly ONE ask, and it lives in the final line — never repeat it in the offer.
+- automation: one plain sentence that makes the OFFER unmistakable — name WHAT we'd set up and that it runs AUTOMATICALLY with no work for their team, in their channel. The reader must instantly get what they're being offered. e.g. "We'd set up an assistant that automatically messages patients who haven't been in for a while and offers them a slot — so lapsed patients rebook themselves, hands-off." Not vague ("a system that helps with calls"); concrete, done-for-you, no jargon. DESCRIBE ONLY WHAT WE'D BUILD — do NOT add any ask, reply request, or demo/example offer here ("just reply", "reply yes", "I can send you a demo/example"). The email has exactly ONE ask, and it lives in the final line — never repeat it in the offer.
 - est_benefit: a concrete owner outcome (e.g. "never miss a booking, less time on the phone, fewer no-shows"). No invented numbers.
 - brief: see LANGUAGE above.
-- followup_1, followup_2: see FOLLOW-UPS above (offer to SEND an example/video; never a call).
+- followup_1, followup_2: see FOLLOW-UPS above (offer to SEND an example/mockup; never a call, never a video).
 - services: see "SHOW A FEW SERVICES" above.
 - subject: the main subject line. subject_b: a SECOND subject for A/B testing anchored on a DIFFERENT concrete detail of the SAME business (e.g. one on their service, one on their town or a page of their site) — BOTH about the business, neither a benefit/pitch headline. Both <=50 chars and <=5 words, lowercase, like a quick note to a colleague; no emojis/ALL CAPS/spam words.
 - demo: ONE concrete, tangible example of the assistant in action for THIS business — the actual message a customer would receive, using the real business name, e.g. "Hi from Smile Dental — it's been a while since your last check-up. Reply BOOK and we'll find you a slot this month." Specific and realistic, in ${outName}. NEVER use bracketed placeholders like [phone number] or [Clinic]; use the real name or just leave that detail out so it reads like a finished message.
@@ -1086,7 +1086,7 @@ Sound like a real person typing a quick reply on their phone — natural and a l
 
 Keep it short (<=80 words), warm, plain language — no jargon ("workflow/API/agentic/leverage/solution"). Answer their actual question honestly (e.g. a rough price range, how it works); if you don't know, say you'll send a quick example or the details.
 
-NEVER propose a call, meeting or "quick chat" — the sender does not take live calls. The only ask is a reply, or offering to SEND a short recorded example/video (async). Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat".
+NEVER propose a call, meeting or "quick chat" — the sender does not take live calls. The only ask is a reply, or offering to SEND a short example/mockup (async). NEVER offer a video, recording, or screen-share — we do NOT send video. Banned: "jump on a call", "15-minute call", "hop on a quick call", "book a meeting", "schedule a chat".
 
 COMMON OBJECTIONS — answer the one they actually raised, briefly and without pushiness:
 - "How much / what's the price?": give an honest ballpark in plain terms (it depends on what they want, most setups are a small one-off to get going plus a low monthly to keep it running), and offer to send a short example tailored to them so the price has context. Don't quote a hard figure you can't stand behind.
