@@ -17,6 +17,18 @@ describe("classifyReply — intent priority (F7)", () => {
     expect(classifyReply("can you send me an example?")).toBe("interested");
   });
 
+  it("⭐ ignores the QUOTED original — a bare 'No' with our email below is NOT interested", () => {
+    // THE 2026-07-04 bug: the reply "No" + Gmail-quoted original ("…happy to send a
+    // 2-minute example…") matched the positive regex on OUR OWN words → "interested".
+    const quoted =
+      "No\n\nOn Sat, 4 Jul 2026, 13:02 Emma Walsh <emma@opero-team.com> wrote:\n" +
+      "Hi Perfect Install team, Happy to send a 2-minute video showing the exact text...";
+    expect(classifyReply(quoted)).toBe("soft_decline");
+    expect(classifyReply("no\n--- Regards, Daniel\n> our pitch here happy to help")).toBe(
+      "soft_decline",
+    );
+  });
+
   it("a bare soft 'no' (no opt-out request) → soft_decline, NOT not_interested", () => {
     expect(classifyReply("No thanks, we're good")).toBe("soft_decline");
     expect(classifyReply("not interested, thanks")).toBe("soft_decline");

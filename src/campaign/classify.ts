@@ -19,8 +19,32 @@ export function isHardOptOut(snippet: string): boolean {
   );
 }
 
+/**
+ * Keep ONLY the new reply, above any quoted original. Critical: a bare "No" with
+ * OUR own email quoted below ("…happy to send a 2-minute example…") otherwise
+ * matches the positive regex on OUR words and reads as "interested" (real bug,
+ * Perfect Install LTD 2026-07-04). Cut at the earliest quote / signature marker.
+ */
+export function topReply(text: string): string {
+  const markers = [
+    /\n?On\b.{0,160}\bwrote:/i, // Gmail: "On Sat, 4 Jul 2026, 13:02 X wrote:"
+    /-{3,}\s*Original Message\s*-{3,}/i,
+    /\n_{5,}/, // Outlook separator
+    /\nFrom:\s/i, // Outlook quoted header
+    /\n\s*>/, // quoted ">" lines
+    /\nSent from my /i,
+  ];
+  let cut = text.length;
+  for (const m of markers) {
+    const i = text.search(m);
+    if (i >= 0 && i < cut) cut = i;
+  }
+  const top = text.slice(0, cut).trim();
+  return top || text.trim(); // never return empty
+}
+
 export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
-  const s = snippet.toLowerCase();
+  const s = topReply(snippet).toLowerCase();
   if (/(out of office|automatic reply|auto-?reply|away from|annual leave|on holiday)/.test(s)) {
     return "auto";
   }
@@ -45,6 +69,13 @@ export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   // sequence but routes to the soft bucket — the operator confirms before any
   // permanent suppression.
   if (/(no thanks|no thank you|not interested|not for us|we'?re good|all set|no need)/.test(s)) {
+    return "soft_decline";
+  }
+  // A bare "no"/"nope"/"nah" as (essentially) the whole reply — the quote is already
+  // stripped — is a decline, not "unclear" (CHS Garden / Paul Smith both said "no"
+  // and read as unclear). Short-length guard so "no" inside a longer sentence doesn't
+  // trip it (a genuine "no, but how much?" was already caught as interested above).
+  if (/^\W*(no|nope|nah)\b/.test(s) && s.length <= 40) {
     return "soft_decline";
   }
   return "unclear";
