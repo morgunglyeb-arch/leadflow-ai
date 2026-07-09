@@ -74,6 +74,20 @@ function isNonSite(domain: string): boolean {
   return NON_SITE.some((b) => domain.includes(b));
 }
 
+// Places (New) supports MULTIPLE comma/space-separated keys in GOOGLE_PLACES_API_KEY
+// — rotate on quota/rate (429) or quota/auth (403) so a burst that exhausts one
+// key's daily quota falls through to the next, exactly like the LLM/verify providers.
+function placesKeys(cfg: AppConfig): string[] {
+  return (cfg.GOOGLE_PLACES_API_KEY ?? "")
+    .split(/[\s,]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+// Sticky round-robin pointer: once a key 429s we advance past it, so later
+// queries in the same run start from the first still-good key (module-level,
+// persists across calls within a process).
+let placesKeyIdx = 0;
+
 export class MapsDiscoverer implements LeadDiscoverer {
   readonly source = "maps" as const;
 
@@ -97,26 +111,48 @@ export class MapsDiscoverer implements LeadDiscoverer {
     cfg: AppConfig,
     opts: DiscoverOptions,
   ): Promise<DiscoveredLead[]> {
-    if (!cfg.GOOGLE_PLACES_API_KEY) throw new Error("GOOGLE_PLACES_API_KEY not set");
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
-    let json: PlacesV1Response;
-    try {
-      const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "X-Goog-Api-Key": cfg.GOOGLE_PLACES_API_KEY,
-          "X-Goog-FieldMask": FIELD_MASK,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ textQuery: query.full, pageSize: 20 }),
-      });
-      if (!res.ok) throw new Error(`places HTTP ${res.status}`);
-      json = (await res.json()) as PlacesV1Response;
-    } finally {
-      clearTimeout(timer);
+    const keys = placesKeys(cfg);
+    if (keys.length === 0) throw new Error("GOOGLE_PLACES_API_KEY not set");
+    let json: PlacesV1Response | undefined;
+    let lastErr: unknown;
+    // Try each key once, starting from the sticky pointer; rotate on ANY non-ok
+    // response (429/403 quota, 5xx, or a mis-pasted bad key) and on network/abort.
+    for (let i = 0; i < keys.length; i++) {
+      const idx = (placesKeyIdx + i) % keys.length;
+      const key = keys[idx]!;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+      try {
+        const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "X-Goog-Api-Key": key,
+            "X-Goog-FieldMask": FIELD_MASK,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ textQuery: query.full, pageSize: 20 }),
+        });
+        if (!res.ok) {
+          lastErr = new Error(`places HTTP ${res.status}`);
+          if (keys.length > 1 && (res.status === 429 || res.status === 403)) {
+            console.warn(
+              `[discover] places key ${idx + 1}/${keys.length} → HTTP ${res.status}, rotating…`,
+            );
+          }
+          continue; // try the next key
+        }
+        json = (await res.json()) as PlacesV1Response;
+        placesKeyIdx = idx; // stick to this working key for the next query
+        break;
+      } catch (e) {
+        lastErr = e; // network / abort / timeout — try the next key too
+        continue;
+      } finally {
+        clearTimeout(timer);
+      }
     }
+    if (!json) throw lastErr instanceof Error ? lastErr : new Error("places: all keys exhausted");
 
     const seen = new Set<string>();
     const out: DiscoveredLead[] = [];
