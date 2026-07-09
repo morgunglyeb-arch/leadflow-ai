@@ -88,6 +88,56 @@ function placesKeys(cfg: AppConfig): string[] {
 // persists across calls within a process).
 let placesKeyIdx = 0;
 
+// Serper likewise supports MULTIPLE comma/space-separated keys in SERPER_API_KEY,
+// rotating on 400 ("Not enough credits") / 401 / 403 / 429 so an exhausted free
+// key falls through to the next.
+function serperKeys(cfg: AppConfig): string[] {
+  return (cfg.SERPER_API_KEY ?? "")
+    .split(/[\s,]+/)
+    .map((k) => k.trim())
+    .filter(Boolean);
+}
+let serperKeyIdx = 0;
+const SERPER_ROTATE = new Set([400, 401, 402, 403, 429]);
+// Shared rotating POST to a Serper endpoint. Returns the ok Response, or throws
+// once every key has failed (caller decides whether that's fatal or best-effort).
+async function serperFetch(path: string, body: unknown, cfg: AppConfig): Promise<Response> {
+  const keys = serperKeys(cfg);
+  if (keys.length === 0) throw new Error("SERPER_API_KEY not set");
+  let lastErr: unknown;
+  for (let i = 0; i < keys.length; i++) {
+    const idx = (serperKeyIdx + i) % keys.length;
+    const key = keys[idx]!;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+    try {
+      const res = await fetch(`https://google.serper.dev/${path}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "X-API-KEY": key, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        lastErr = new Error(`serper ${path} HTTP ${res.status}`);
+        if (keys.length > 1 && SERPER_ROTATE.has(res.status)) {
+          console.warn(
+            `[discover] serper key ${idx + 1}/${keys.length} → HTTP ${res.status}, rotating…`,
+          );
+        }
+        continue; // try the next key (rotatable status or last resort)
+      }
+      serperKeyIdx = idx; // stick to this working key
+      return res;
+    } catch (e) {
+      lastErr = e;
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`serper ${path}: all keys exhausted`);
+}
+
 export class MapsDiscoverer implements LeadDiscoverer {
   readonly source = "maps" as const;
 
@@ -215,21 +265,9 @@ export class MapsDiscoverer implements LeadDiscoverer {
 }
 
 async function serperPlaces(q: string, cfg: AppConfig): Promise<SerperPlace[]> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
-  try {
-    const res = await fetch("https://google.serper.dev/places", {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "X-API-KEY": cfg.SERPER_API_KEY!, "content-type": "application/json" },
-      body: JSON.stringify({ q, num: 20 }),
-    });
-    if (!res.ok) throw new Error(`serper places HTTP ${res.status}`);
-    const json = (await res.json()) as SerperPlacesResponse;
-    return json.places ?? [];
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await serperFetch("places", { q, num: 20 }, cfg);
+  const json = (await res.json()) as SerperPlacesResponse;
+  return json.places ?? [];
 }
 
 function nameTokens(name: string): string[] {
@@ -256,16 +294,8 @@ async function resolveDomain(
   address: string,
   cfg: AppConfig,
 ): Promise<string | undefined> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
   try {
-    const res = await fetch("https://google.serper.dev/search", {
-      method: "POST",
-      signal: controller.signal,
-      headers: { "X-API-KEY": cfg.SERPER_API_KEY!, "content-type": "application/json" },
-      body: JSON.stringify({ q: `${title} ${address}`, num: 5 }),
-    });
-    if (!res.ok) return undefined;
+    const res = await serperFetch("search", { q: `${title} ${address}`, num: 5 }, cfg);
     const json = (await res.json()) as SerperSearchResponse;
     const tokens = nameTokens(title);
 
@@ -283,8 +313,6 @@ async function resolveDomain(
     }
     return undefined;
   } catch {
-    return undefined;
-  } finally {
-    clearTimeout(timer);
+    return undefined; // best-effort — domain resolution is optional
   }
 }
