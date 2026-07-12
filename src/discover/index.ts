@@ -6,6 +6,26 @@ import { SearchDiscoverer } from "./search.js";
 import { MapsDiscoverer } from "./maps.js";
 import { VibeDiscoverer } from "./vibe.js";
 import { CompaniesHouseDiscoverer } from "./companies-house.js";
+import { emitEvent } from "../ops-emit.js";
+
+// Error signatures that mean a paid/limited source ran out of credits / quota /
+// billing (not a transient blip) → the owner must top up or swap a key.
+const CREDIT_AUTH_FAIL =
+  /not enough credits|out of credits|insufficient|resource_exhausted|quota|billing|payment required|unauthorized|forbidden|HTTP (40[0-3]|429)/i;
+
+/** Human name for the active discovery source (for the owner alert). */
+function discoverySourceLabel(cfg: AppConfig): string {
+  switch (cfg.DISCOVERY_SOURCE) {
+    case "companies-house":
+      return "Companies House";
+    case "maps":
+      return cfg.MAPS_PROVIDER === "google" ? "Google Places" : "Serper (maps)";
+    case "search":
+      return "Serper (поиск)";
+    default:
+      return cfg.DISCOVERY_SOURCE;
+  }
+}
 import { normalizeDomain } from "../sources/index.js";
 
 export interface DiscoverOptions {
@@ -102,9 +122,12 @@ export async function discoverLeads(
   // hit only the FRONT of the list — shuffle it so each run samples different
   // towns (and so we take just a few leads per city, not 12 from one giant city).
   const ordered = icp.cities?.length ? shuffle(queries) : queries;
+  let attempted = 0;
+  const creditFails: string[] = [];
   for (const q of ordered) {
     if (all.length >= maxLeads) break;
     const remaining = Math.min(perQuery, maxLeads - all.length);
+    attempted++;
     try {
       const found = await discoverer.discover(q, cfg, { ...opts, maxLeads: remaining });
       all.push(...found);
@@ -112,8 +135,32 @@ export async function discoverLeads(
         `[discover] "${q.full}" (${discoverer.source}) → ${found.length} candidates`,
       );
     } catch (err) {
-      console.warn(`[discover] "${q.full}" failed: ${(err as Error).message}`);
+      const msg = (err as Error).message;
+      console.warn(`[discover] "${q.full}" failed: ${msg}`);
+      if (CREDIT_AUTH_FAIL.test(msg)) creditFails.push(msg);
     }
+  }
+
+  // Infra alert (owner-requested): when discovery produced NOTHING and most attempts
+  // died on credit/quota/billing/auth signatures, the paid/limited source is out of
+  // money/credits — push a Telegram alert so the owner tops up before the lead flow
+  // stalls. Guarded so a normal thin run (few candidates) never false-alarms.
+  if (!opts.mock && all.length === 0 && creditFails.length >= Math.max(3, Math.floor(attempted / 2))) {
+    await emitEvent(
+      "source_down",
+      {
+        source: discoverySourceLabel(cfg),
+        layer: "discovery",
+        reason: "кончились кредиты/деньги или выбит лимит",
+        detail: creditFails[0] ?? "",
+        failed: creditFails.length,
+        attempted,
+      },
+      `source_down:discovery:${new Date().toISOString().slice(0, 13)}`,
+    ).catch(() => {});
+    console.warn(
+      `[discover] ⚠️ SOURCE DOWN: ${discoverySourceLabel(cfg)} — ${creditFails.length}/${attempted} queries failed on credit/quota/auth; owner alerted.`,
+    );
   }
 
   const deduped = dedupeLeads(all).slice(0, maxLeads);
