@@ -71,9 +71,19 @@ function nameMatchesVertical(name: string, vertical: string): boolean {
   return true; // no rule → don't over-filter
 }
 
-async function fetchText(url: string, cfg: AppConfig, headers?: Record<string, string>): Promise<{ code: number; body: string } | null> {
+// Domain-resolution probes must be FAST: a live business site answers in ~1s, so a
+// short timeout keeps a dead/wrong guess from blocking the whole run (the 8s enrich
+// timeout × 8 sequential guesses was ~1 company/minute — the discovery bottleneck).
+const RESOLVE_TIMEOUT_MS = 3500;
+
+async function fetchText(
+  url: string,
+  cfg: AppConfig,
+  headers?: Record<string, string>,
+  timeoutMs?: number,
+): Promise<{ code: number; body: string } | null> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), cfg.ENRICH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? cfg.ENRICH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -109,17 +119,29 @@ function domainCandidates(name: string): string[] {
 
 async function resolveDomain(name: string, cfg: AppConfig): Promise<string | undefined> {
   const toks = nameTokens(name);
-  for (const cand of domainCandidates(name)) {
-    const r = await fetchText(`https://${cand}`, cfg);
-    if (r && r.code < 400) {
-      const low = r.body.toLowerCase();
-      if (toks.some((t) => cand.includes(t)) || toks.some((t) => low.includes(t))) {
-        return normalizeDomain(cand) || cand;
+  const cands = domainCandidates(name);
+  // Probe all guesses IN PARALLEL (short timeout each) instead of sequentially —
+  // turns worst-case ~8×8s into a single ~3.5s race. Keep candidate PRIORITY: prefer
+  // the first-listed guess (…co.uk before .com) among those that resolved + matched.
+  const probes = await Promise.all(
+    cands.map(async (cand) => {
+      const r = await fetchText(`https://${cand}`, cfg, undefined, RESOLVE_TIMEOUT_MS);
+      if (r && r.code < 400) {
+        const low = r.body.toLowerCase();
+        if (toks.some((t) => cand.includes(t)) || toks.some((t) => low.includes(t))) return cand;
       }
-    }
-  }
+      return null;
+    }),
+  );
+  const hit = probes.find(Boolean);
+  if (hit) return normalizeDomain(hit) || hit;
   // DuckDuckGo HTML fallback (free, no key). Rate-limited — one shot per company.
-  const r = await fetchText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${name} UK`)}`, cfg);
+  const r = await fetchText(
+    `https://html.duckduckgo.com/html/?q=${encodeURIComponent(`${name} UK`)}`,
+    cfg,
+    undefined,
+    RESOLVE_TIMEOUT_MS,
+  );
   if (r && r.code < 400) {
     const links = [...r.body.matchAll(/uddg=(https?%3A%2F%2F[^"&]+)/g)].slice(0, 5);
     for (const m of links) {
