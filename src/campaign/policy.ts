@@ -66,7 +66,13 @@ export function selectDueFollowups(state: CampaignState, cfg: AppConfig): Campai
   const initialAtOf = (l: CampaignLead): number | undefined => eventTime(l, "sent");
   const due: CampaignLead[] = [];
   for (const l of Object.values(state.leads)) {
-    if (l.status === "replied" || l.status === "opted_out" || l.status === "bounced") continue;
+    if (
+      l.status === "replied" ||
+      l.status === "soft_decline" ||
+      l.status === "opted_out" ||
+      l.status === "bounced"
+    )
+      continue; // any terminal/replied state → no more follow-ups
     const initialAt = initialAtOf(l);
     if (initialAt === undefined) continue; // not sent yet
     const elapsed = daysSince(initialAt);

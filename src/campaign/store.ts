@@ -10,7 +10,8 @@ export type CampaignStatus =
   | "sent" // first email sent
   | "followup_1" // first follow-up sent
   | "followup_2" // second follow-up sent
-  | "replied" // they replied — sequence stopped
+  | "replied" // they replied (interested/objection/unclear) — needs owner action
+  | "soft_decline" // a clear "no" — sequence stopped, CLOSED (not an action item)
   | "bounced" // hard bounce
   | "opted_out" // asked to stop
   | "done"; // sequence exhausted, no reply

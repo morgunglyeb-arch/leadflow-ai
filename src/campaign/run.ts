@@ -866,7 +866,14 @@ async function pollReplies(
         await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
         suppression.add(lead.email.toLowerCase());
         await emitSuppress(lead.email, "opt-out"); // D1: write-through to the hub
+      } else if (sentiment === "soft_decline") {
+        // A clear "no" (no opt-out request): stop the sequence and CLOSE it as a soft
+        // decline. NOT "replied" — that bucket is the owner's action queue («N ждут
+        // ответа»), and a plain "no" needs no reply, so it must not sit there forever.
+        // The reply still surfaces in the «Ответы» tab via the emitted event below.
+        lead.status = "soft_decline";
       } else {
+        // interested / objection / unclear → the owner's action queue.
         lead.status = "replied";
       }
       logEvent(lead, "reply", sentiment);
