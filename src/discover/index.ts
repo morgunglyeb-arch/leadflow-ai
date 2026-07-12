@@ -5,6 +5,7 @@ import { expandQueries, loadIcpConfig } from "./icp.js";
 import { SearchDiscoverer } from "./search.js";
 import { MapsDiscoverer } from "./maps.js";
 import { VibeDiscoverer } from "./vibe.js";
+import { CompaniesHouseDiscoverer } from "./companies-house.js";
 import { normalizeDomain } from "../sources/index.js";
 
 export interface DiscoverOptions {
@@ -26,6 +27,8 @@ export function buildDiscoverer(cfg: AppConfig): LeadDiscoverer {
   switch (cfg.DISCOVERY_SOURCE) {
     case "maps":
       return new MapsDiscoverer();
+    case "companies-house":
+      return new CompaniesHouseDiscoverer();
     case "vibe":
       return new VibeDiscoverer();
     case "search":

@@ -78,7 +78,9 @@ const schema = z.object({
 
   // --- Discovery (prospecting) ---------------------------------------------
   // Which discoverer to use when sourcing new leads. "csv" reuses LEADS_SOURCE.
-  DISCOVERY_SOURCE: z.enum(["search", "maps", "vibe", "seed", "csv"]).default("search"),
+  DISCOVERY_SOURCE: z
+    .enum(["search", "maps", "vibe", "seed", "csv", "companies-house"])
+    .default("search"),
   ICP_CONFIG_PATH: z.string().default("config/icp.json"),
   MAX_LEADS: z.coerce.number().int().positive().default(50),
   // Only keep leads at/above this fit score (1-5). The operator wants strong
