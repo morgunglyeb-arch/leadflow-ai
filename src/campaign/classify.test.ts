@@ -29,6 +29,20 @@ describe("classifyReply — intent priority (F7)", () => {
     );
   });
 
+  it("⭐ a 'No' followed by an email SIGNATURE reads as decline, not 'unclear'", () => {
+    // Replies trail a signature the quote-strip can't remove; the whole-text length
+    // guard missed them → "unclear". The OPENER (before the sig/phone) is a bare no.
+    expect(
+      classifyReply("No Ben Haulkham Quills Mobile: 07876 501044 Website: www.quillswills.com"),
+    ).toBe("soft_decline");
+    expect(classifyReply("no --- Regards, Daniel Crathorne. 01527 758 974 Unit 9")).toBe(
+      "soft_decline",
+    );
+    expect(classifyReply("no Paul Smith Associates Tel. 01278 427678")).toBe("soft_decline");
+    // …but a curious "No idea, can you explain?" must NOT be forced to a decline.
+    expect(classifyReply("No idea what you mean, can you explain what this does?")).toBe("unclear");
+  });
+
   it("a bare soft 'no' (no opt-out request) → soft_decline, NOT not_interested", () => {
     expect(classifyReply("No thanks, we're good")).toBe("soft_decline");
     expect(classifyReply("not interested, thanks")).toBe("soft_decline");

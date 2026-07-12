@@ -71,11 +71,20 @@ export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   if (/(no thanks|no thank you|not interested|not for us|we'?re good|all set|no need)/.test(s)) {
     return "soft_decline";
   }
-  // A bare "no"/"nope"/"nah" as (essentially) the whole reply — the quote is already
-  // stripped — is a decline, not "unclear" (CHS Garden / Paul Smith both said "no"
-  // and read as unclear). Short-length guard so "no" inside a longer sentence doesn't
-  // trip it (a genuine "no, but how much?" was already caught as interested above).
-  if (/^\W*(no|nope|nah)\b/.test(s) && s.length <= 40) {
+  // A bare "no"/"nope"/"nah" opening the reply is a decline, not "unclear". Real
+  // replies often trail a SIGNATURE ("No\nBen Haulkham\nQuills\nMobile: 07876…") that
+  // the quote-strip doesn't remove, so a length<=40 guard on the WHOLE text missed
+  // them (→ "unclear"). Instead take just the OPENER — up to the first newline,
+  // signature marker, contact detail, or UK phone number — and test that. Positive /
+  // objection signals were already checked above, so reaching here + a leading "no"
+  // is a genuine decline. ("no, but how much?" was caught as interested earlier.)
+  const opener =
+    s
+      .split(
+        /\n|-{2,}|\bregards\b|\bthanks\b\s*[,.]|\b(?:tel|mobile|phone|mob|email|website|fax)\b\s*[:.]|\b0\d[\d ]{7,}/i,
+      )[0]
+      ?.trim() ?? s;
+  if (/^\W*(no|nope|nah)\b/.test(opener) && opener.length <= 40) {
     return "soft_decline";
   }
   return "unclear";
