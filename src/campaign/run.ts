@@ -523,6 +523,17 @@ async function runCampaignBody(
     Math.floor(totalRoom * cfg.SEND_COLD_RESERVE_FRAC),
   );
   const fuBudget = Math.max(0, totalRoom - coldGuarantee);
+  // Per-DOMAIN follow-up budget: reserve a cold share in EACH domain so a follow-up
+  // backlog can't fill a domain's daily cap and starve cold first-touches. The global
+  // fuBudget above is domain-blind — when SEND_DOMAIN_DAILY_CAP binds (not per-inbox),
+  // follow-ups exhausted a domain's room before the cold loop ran, so a heavy
+  // follow-up day sent 0 cold even with cold leads waiting (observed 2026-07-13).
+  const fuDomainBudget = new Map<string, number>();
+  for (const [d, room] of domainRoom) {
+    const reserve = firstTouches.length > 0 ? Math.floor(room * cfg.SEND_COLD_RESERVE_FRAC) : 0;
+    fuDomainBudget.set(d, Math.max(0, room - reserve));
+  }
+  const fuSentByDomain = new Map<string, number>();
   let fuSent = 0;
   console.log(
     `[campaign] follow-ups due: ${followups.length} · fu budget ${fuBudget}/${totalRoom} (reserving ${coldGuarantee} for cold)`,
@@ -534,6 +545,8 @@ async function runCampaignBody(
     if (box) {
       const d = domainOf(box.email);
       if ((remaining.get(box.email) ?? 0) <= 0 || (domainRoom.get(d) ?? 0) <= 0) continue;
+      // keep each domain's cold reserve free even under a follow-up backlog
+      if ((fuSentByDomain.get(d) ?? 0) >= (fuDomainBudget.get(d) ?? 0)) continue;
     }
     const sendLead = sendableNow && isWorkingDayNow(cfg, lead.working_days);
     const sent = await sendStep(cfg, lead, which, sendLead, box);
@@ -544,6 +557,7 @@ async function runCampaignBody(
       domainRoom.set(d, (domainRoom.get(d) ?? 1) - 1);
       sentCount++;
       fuSent++; // counts toward this run's follow-up budget (cold-reserve)
+      fuSentByDomain.set(d, (fuSentByDomain.get(d) ?? 0) + 1); // per-domain cold reserve
       // R5: persist the 'sent' status BEFORE the next send so a crash can't replay
       // it (re-sending the same mail = reputation + PECR risk). State machine alone
       // left a window between sendEmail() and the end-of-run saveState().
