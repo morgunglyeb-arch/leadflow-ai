@@ -117,6 +117,7 @@ export interface CampaignFlags {
   dryRun: boolean; // compute + log what it WOULD send, don't actually send
   topUp: boolean; // discover + enqueue fresh leads before sending
   pollOnly?: boolean; // ONLY poll replies + sweep opt-outs + notify — never send.
+  coldOnly?: boolean; // send ONLY cold first-touches this run (skip due follow-ups)
   // Runs on a frequent cron (every ~30m) so reply notifications are near-immediate
   // and KEEP WORKING while cold sending is paused (deliverability hold, nights, weekends).
   concurrency?: number;
@@ -513,7 +514,8 @@ async function runCampaignBody(
   //     day's capacity. They count against the SAME per-inbox + per-domain caps
   //     (F2: otherwise the ramp is fiction — a heavy follow-up day silently
   //     over-sends from an inbox). Cap reached → defer the follow-up to a later run.
-  const followups = selectDueFollowups(state, cfg);
+  const followups = flags.coldOnly ? [] : selectDueFollowups(state, cfg);
+  if (flags.coldOnly) console.log("[campaign] --cold-only: skipping due follow-ups this run (cold first-touches only)");
   // Reserve a share of the day's room for cold first-touches so a follow-up surge
   // can't consume the whole cap and starve new outbound (2026-07-06: 115 follow-ups
   // → ~0 cold). Cap TOTAL follow-ups this run so `coldGuarantee` slots stay for cold.

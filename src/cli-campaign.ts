@@ -21,6 +21,7 @@ function parseFlags(argv: string[]): { mode: Mode; flags: CampaignFlags } {
     else if (a === "--mock") flags.mock = true;
     else if (a === "--dry-run" || a === "--dry") flags.dryRun = true;
     else if (a === "--top-up") flags.topUp = true;
+    else if (a === "--cold-only") flags.coldOnly = true;
     else if (a === "--concurrency") flags.concurrency = Number.parseInt(argv[++i] ?? "0", 10);
     else if (a.startsWith("--concurrency=")) flags.concurrency = Number.parseInt(a.slice(14), 10);
     else if (a === "--help" || a === "-h") {
