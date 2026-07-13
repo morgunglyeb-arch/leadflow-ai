@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AppConfig } from "../config.js";
 import type { OutputRow } from "../types.js";
@@ -96,7 +96,12 @@ export async function loadState(path: string): Promise<CampaignState> {
 
 export async function saveState(path: string, state: CampaignState): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, JSON.stringify(state, null, 2), "utf8");
+  // Atomic write: a crash / sleep mid-write must not leave a truncated state.json
+  // (that silently resets warmup + replays sends). Write to a temp file, then rename
+  // — rename is atomic on the same filesystem, so readers see all-or-nothing.
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, JSON.stringify(state, null, 2), "utf8");
+  await rename(tmp, path);
 }
 
 export function logEvent(lead: CampaignLead, event: string, detail?: string): void {
