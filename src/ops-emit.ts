@@ -216,6 +216,35 @@ export async function fetchSuppression(): Promise<string[] | null> {
 }
 
 /**
+ * Cross-run dedup set for a CLOUD finder. A GitHub-Actions / VPS prospect run has no
+ * local `leads_enriched.csv`, so `loadExistingKeys` finds nothing and the run would
+ * re-discover, re-enrich and re-bank domains we already have — burning LLM tokens.
+ * The hub holds one `contacts` row per already-prospected lead (deduped by domain),
+ * so we GET them and merge into the existing-keys set. Best-effort; null if the hub
+ * isn't configured/reachable (then we just fall back to the local CSV, if any).
+ */
+export async function fetchKnownKeys(): Promise<{ emails: string[]; domains: string[] } | null> {
+  const base = process.env.OPERO_OPS_URL;
+  const token = process.env.INGEST_BEARER_TOKEN;
+  if (!base || !token) return null;
+  try {
+    const res = await fetch(`${base.replace(/\/$/, "")}/api/leadflow/known-domains`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as
+      | { emails?: string[]; domains?: string[] }
+      | null;
+    if (!data) return null;
+    return { emails: data.emails ?? [], domains: data.domains ?? [] };
+  } catch (err) {
+    console.warn(`[ops-emit] fetchKnownKeys failed: ${(err as Error).message}`);
+    return null;
+  }
+}
+
+/**
  * D1: write a cold-machine opt-out/bounce/unsubscribe THROUGH to the hub so
  * `contacts.suppressed` becomes the single cross-channel source of truth (the
  * site/manual channels read the same flag). Best-effort; never throws.

@@ -1,0 +1,64 @@
+# Cloud FINDER — runs the discovery→enrich→bank pass off the Mac, so the laptop can
+# be shut/asleep and leads still accumulate. FIND ONLY (no sending): no Gmail, no
+# deliverability risk, no double-send concern. Banked leads flow to the hub
+# (opero-ops → Supabase) per batch via emitDrafts; cross-run dedup reads the hub
+# (STATE_REMOTE=true → fetchKnownKeys), so an ephemeral runner never re-processes /
+# re-banks the same domains and never burns tokens on yesterday's leads.
+#
+# ACTIVATE (owner):
+#   1. Create ONE repo secret `SECRETS_TARBALL` = base64 of a tar of just .env,
+#      from the repo root:
+#        tar czf - .env | base64 | pbcopy
+#      (GitHub → Settings → Secrets and variables → Actions → New secret →
+#       name SECRETS_TARBALL, paste). .env already carries OPERO_OPS_URL +
+#       INGEST_BEARER_TOKEN (hub) + COMPANIES_HOUSE_API_KEY + LLM keys — all the
+#       finder needs. Gmail creds are NOT required (we don't send).
+#   2. Test: Actions → prospect-cloud → Run workflow (manual). Watch it bank + log
+#      "merged N known domains from hub for dedup".
+#   3. When happy: uncomment the `schedule:` block below AND disable the Mac finder
+#      cron so they don't both find:
+#        launchctl unload ~/Library/LaunchAgents/com.opero.leadflow.prospect.plist
+#      (dedup-via-hub would prevent double-banking, but running both just wastes work.)
+
+name: prospect-cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "qualified target"
+        default: "80"
+  # --- ENABLE ONLY AFTER a successful manual test + Mac finder cron disabled ---
+  # GitHub cron is UTC. Daily morning find:
+  # schedule:
+  #   - cron: "0 7 * * *"
+
+# Never let two cloud finds overlap.
+concurrency:
+  group: prospect-find
+  cancel-in-progress: false
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55 # discovery is slow (city-by-city); keep under the free-tier budget
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Restore .env from secret
+        env:
+          SECRETS_TARBALL: ${{ secrets.SECRETS_TARBALL }}
+        run: |
+          if [ -z "$SECRETS_TARBALL" ]; then
+            echo "::error::SECRETS_TARBALL secret is not set — see the workflow header to create it."
+            exit 1
+          fi
+          echo "$SECRETS_TARBALL" | base64 -d | tar xzf -
+          test -f .env || { echo "::error::.env missing from the tarball"; exit 1; }
+      - name: Find leads (dedup via hub, bank to hub)
+        env:
+          STATE_REMOTE: "true" # dedup against the hub's already-prospected set (no local CSV here)
+        run: npm run prospect -- --limit ${{ github.event.inputs.limit || '80' }} --concurrency=4

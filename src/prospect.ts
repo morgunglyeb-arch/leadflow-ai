@@ -10,7 +10,7 @@ import { existingAutomations } from "./enrich.js";
 import { deriveOwnerEmail } from "./owner-email.js";
 import { matchVertical, verticalFromQuery, verticalPrice } from "./vertical.js";
 import { pLimit } from "./pLimit.js";
-import { emitDraft, emitEvent, emitRunEnd, emitRunStart } from "./ops-emit.js";
+import { emitDraft, emitEvent, emitRunEnd, emitRunStart, fetchKnownKeys } from "./ops-emit.js";
 import type { DiscoveredLead, OutputRow } from "./types.js";
 
 const DIGEST_LANG_NAME: Record<string, string> = { ru: "Russian", uk: "Ukrainian", en: "English" };
@@ -369,6 +369,20 @@ async function runProspectingCore(
   let pool: DiscoveredLead[] = discovered;
   if (!flags.force && !flags.dry) {
     const existing = await loadExistingKeys(cfg.OUTPUT_CSV_PATH);
+    // Cloud finder (STATE_REMOTE) has no local CSV → also dedup against the hub's
+    // already-prospected set so a fresh runner doesn't re-process/re-bank the same
+    // domains (burning tokens). Merge is best-effort; a hub miss just leaves the
+    // local-CSV keys (empty in the cloud) — no worse than before.
+    if (cfg.STATE_REMOTE) {
+      const known = await fetchKnownKeys();
+      if (known) {
+        for (const e of known.emails) existing.emails.add(e);
+        for (const d of known.domains) existing.domains.add(d);
+        console.log(
+          `[prospect] merged ${known.domains.length} known domains + ${known.emails.length} emails from hub for dedup`,
+        );
+      }
+    }
     const before = pool.length;
     pool = pool.filter((l) => {
       const emailDup = l.email && existing.emails.has(l.email.toLowerCase());
