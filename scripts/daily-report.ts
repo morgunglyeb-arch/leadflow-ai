@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { loadConfig } from "../src/config.js";
 import { gmailInboxes } from "../src/campaign/gmail.js";
 import { loadState } from "../src/campaign/store.js";
+import { loadBankLeads } from "../src/campaign/bank.js";
 import { followupGaps } from "../src/campaign/policy.js";
 import type { CampaignLead } from "../src/campaign/store.js";
 
@@ -72,7 +73,7 @@ async function main(): Promise<void> {
     const s = (q ?? "").toLowerCase();
     return exp.some((v) => s.includes(v));
   };
-  const coldReady = leads.filter(
+  const coldQueued = leads.filter(
     (l) =>
       l.status === "queued" &&
       !l.flagged &&
@@ -80,6 +81,20 @@ async function main(): Promise<void> {
       l.is_ltd !== false &&
       matchesWave(l.snapshot?.discovery_query),
   ).length;
+  // Freshly-prospected leads sit in the CSV bank and only become "queued" when the
+  // 10:00 send enqueues them — so tomorrow's real cold supply = queued NOW + the
+  // wave-matching bank stock (not yet in the pipeline). Without this the report
+  // undercounts the night's banking (all in CSV, none queued yet).
+  const inPipeline = new Set(leads.map((l) => (l.email ?? "").toLowerCase()).filter(Boolean));
+  let bankSupply = 0;
+  try {
+    bankSupply = loadBankLeads().filter(
+      (r) => !inPipeline.has((r.email ?? "").toLowerCase()) && matchesWave(r.discovery_query),
+    ).length;
+  } catch {
+    /* bank read is best-effort */
+  }
+  const coldReady = coldQueued + bankSupply;
 
   // ── INBOX HEALTH ──────────────────────────────────────────────────────────
   const inboxes = gmailInboxes(cfg);
@@ -117,7 +132,7 @@ async function main(): Promise<void> {
     ``,
     `✅ <b>На завтра готово:</b>`,
     `• 📮 фоллоуапы: ${followupsReady}`,
-    `• ❄️ холодные в очереди: ${coldReady} (потолок ${dailyColdTarget}/день)`,
+    `• ❄️ холодные на завтра: ${coldReady} (${coldQueued} в очереди + ${bankSupply} в банке → подтянутся в 10:00) · потолок ${dailyColdTarget}`,
     `• 📬 почты: ${inboxesOk}/${inboxes.length} в порядке`,
     ``,
     actions.length

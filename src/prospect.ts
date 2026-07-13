@@ -404,7 +404,7 @@ async function runProspectingCore(
   const qualified: OutputRow[] = [];
   const allRows: OutputRow[] = [];
   let processed = 0;
-  const chunkSize = Math.max(concurrency * 2, 6);
+  const chunkSize = Math.min(Math.max(concurrency * 2, 1), 5); // checkpoint (bank) every ≤5 leads — a killed run never wastes a whole pass
   // Owner-email derivation is capped (Hunter free ~25/mo). The per-batch checkpoint
   // shares ONE budget across all batches so it can't reset and overspend.
   const deriveBudget = { n: OWNER_DERIVE_BUDGET };
