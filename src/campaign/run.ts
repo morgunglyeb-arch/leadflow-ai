@@ -722,11 +722,24 @@ async function runCampaignBody(
     const activeSupply =
       queuedLeads.filter((l) => matchesActive(l.snapshot?.discovery_query)).length +
       ready.filter((r) => matchesActive(r.discovery_query)).length;
+    // The TRUE "ready to send today" number the owner actually cares about: queued
+    // leads that pass EVERY send gate (not flagged, above the score bar, PECR-eligible,
+    // matching the active wave) — NOT the raw bank total. Plus follow-ups due now.
+    const sendableCold = queuedLeads.filter(
+      (l) =>
+        !l.flagged &&
+        l.score >= cfg.SEND_MIN_SCORE &&
+        l.is_ltd !== false &&
+        matchesActive(l.snapshot?.discovery_query),
+    ).length;
+    const followupsDue = selectDueFollowups(state, cfg).length;
     await emitEvent("bank_depth", {
       queued: queuedLeads.length,
       ready: ready.length,
       total: queuedLeads.length + ready.length,
       active_ready: activeSupply,
+      sendable_cold: sendableCold, // годных холодных к отправке (проходят все гейты)
+      followups_due: followupsDue, // фоллоуапов созрело на отправку
       active_verticals: cfg.EXPERIMENT_VERTICALS ?? [],
       at: new Date().toISOString(),
     });

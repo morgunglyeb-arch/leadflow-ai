@@ -45,7 +45,13 @@ export function topReply(text: string): string {
 
 export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   const s = topReply(snippet).toLowerCase();
-  if (/(out of office|automatic reply|auto-?reply|away from|annual leave|on holiday)/.test(s)) {
+  // Out-of-office / auto-responders: broad net so a holiday auto-reply is NEVER
+  // treated as a human answer (no owner ping, no follow-up decision made off it).
+  if (
+    /(out of (the )?office|automatic reply|auto-?reply|autoreply|away from (my|the)|annual leave|on (annual )?leave\b|on holiday|on vacation|currently (away|out of the office|on leave|on holiday|on annual leave)|away until|out of the office until|be back (on|in)|will be back|returning (on|to the office)|limited access to (my )?e-?mail|will not be (monitored|checking)|unable to (access|respond to) (my )?e-?mails?|office (is )?closed|we are (currently )?closed|maternity leave|paternity leave|public holiday|bank holiday|thank you for your e-?mail\.? i am|в отпуске|автоответ|не в офисе|нахожусь в отпуске)/.test(
+      s,
+    )
+  ) {
     return "auto";
   }
   // Explicit opt-out wins outright (must be honored + suppressed).
