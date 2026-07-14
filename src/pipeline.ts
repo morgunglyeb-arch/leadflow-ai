@@ -74,6 +74,25 @@ export async function processLeads(
           force: opts.force,
         });
 
+        // PECR Ltd-gate FIRST — before the paid email finder, the Reoon verify, and
+        // the LLM. Resolving incorporation is cheap (Companies House register / name
+        // heuristic, cached), so a sole-trader we can't legally cold-email is dropped
+        // here instead of AFTER we've already burned a 500/day Reoon verify credit and
+        // an AI call on it (it used to be checked last). This stretches the paid verify
+        // quota to cover only sendable incorporated leads — ~60% of discovered leads in
+        // the proserv verticals are non-Ltd, so most of that spend was wasted.
+        const isLtd = opts.mock
+          ? isCorporateEntity(lead.company)
+          : await isEmailableEntity(cfg, lead.company);
+        if (cfg.SEND_CORPORATE_ONLY && !isLtd) {
+          done++;
+          console.log(
+            `[${opts.label}] (${done}/${leads.length}) ${lead.company.padEnd(28).slice(0, 28)} ` +
+              `skipped — non-corporate (PECR, pre-verify)`,
+          );
+          return buildSkippedRow(lead, enrichment, "non-corporate");
+        }
+
         let email = lead.email ?? enrichment.emails[0];
 
         // If scraping found no email, ask Hunter.io to find one (large business-
@@ -149,12 +168,8 @@ export async function processLeads(
           provider = r.provider;
         }
 
-        // PECR emailability — resolve once here (Companies House when keyed, else
-        // the name heuristic; cached) so the campaign send gate stays cheap.
-        const isLtd = opts.mock
-          ? isCorporateEntity(lead.company)
-          : await isEmailableEntity(cfg, lead.company);
-
+        // PECR emailability already resolved up-front (see the Ltd-gate above) — reuse
+        // it. Non-corporate leads never reach here when SEND_CORPORATE_ONLY is on.
         const chosenEmail = lead.email ?? enrichment.emails[0];
 
         const row: OutputRow = {
