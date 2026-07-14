@@ -814,10 +814,24 @@ async function pollReplies(
   const isLiveConversation = (l: CampaignLead): boolean =>
     l.status === "replied" &&
     (l.reply?.sentiment === "interested" || l.reply?.sentiment === "objection");
+  // Also re-check leads whose sequence has FINISHED ("done") — a prospect can reply
+  // LATE, after the last follow-up, and we must still catch it (owner: never miss a
+  // reply, even one that lands after we stopped chasing). Bounded to the last 60 days
+  // so we don't re-poll ancient threads forever. Downtime is already covered: this
+  // poll re-reads every open thread each run (every 30 min on the VPS, Mac-independent),
+  // so a reply that arrived while the runner was off is caught on the next pass — and
+  // getThreadReply keys on lastInboundId, so nothing is re-notified twice.
+  const REPOLL_WINDOW_MS = 60 * 86_400_000;
+  const lastActivityMs = (l: CampaignLead): number => {
+    const h = l.history;
+    return h.length ? new Date(h[h.length - 1]!.at).getTime() : 0;
+  };
   const awaiting = Object.values(state.leads).filter(
     (l) =>
       l.threadId &&
-      (["sent", "followup_1", "followup_2"].includes(l.status) || isLiveConversation(l)),
+      Date.now() - lastActivityMs(l) < REPOLL_WINDOW_MS &&
+      (["sent", "followup_1", "followup_2", "done"].includes(l.status) ||
+        isLiveConversation(l)),
   );
   let newBounces = 0; // brain-audit #5: a burst of fresh bounces → emergency-stop cold sends this run
   for (const lead of awaiting) {
