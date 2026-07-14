@@ -101,7 +101,20 @@ export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   // Out-of-office / auto-responders: broad net so a holiday auto-reply is NEVER
   // treated as a human answer (no owner ping, no follow-up decision made off it).
   if (
-    /(out of (the )?office|automatic reply|auto-?reply|autoreply|away from (my|the)|annual leave|on (annual )?leave\b|on holiday|on vacation|currently (away|out of the office|on leave|on holiday|on annual leave)|away until|out of the office until|be back (on|in)|will be back|returning (on|to the office)|limited access to (my )?e-?mail|will not be (monitored|checking)|unable to (access|respond to) (my )?e-?mails?|office (is )?closed|we are (currently )?closed|maternity leave|paternity leave|public holiday|bank holiday|thank you for your e-?mail\.? i am|в отпуске|автоответ|не в офисе|нахожусь в отпуске)/.test(
+    /(out of (the )?office|automatic reply|auto-?reply|autoreply|this is an? (automated|automatic)|do not reply to this|no-?reply|away from (my|the)|annual leave|on (annual )?leave\b|on holiday|on vacation|currently (away|out of the office|on leave|on holiday|on annual leave)|away until|out of the office until|be back (on|in)|will be back|returning (on|to the office)|limited access to (my )?e-?mail|will not be (monitored|checking)|unable to (access|respond to) (my )?e-?mails?|office (is )?closed|we are (currently )?closed|maternity leave|paternity leave|public holiday|bank holiday|thank you for your e-?mail\.? i am|в отпуске|автоответ|не в офисе|нахожусь в отпуске)/.test(
+      s,
+    )
+  ) {
+    return "auto";
+  }
+  // Form-acknowledgement / autoresponder templates: a submission confirmation, a
+  // "we'll be in touch" promise, or an office-hours footer is NEVER a human answer.
+  // These slipped through before — Arkwright's form-ack ("Thank you for submitting
+  // your information … one of our representatives will be in contact") read as
+  // "unclear" AND drafted a reply; Residential Mortgage Hub's office-hours footer
+  // ("Working hours:- Monday to Friday …") read as a soft "no".
+  if (
+    /(thank(s| you)?[^.!]{0,40}for (submitting|contacting|your (enquiry|inquiry|submission|interest|message|request|e-?mail|details|information))|(we have|we've) received your (enquiry|inquiry|message|request|e-?mail|submission|details|information)|your (enquiry|inquiry|message|request|e-?mail|submission) has been received|one of (our|the) (team|representatives|advis[eo]rs|colleagues|agents|staff)[^.!]{0,50}(be in (contact|touch)|contact you|get back to you|reach out)|(will|we'?ll) be in (contact|touch) with you (shortly|soon|as soon as|in due course)|(working|office|opening|business) hours\s*[:\-]|for appointments (please )?use|use the following links?)/.test(
       s,
     )
   ) {

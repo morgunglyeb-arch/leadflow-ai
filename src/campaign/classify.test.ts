@@ -66,6 +66,29 @@ describe("classifyReply — intent priority (F7)", () => {
     expect(isStopReply("auto")).toBe(false);
   });
 
+  it("form-acknowledgement autoresponders are auto, not a human answer", () => {
+    // Arkwright Insurance form-ack — was misread as 'unclear' + drafted a reply
+    expect(
+      classifyReply(
+        "Thankyou for submitting your information ...one of our representatives will be in contact with you shortly.. Our Products : Car | Home | Van | Bike | Business | Fleet | Landlords | Motor Trade Call us",
+      ),
+    ).toBe("auto");
+    // Residential Mortgage Hub office-hours footer — was misread as 'soft_decline'
+    expect(
+      classifyReply(
+        "No Kind regards Working hours:- Monday to Friday 9am to 5pm For appointments use the following links:- Gavin Carley Tom Earl Ross Davis",
+      ),
+    ).toBe("auto");
+    expect(classifyReply("Thank you for contacting us, we have received your enquiry")).toBe("auto");
+    expect(classifyReply("This is an automated response, do not reply to this email")).toBe("auto");
+  });
+
+  it("does NOT over-match a genuine human reply that happens to thank us", () => {
+    // "thanks for the email" alone must not be swallowed as an autoresponder
+    expect(classifyReply("Thanks, yes — tell me more about the pricing")).toBe("interested");
+    expect(classifyReply("Thanks but not interested")).toBe("soft_decline");
+  });
+
   it("every genuine human reply stops the sequence", () => {
     for (const s of ["interested", "soft_decline", "not_interested", "objection", "unclear"] as const) {
       expect(isStopReply(s)).toBe(true);
