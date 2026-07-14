@@ -26,6 +26,8 @@ import {
   gmailInboxes,
   inboxByEmail,
   sweepUnsubscribes,
+  sweepInboundReplies,
+  type InboundMsg,
   markUnsubProcessed,
   type Inbox,
   type UnsubRequest,
@@ -959,7 +961,117 @@ async function pollReplies(
       console.warn(`[campaign] reply check failed for ${lead.domain}: ${(err as Error).message}`);
     }
   }
+
+  // Second pass — catch replies that broke threading (a prospect writes a FRESH email
+  // instead of hitting Reply, or their client strips In-Reply-To). The thread-scoped
+  // loop above never sees those, so a warm lead could answer and the owner never hear.
+  try {
+    await sweepUnthreadedReplies(cfg, state, suppression);
+  } catch (err) {
+    console.warn(`[reply-sweep] pass failed: ${(err as Error).message}`);
+  }
   return newBounces;
+}
+
+/**
+ * Second reply pass — catch replies that broke threading. A prospect sometimes
+ * answers with a FRESH email (or a client strips In-Reply-To/References), so the
+ * message never lands in the tracked thread and the thread-scoped pollReplies misses
+ * it — a warm lead could reply and never reach the owner. This sweeps each inbox for
+ * recent unread inbound, matches the sender to a known lead, and processes+notifies
+ * any NEW message. Keyed on msgId (so a threaded reply pollReplies already handled is
+ * not re-notified) and one message per lead per run. Mirrors sweepUnsubscribeRequests.
+ */
+async function sweepUnthreadedReplies(
+  cfg: AppConfig,
+  state: CampaignState,
+  suppression: Set<string>,
+): Promise<void> {
+  const byEmail = new Map<string, CampaignLead>();
+  for (const l of Object.values(state.leads)) {
+    if (l.email) byEmail.set(l.email.toLowerCase(), l);
+  }
+  const handled = new Set<string>(); // at most one swept message per lead per run
+  for (const inbox of gmailInboxes(cfg)) {
+    let inbound: InboundMsg[] = [];
+    try {
+      inbound = await sweepInboundReplies(cfg, inbox);
+    } catch (err) {
+      console.warn(`[reply-sweep] ${inbox.email} failed: ${(err as Error).message}`);
+      continue;
+    }
+    for (const msg of inbound) {
+      const lead = byEmail.get(msg.email);
+      if (!lead || handled.has(msg.email)) continue;
+      // Terminal-negative leads stay closed; a message pollReplies already handled has
+      // a matching lastInboundId (so we don't double-notify a normal threaded reply).
+      if (lead.status === "opted_out" || lead.status === "bounced") continue;
+      if (msg.msgId === lead.reply?.lastInboundId) continue;
+      handled.add(msg.email);
+
+      const sentiment = classifyReply(msg.snippet);
+      const isNegative =
+        sentiment === "not_interested" ||
+        sentiment === "soft_decline" ||
+        sentiment === "objection" ||
+        sentiment === "unclear";
+      const reason = isNegative ? classifyRejectionReason(msg.snippet) : undefined;
+      lead.reply = {
+        at: new Date().toISOString(),
+        snippet: msg.snippet,
+        sentiment,
+        ...(reason ? { reason } : {}),
+        lastInboundId: msg.msgId,
+      };
+      if (!isStopReply(sentiment)) continue; // auto-reply: record, keep the sequence
+
+      if (sentiment === "not_interested") {
+        lead.status = "opted_out";
+        await addToSuppression(cfg.SUPPRESSION_PATH, lead.email, "opt-out");
+        suppression.add(lead.email.toLowerCase());
+        await emitSuppress(lead.email, "opt-out");
+      } else if (sentiment === "soft_decline") {
+        lead.status = "soft_decline";
+      } else {
+        lead.status = "replied";
+      }
+      logEvent(lead, "reply", sentiment);
+
+      const shouldDraft =
+        cfg.REPLY_ASSIST && sentiment !== "not_interested" && sentiment !== "soft_decline";
+      if (shouldDraft) {
+        try {
+          lead.reply.suggested = await suggestReply(cfg, {
+            company: lead.company,
+            ourOffer: cfg.OUR_OFFER,
+            ...(lead.snapshot.process ? { pitchedProcess: lead.snapshot.process } : {}),
+            ...(lead.snapshot.automation ? { pitchedAutomation: lead.snapshot.automation } : {}),
+            theirReply: msg.snippet,
+          });
+        } catch (err) {
+          console.warn(`[reply-sweep] draft failed for ${lead.domain}: ${(err as Error).message}`);
+        }
+      }
+      console.log(
+        `[reply-sweep] OUT-OF-THREAD reply from ${lead.company} (${sentiment}) — caught + notified`,
+      );
+      await emitReply({
+        company: lead.company,
+        sentiment: sentiment ?? "unclear",
+        email: lead.email,
+        replyId: msg.msgId,
+        ...(msg.snippet ? { snippet: msg.snippet } : {}),
+        ...(lead.reply.suggested ? { suggested: lead.reply.suggested } : {}),
+        ...(verticalFromQuery(lead.snapshot.discovery_query)
+          ? { vertical: verticalFromQuery(lead.snapshot.discovery_query) }
+          : {}),
+        ...(lead.variant ? { variant: lead.variant } : {}),
+        ...(lead.snapshot.opener ? { opener: lead.snapshot.opener } : {}),
+        ...(lead.subject ? { subject: lead.subject } : {}),
+        ...(reason ? { reason } : {}),
+      });
+    }
+  }
 }
 
 /**

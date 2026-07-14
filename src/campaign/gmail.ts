@@ -335,6 +335,57 @@ export async function markUnsubProcessed(cfg: AppConfig, inbox: Inbox, msgId: st
   });
 }
 
+/** One inbound message found by the reply sweep. */
+export interface InboundMsg {
+  from: string; // raw From header
+  email: string; // lowercased sender address
+  msgId: string;
+  threadId: string;
+  snippet: string;
+}
+
+/**
+ * Sweep an inbox for RECENT unread inbound (last 7d, not from us). pollReplies is
+ * thread-scoped, so a prospect reply that broke threading — a fresh email instead of
+ * a Reply, or a client that strips In-Reply-To/References — never reaches it and a
+ * warm lead could answer without the owner ever hearing. The caller matches each
+ * sender against known leads and processes new ones (keyed on msgId, so a threaded
+ * reply pollReplies already handled is not re-notified). Cheap: unread-only, bounded.
+ */
+export async function sweepInboundReplies(cfg: AppConfig, inbox: Inbox): Promise<InboundMsg[]> {
+  const auth = await getGmailClient(cfg, inbox);
+  const gmail = google.gmail({ version: "v1", auth });
+  const q = `in:inbox is:unread newer_than:7d -from:${inbox.email}`;
+  const list = await gmail.users.messages.list({ userId: "me", q, maxResults: 50 });
+  const messages = list.data.messages ?? [];
+  const out: InboundMsg[] = [];
+  for (const m of messages) {
+    if (!m.id) continue;
+    try {
+      const meta = await gmail.users.messages.get({
+        userId: "me",
+        id: m.id,
+        format: "metadata",
+        metadataHeaders: ["From"],
+      });
+      const fromHeader =
+        meta.data.payload?.headers?.find((h) => /^from$/i.test(h.name ?? ""))?.value ?? "";
+      const addr = addressFromHeader(fromHeader);
+      if (!addr || addr.toLowerCase() === inbox.email.toLowerCase()) continue;
+      out.push({
+        from: fromHeader,
+        email: addr.toLowerCase(),
+        msgId: m.id,
+        threadId: meta.data.threadId ?? "",
+        snippet: (meta.data.snippet ?? "").slice(0, 400),
+      });
+    } catch (err) {
+      console.warn(`[reply-sweep] ${inbox.email} msg ${m.id} failed: ${(err as Error).message}`);
+    }
+  }
+  return out;
+}
+
 export async function getThreadReply(
   cfg: AppConfig,
   threadId: string,
