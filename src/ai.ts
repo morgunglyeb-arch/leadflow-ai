@@ -699,9 +699,12 @@ async function callOpenAIRaw(
         response_format: { type: "json_object" as const },
         messages,
       };
-      // reasoning_effort isn't in the SDK's typed params (Gemini extension); attach it
-      // at runtime so the create() overload still resolves to the non-streaming return.
-      (req as Record<string, unknown>).reasoning_effort = "none";
+      // reasoning_effort is a GEMINI-ONLY extension (disables 2.5/3.x "thinking" that
+      // eats the output budget). OpenAI/Groq/OpenRouter reject it with a 400
+      // "Unrecognized request argument" — which the chain misreads as a key error and
+      // skips the (working) provider, dropping to the fallback stub. Attach it ONLY for
+      // Gemini models. (It isn't in the SDK's typed params, so set it at runtime.)
+      if (/gemini/i.test(opts.model)) (req as Record<string, unknown>).reasoning_effort = "none";
       const res = await client.chat.completions.create(req);
       tokensThisRun += res.usage?.total_tokens ?? 0;
       const text = res.choices[0]?.message?.content ?? "";
@@ -1047,7 +1050,8 @@ async function generateText(cfg: AppConfig, system: string, user: string): Promi
         // reasoning_effort:"none" — see run(): stop Gemini 2.5/3.x thinking from
         // eating the token budget and truncating the reply.
         const req = { model: p.model, messages };
-        (req as Record<string, unknown>).reasoning_effort = "none";
+        // Gemini-only extension — see the structured path. Other providers 400 on it.
+        if (/gemini/i.test(p.model)) (req as Record<string, unknown>).reasoning_effort = "none";
         const res = await client.chat.completions.create(req);
         tokensThisRun += res.usage?.total_tokens ?? 0;
         return (res.choices[0]?.message?.content ?? "").trim();
