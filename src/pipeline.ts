@@ -170,7 +170,11 @@ export async function processLeads(
 
         // PECR emailability already resolved up-front (see the Ltd-gate above) — reuse
         // it. Non-corporate leads never reach here when SEND_CORPORATE_ONLY is on.
-        const chosenEmail = lead.email ?? enrichment.emails[0];
+        // Prefer the address the verify loop actually CONFIRMED + normalised (`email`)
+        // over the raw first site address: banking enrichment.emails[0] blind threw
+        // away the verified/cleaned form, so a good lead got re-verified on send (extra
+        // Reoon credit) or bounced with "Invalid To header" on a mangled raw address.
+        const chosenEmail = lead.email ?? email ?? enrichment.emails[0];
 
         const row: OutputRow = {
           company: lead.company,

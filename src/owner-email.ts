@@ -16,6 +16,11 @@ import { verifyEmail } from "./verify-email.js";
  * (an MX-record hit is NOT enough — that just means the domain accepts mail). */
 function isStrongDeliverable(reason: string): boolean {
   return (
+    reason.startsWith("reoon:safe") || // Reoon is the FIRST verifier in the chain and
+    // the most accurate (~99%); omitting it meant a guessed director address was
+    // verified `reoon:safe` then REJECTED (verdict not whitelisted) — so derive never
+    // blessed anyone while still spending Reoon credits. `safe` only: `catch_all` is
+    // guaranteed junk for a GUESSED localpart and must NOT bless it.
     reason.startsWith("hunter:deliverable") ||
     reason.startsWith("zerobounce:valid") ||
     reason === "myemailverifier:valid"

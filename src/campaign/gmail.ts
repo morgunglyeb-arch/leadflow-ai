@@ -335,6 +335,19 @@ export async function markUnsubProcessed(cfg: AppConfig, inbox: Inbox, msgId: st
   });
 }
 
+/** Mark a swept inbound reply read — call after it's recorded/notified, so the next
+ * `is:unread` sweep never re-catches it. Without this, two unread messages from one
+ * sender flip the single stored lastInboundId A↔B and re-notify on every poll. */
+export async function markInboundProcessed(cfg: AppConfig, inbox: Inbox, msgId: string): Promise<void> {
+  const auth = await getGmailClient(cfg, inbox);
+  const gmail = google.gmail({ version: "v1", auth });
+  await gmail.users.messages.modify({
+    userId: "me",
+    id: msgId,
+    requestBody: { removeLabelIds: ["UNREAD"] },
+  });
+}
+
 /** One inbound message found by the reply sweep. */
 export interface InboundMsg {
   from: string; // raw From header

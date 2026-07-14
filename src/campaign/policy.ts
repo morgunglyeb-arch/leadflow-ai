@@ -73,6 +73,10 @@ export function selectDueFollowups(state: CampaignState, cfg: AppConfig): Campai
       l.status === "bounced"
     )
       continue; // any terminal/replied state → no more follow-ups
+    // A flagged lead (held for manual review, e.g. spam-lint) must NOT be reselected
+    // every run — it re-emits spam_flag each time and the flag counter creeps up
+    // forever. Hold it out until the operator clears the flag.
+    if (l.flagged) continue;
     // Auto-reply (on holiday / OOO) paused follow-ups until they're likely back.
     if (l.followup_snooze_until && new Date(l.followup_snooze_until).getTime() > Date.now())
       continue;

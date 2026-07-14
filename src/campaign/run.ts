@@ -27,6 +27,7 @@ import {
   inboxByEmail,
   sweepUnsubscribes,
   sweepInboundReplies,
+  markInboundProcessed,
   type InboundMsg,
   markUnsubProcessed,
   type Inbox,
@@ -1039,6 +1040,12 @@ async function sweepUnthreadedReplies(
       if (lead.status === "opted_out" || lead.status === "bounced") continue;
       if (msg.msgId === lead.reply?.lastInboundId) continue;
       handled.add(msg.email);
+      // Mark this swept message read so the next `is:unread` sweep can't re-catch it.
+      // Two unread messages from one sender otherwise flip the single lastInboundId
+      // A↔B and re-notify forever (observed: Arkwright ~15× in a day). Best-effort.
+      await markInboundProcessed(cfg, inbox, msg.msgId).catch((e) =>
+        console.warn(`[reply-sweep] mark-read ${msg.msgId} failed: ${(e as Error).message}`),
+      );
 
       const sentiment = classifyReply(msg.snippet);
       const isNegative =
