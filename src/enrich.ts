@@ -302,6 +302,17 @@ export function extractEmails(html: string, siteDomain: string): string[] {
   }
   for (const m of html.matchAll(EMAIL_RE)) found.add(m[0].toLowerCase());
 
+  // Deobfuscate common anti-scrape tricks so we recover on-site addresses the plain
+  // regex misses (SMBs hide the email as "info [at] firm [dot] co [dot] uk" or with
+  // HTML entities). Conservative: only bracketed/entity forms — the bare words
+  // " at " / " dot " are left alone (too many false positives in ordinary prose).
+  const deob = html
+    .replace(/&#0*64;|&commat;/gi, "@")
+    .replace(/&#0*46;|&period;|&dot;/gi, ".")
+    .replace(/\s*[[({]\s*at\s*[\])}]\s*/gi, "@")
+    .replace(/\s*[[({]\s*dot\s*[\])}]\s*/gi, ".");
+  if (deob !== html) for (const m of deob.matchAll(EMAIL_RE)) found.add(m[0].toLowerCase());
+
   const root = siteDomain.replace(/^www\./, "");
   const scored: Array<{ email: string; score: number }> = [];
   for (const email of found) {
