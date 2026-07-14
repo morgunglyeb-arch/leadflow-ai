@@ -42,6 +42,7 @@ export interface CampaignLead {
   flagged?: boolean; // spam-risk → held back from auto-send for manual review
   is_ltd?: boolean; // PECR: clearly-incorporated entity (heuristic / Companies House)
   working_days?: string; // weekday nums (0=Sun..6=Sat) the business is open, from its site
+  followup_snooze_until?: string; // ISO — an auto-reply (holiday/OOO) pauses follow-ups until this
   history: Array<{ at: string; event: string; detail?: string }>;
   reply?: ReplyRecord;
   // the generated copy, frozen at enqueue so sending is deterministic

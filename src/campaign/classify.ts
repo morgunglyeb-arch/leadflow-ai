@@ -43,6 +43,59 @@ export function topReply(text: string): string {
   return top || text.trim(); // never return empty
 }
 
+const MONTHS: Record<string, number> = {
+  jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3,
+  may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7,
+  sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11,
+};
+
+/**
+ * From a holiday / out-of-office auto-reply, extract the date they say they'll be
+ * BACK — so follow-ups pause only until then, not a blind 2 weeks. Requires a
+ * return cue ("back / until / returning …"): a standing auto-responder with NO
+ * return date returns null, so those keep their normal follow-up (owner's rule:
+ * many auto-replies are permanent, not holidays). Returns the day AFTER the stated
+ * return, or null if nothing parseable / not within a sane future window.
+ */
+export function parseReturnDate(snippet: string, now: Date = new Date()): Date | null {
+  const s = topReply(snippet);
+  if (!/\b(back|return(ing)?|until|till|reachable again|in the office)\b/i.test(s)) return null;
+
+  const build = (day: number, mon: number, year?: number): Date | null => {
+    if (!(day >= 1 && day <= 31) || !(mon >= 0 && mon <= 11)) return null;
+    const y = year ?? now.getUTCFullYear();
+    let d = new Date(Date.UTC(y, mon, day));
+    if (year === undefined && d.getTime() < now.getTime() - 86_400_000) {
+      d = new Date(Date.UTC(y + 1, mon, day)); // no year given + already passed → next year
+    }
+    return d;
+  };
+
+  let d: Date | null = null;
+  let m = s.match(
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?(?:,?\s+(\d{4}))?/i,
+  );
+  if (m) d = build(Number(m[1]), MONTHS[(m[2] ?? "").toLowerCase()] ?? -1, m[3] ? Number(m[3]) : undefined);
+  if (!d) {
+    m = s.match(
+      /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/i,
+    );
+    if (m) d = build(Number(m[2]), MONTHS[(m[1] ?? "").toLowerCase()] ?? -1, m[3] ? Number(m[3]) : undefined);
+  }
+  if (!d) {
+    m = s.match(/\b(\d{1,2})[./](\d{1,2})(?:[./](\d{2,4}))?\b/); // UK day-first DD/MM[/YY]
+    if (m) {
+      let y = m[3] ? Number(m[3]) : undefined;
+      if (y !== undefined && y < 100) y += 2000;
+      d = build(Number(m[1]), Number(m[2]) - 1, y);
+    }
+  }
+  if (!d) return null;
+  const ms = d.getTime() - now.getTime();
+  if (ms <= 0 || ms > 180 * 86_400_000) return null; // must be future + within ~6 months
+  return new Date(d.getTime() + 86_400_000); // resume the day AFTER they're back
+}
+
 export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
   const s = topReply(snippet).toLowerCase();
   // Out-of-office / auto-responders: broad net so a holiday auto-reply is NEVER

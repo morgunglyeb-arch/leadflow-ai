@@ -73,6 +73,9 @@ export function selectDueFollowups(state: CampaignState, cfg: AppConfig): Campai
       l.status === "bounced"
     )
       continue; // any terminal/replied state → no more follow-ups
+    // Auto-reply (on holiday / OOO) paused follow-ups until they're likely back.
+    if (l.followup_snooze_until && new Date(l.followup_snooze_until).getTime() > Date.now())
+      continue;
     const initialAt = initialAtOf(l);
     if (initialAt === undefined) continue; // not sent yet
     const elapsed = daysSince(initialAt);

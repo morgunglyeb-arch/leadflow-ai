@@ -32,7 +32,13 @@ import {
   type Inbox,
   type UnsubRequest,
 } from "./gmail.js";
-import { classifyReply, classifyRejectionReason, isStopReply, isBounce } from "./classify.js";
+import {
+  classifyReply,
+  classifyRejectionReason,
+  isStopReply,
+  isBounce,
+  parseReturnDate,
+} from "./classify.js";
 import { summarizeAndLearn } from "./learn.js";
 import { addToSuppression, isSuppressed, loadSuppression } from "./suppression.js";
 import { passingSendingDomains, domainOf } from "./deliverability.js";
@@ -901,7 +907,15 @@ async function pollReplies(
         ...(reason ? { reason } : {}),
         ...(reply.id ? { lastInboundId: reply.id } : {}),
       };
-      if (!isStopReply(sentiment)) continue; // auto-replies: ignore, keep sequence
+      if (!isStopReply(sentiment)) {
+        // Auto-reply: if it names a return date (a real holiday), pause follow-ups
+        // until then; a standing auto-responder (no date) keeps its normal schedule.
+        if (sentiment === "auto") {
+          const back = parseReturnDate(reply.snippet);
+          if (back) lead.followup_snooze_until = back.toISOString();
+        }
+        continue; // not a human answer — keep the sequence
+      }
 
       // F7: only an EXPLICIT opt-out earns the permanent, irreversible suppress.
       // A soft "no thanks" stops the sequence but routes to the soft bucket —
@@ -1036,7 +1050,13 @@ async function sweepUnthreadedReplies(
         ...(reason ? { reason } : {}),
         lastInboundId: msg.msgId,
       };
-      if (!isStopReply(sentiment)) continue; // auto-reply: record, keep the sequence
+      if (!isStopReply(sentiment)) {
+        if (sentiment === "auto") {
+          const back = parseReturnDate(msg.snippet);
+          if (back) lead.followup_snooze_until = back.toISOString();
+        }
+        continue; // auto-reply: record, keep the sequence
+      }
 
       if (sentiment === "not_interested") {
         lead.status = "opted_out";
