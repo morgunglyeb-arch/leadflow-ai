@@ -850,12 +850,14 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
     baseURL: "https://openrouter.ai/api/v1",
     model: cfg.OPENROUTER_MODEL,
   };
-  // Primary two ordered by LLM_PROVIDER; OpenRouter is the final free fallback
-  // (kicks in when Gemini is at its daily quota and Groq is down/banned).
+  // Order so the PAID key is a genuine LAST-RESORT overflow: spend BOTH free
+  // providers (free Gemini + free Groq) before ever touching the paid Gemini key
+  // (owner cost policy 2026-07-14 — previously paid sat before free Groq and burned
+  // money while a free provider idled). OpenRouter is the final free fallback.
   const ordered =
     cfg.LLM_PROVIDER === "groq"
       ? [groq, gemini, geminiPaid, openrouter]
-      : [gemini, geminiPaid, groq, openrouter];
+      : [gemini, groq, geminiPaid, openrouter];
   return ordered.filter((p) => p.apiKeys.some(Boolean) && !deadProviders.has(p.name));
 }
 
