@@ -40,6 +40,66 @@ function norm(s: string): string {
     .trim();
 }
 
+// Sector / descriptor boilerplate that clutters a trading name but isn't part of
+// the registered company name ("Cartwright & Co Ltd — Accountants & Tax Advisers").
+// Stripped only to build a cleaner CH *query*; never used to decide emailability.
+const SECTOR_RE =
+  /\b(estate|letting|lettings|sales|mortgage|mortgages|insurance|accountanc[y]?|accountants?|bookkeep(?:ing|er)?|tax|advis[eo]rs?|consultants?|services?|solutions?|specialists?|agents?|agency|brokers?|broking|financial|properties|property|of|in|at|for)\b/gi;
+
+/**
+ * Build progressively-cleaner CH search queries from a noisy trading name. CH's
+ * relevance search misses when the query carries a descriptive tail or location
+ * ("Collinson Hall - Estate Agents & Letting Agents in St Albans" → no hit), so we
+ * try the raw name first, then the parenthetical (real Ltd often hides there:
+ * "Royton Insurance (RIS Group LTD)"), then the name minus its dash-tail, then that
+ * minus sector boilerplate. Order matters: earliest = most specific.
+ */
+export function chQueryVariants(raw: string): string[] {
+  const out: string[] = [];
+  const push = (s: string | undefined) => {
+    const v = (s ?? "").trim();
+    if (v && norm(v).length >= 3 && !out.includes(v)) out.push(v);
+  };
+  push(raw);
+  const paren = raw.match(/\(([^)]+)\)/);
+  if (paren) push(paren[1]);
+  const base = raw.replace(/\([^)]*\)/g, " ").split(/\s[-–—]\s/)[0] ?? "";
+  push(base);
+  push(base.replace(SECTOR_RE, " ").replace(/\s+/g, " ").trim());
+  return out;
+}
+
+/**
+ * Precision-first match: EVERY (normalised, whole-word) token of our query name
+ * must appear in a single active register title. This is deliberately stricter than
+ * loose containment — a bare generic token ("Wakefield") must NOT confirm an
+ * unrelated "Wakefield … Ltd", because a false positive here means cold-emailing a
+ * sole trader (a PECR breach). Single-token queries are rejected outright.
+ */
+function titleMatches(queryNorm: string, titleNorm: string): boolean {
+  const qt = queryNorm.split(" ").filter(Boolean);
+  if (qt.length < 2) return false; // too generic to confirm safely
+  const tt = new Set(titleNorm.split(" ").filter(Boolean));
+  return qt.every((tok) => tt.has(tok));
+}
+
+/** One CH search → normalised titles of ACTIVE companies. null = transient/HTTP fail. */
+async function searchActiveTitles(cfg: AppConfig, q: string): Promise<string[] | null> {
+  const url = `${CH_SEARCH_URL}?q=${encodeURIComponent(q)}&items_per_page=20`;
+  const auth = Buffer.from(`${cfg.COMPANIES_HOUSE_API_KEY}:`).toString("base64");
+  const res = await fetch(url, {
+    headers: { authorization: `Basic ${auth}`, accept: "application/json" },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (res.status === 429 || res.status >= 500) return null; // transient — let a later run retry
+  if (!res.ok) return []; // definitive "no result" (e.g. 404/400)
+  const json = (await res.json()) as { items?: CompanySearchItem[] };
+  return (json.items ?? [])
+    .filter((it) => it.company_status === "active")
+    .map((it) => norm(it.title ?? ""))
+    .filter(Boolean);
+}
+
 /**
  * Is there an ACTIVE incorporated company on the UK register matching this name?
  * Returns true (found active match), false (searched, no active match), or null
@@ -50,34 +110,29 @@ export async function isRegisteredCompany(
   company: string | undefined | null,
 ): Promise<boolean | null> {
   if (!cfg.COMPANIES_HOUSE_API_KEY) return null;
-  const target = norm(company ?? "");
+  const raw = company ?? "";
+  const target = norm(raw);
   if (target.length < 3) return null; // too vague to match safely
   if (cache.has(target)) return cache.get(target) ?? null;
 
-  let result: boolean | null = null;
+  // Try progressively-cleaner queries (raw → parenthetical → dash-trimmed → sector-
+  // stripped). A noisy trading name makes CH's search miss the real company, so a
+  // single raw query wrongly reads as "not registered" and HOLDS a live Ltd.
+  let result: boolean | null = false; // "searched, no confident match" until a variant hits
   try {
-    const url = `${CH_SEARCH_URL}?q=${encodeURIComponent(company ?? "")}&items_per_page=20`;
-    const auth = Buffer.from(`${cfg.COMPANIES_HOUSE_API_KEY}:`).toString("base64");
-    const res = await fetch(url, {
-      headers: { authorization: `Basic ${auth}`, accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
-    });
-    // Don't poison the cache on transient failures — let a later run retry.
-    if (res.status === 429 || res.status >= 500) return null;
-    if (!res.ok) {
-      cache.set(target, null);
-      return null;
+    let searchedAny = false;
+    for (const q of chQueryVariants(raw)) {
+      const tq = norm(q);
+      if (tq.split(" ").filter(Boolean).length < 2) continue; // skip too-generic variants
+      const titles = await searchActiveTitles(cfg, q);
+      if (titles === null) return null; // transient (429/5xx) — don't poison the cache
+      searchedAny = true;
+      if (titles.some((t) => titleMatches(tq, t))) {
+        result = true;
+        break;
+      }
     }
-    const json = (await res.json()) as { items?: CompanySearchItem[] };
-    const items = json.items ?? [];
-    result = items.some((it) => {
-      if (it.company_status !== "active") return false;
-      const t = norm(it.title ?? "");
-      if (!t) return false;
-      // Conservative two-way containment so "Bright Smile" matches
-      // "BRIGHT SMILE DENTAL CARE LTD" without matching unrelated firms.
-      return t.includes(target) || target.includes(t);
-    });
+    if (!searchedAny) result = null; // every variant too generic → can't tell (fall back to heuristic)
   } catch {
     result = null;
   }

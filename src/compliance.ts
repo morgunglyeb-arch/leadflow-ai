@@ -50,8 +50,17 @@ export async function isEmailableEntity(
         "will be wrongly HELD, and the gate can't spot dissolved companies. Set the key to harden it.",
     );
   }
+  // A name that literally carries an incorporation suffix ("… Ltd", "… Limited",
+  // "… LLP") IS a corporate subscriber — trust it outright, BEFORE the register
+  // lookup. A noisy trading name can make the CH search miss ("Cartwright & Co Ltd
+  // - Accountants & Tax Advisers" returned no register hit), and we must not let
+  // that miss override the explicit legal-form marker sitting in the name. Zero
+  // false-positive risk: only fires on an unambiguous suffix.
+  if (isCorporateEntity(company)) return true;
   const ch = await isRegisteredCompany(cfg, company);
   if (ch === true) return true;
   if (ch === false && cfg.REQUIRE_LTD) return false;
-  return isCorporateEntity(company);
+  // No suffix in the name and CH couldn't confirm (no key / error / too generic) →
+  // hold as a likely sole trader. Conservative: unknown never auto-sends.
+  return false;
 }

@@ -41,3 +41,19 @@ describe("isEmailableEntity без Companies House ключа → эвристи
     expect(await isEmailableEntity(cfg, "")).toBe(false);
   });
 });
+
+describe("isEmailableEntity — literal Ltd suffix is trusted BEFORE the register", () => {
+  // Regression: a noisy trading name made the CH search miss and wrongly HOLD an
+  // obvious Ltd ("Cartwright & Co Ltd - Accountants & Tax Advisers"). The literal
+  // suffix must short-circuit to emailable=true without even calling the register,
+  // so a CH miss can never override it. Key is SET here — proving no network is hit.
+  const cfg = { COMPANIES_HOUSE_API_KEY: "test-key", REQUIRE_LTD: true } as unknown as AppConfig;
+
+  it("'… Ltd' with a descriptive tail → emailable, no register call needed", async () => {
+    expect(await isEmailableEntity(cfg, "Cartwright & Co Ltd - Accountants & Tax Advisers")).toBe(
+      true,
+    );
+    expect(await isEmailableEntity(cfg, "Parker Stag Ltd - Estate and Letting Agents")).toBe(true);
+    expect(await isEmailableEntity(cfg, "Royton Insurance (RIS Group LTD)")).toBe(true);
+  });
+});
