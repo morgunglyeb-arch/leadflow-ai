@@ -341,6 +341,7 @@ async function runCampaignBody(
   // reply/bounce statuses, then return WITHOUT sending or generating.
   if (flags.pollOnly) {
     await saveState(cfg.CAMPAIGN_STATE_PATH, state);
+    await emitBankDepth(cfg, state); // refresh «Годных к отправке» every poll (~30 min)
     console.log("[campaign] poll-only: replies checked + opt-outs swept + state saved (no send)");
     return { sent: 0, refill: async () => {} };
   }
@@ -710,48 +711,7 @@ async function runCampaignBody(
   // active_ready = of that stock, how many match the active experiment wave (i.e. what
   // can actually send under the current EXPERIMENT_VERTICALS). No dedup_key → each run
   // appends a fresh row and the read side takes the newest. Best-effort; never blocks.
-  try {
-    const bankStock = loadBankLeads();
-    const inPipeline = new Set(
-      all.map((l) => (l.email ?? "").toLowerCase()).filter(Boolean),
-    );
-    const ready = bankStock.filter((r) => !inPipeline.has((r.email ?? "").toLowerCase()));
-    const exp = (cfg.EXPERIMENT_VERTICALS ?? []).map((v) => v.toLowerCase());
-    const matchesActive = (q?: string): boolean => {
-      if (!exp.length) return true;
-      const s = (q ?? "").toLowerCase();
-      return exp.some((v) => s.includes(v));
-    };
-    const queuedLeads = all.filter((l) => l.status === "queued");
-    // active-wave supply spans BOTH the queued buffer and the deeper stock — a
-    // wave-matching lead can send whether it's already queued or still in the CSV.
-    const activeSupply =
-      queuedLeads.filter((l) => matchesActive(l.snapshot?.discovery_query)).length +
-      ready.filter((r) => matchesActive(r.discovery_query)).length;
-    // The TRUE "ready to send today" number the owner actually cares about: queued
-    // leads that pass EVERY send gate (not flagged, above the score bar, PECR-eligible,
-    // matching the active wave) — NOT the raw bank total. Plus follow-ups due now.
-    const sendableCold = queuedLeads.filter(
-      (l) =>
-        !l.flagged &&
-        l.score >= cfg.SEND_MIN_SCORE &&
-        l.is_ltd !== false &&
-        matchesActive(l.snapshot?.discovery_query),
-    ).length;
-    const followupsDue = selectDueFollowups(state, cfg).length;
-    await emitEvent("bank_depth", {
-      queued: queuedLeads.length,
-      ready: ready.length,
-      total: queuedLeads.length + ready.length,
-      active_ready: activeSupply,
-      sendable_cold: sendableCold, // годных холодных к отправке (проходят все гейты)
-      followups_due: followupsDue, // фоллоуапов созрело на отправку
-      active_verticals: cfg.EXPERIMENT_VERTICALS ?? [],
-      at: new Date().toISOString(),
-    });
-  } catch {
-    /* bank-depth telemetry is best-effort — never break the run */
-  }
+  await emitBankDepth(cfg, state);
 
   // 6) REFILL THE BANK — returned as a DEFERRED thunk, not run here. The caller
   //    (runCampaign) records the run via emitRunEnd(sent) FIRST, then awaits this.
@@ -821,6 +781,50 @@ async function writeRepliesToAction(cfg: AppConfig, state: CampaignState): Promi
     `# Replies needing your action\n\nUpdated ${new Date().toISOString()}\n\n${blocks.join("\n\n---\n\n")}\n`,
     "utf8",
   );
+}
+
+/** Emit the «Полка» bank-depth snapshot (incl. the TRUE sendable count) for the Mini
+ * App. Runs at the end of every send AND poll pass, so «Годных к отправке» refreshes
+ * ~every 30 min, not only on the 4 daily sends. Best-effort — never breaks the run. */
+async function emitBankDepth(cfg: AppConfig, state: CampaignState): Promise<void> {
+  try {
+    const all = Object.values(state.leads);
+    const bankStock = loadBankLeads();
+    const inPipeline = new Set(all.map((l) => (l.email ?? "").toLowerCase()).filter(Boolean));
+    const ready = bankStock.filter((r) => !inPipeline.has((r.email ?? "").toLowerCase()));
+    const exp = (cfg.EXPERIMENT_VERTICALS ?? []).map((v) => v.toLowerCase());
+    const matchesActive = (q?: string): boolean => {
+      if (!exp.length) return true;
+      const s = (q ?? "").toLowerCase();
+      return exp.some((v) => s.includes(v));
+    };
+    const queuedLeads = all.filter((l) => l.status === "queued");
+    const activeSupply =
+      queuedLeads.filter((l) => matchesActive(l.snapshot?.discovery_query)).length +
+      ready.filter((r) => matchesActive(r.discovery_query)).length;
+    // The TRUE "ready to send" number the owner cares about: queued leads passing EVERY
+    // send gate (not flagged, above the score bar, PECR-eligible, matching the wave).
+    const sendableCold = queuedLeads.filter(
+      (l) =>
+        !l.flagged &&
+        l.score >= cfg.SEND_MIN_SCORE &&
+        l.is_ltd !== false &&
+        matchesActive(l.snapshot?.discovery_query),
+    ).length;
+    const followupsDue = selectDueFollowups(state, cfg).length;
+    await emitEvent("bank_depth", {
+      queued: queuedLeads.length,
+      ready: ready.length,
+      total: queuedLeads.length + ready.length,
+      active_ready: activeSupply,
+      sendable_cold: sendableCold,
+      followups_due: followupsDue,
+      active_verticals: cfg.EXPERIMENT_VERTICALS ?? [],
+      at: new Date().toISOString(),
+    });
+  } catch {
+    /* bank-depth telemetry is best-effort — never break the run */
+  }
 }
 
 async function pollReplies(
