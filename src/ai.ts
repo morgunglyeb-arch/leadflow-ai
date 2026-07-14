@@ -754,6 +754,13 @@ function openaiPaidKeys(cfg: AppConfig): (string | undefined)[] {
   return found ? [...new Set(found)] : [];
 }
 
+/** Real OpenAI keys (gpt-4o-mini): `sk-…` / `sk-proj-…`, but NOT `sk-or-v1-…`
+ * (that prefix is OpenRouter). The PRIMARY paid LLM after the Gemini ban. */
+function openaiRealKeys(cfg: AppConfig): (string | undefined)[] {
+  const found = (cfg.OPENAI_LLM_API_KEY ?? "").match(/sk-(?!or-v1-)[A-Za-z0-9_-]+/g);
+  return found ? [...new Set(found)] : [];
+}
+
 function openaiKeys(cfg: AppConfig): (string | undefined)[] {
   // Gemini keys look like `AQ.Ab8…` (one dot after AQ, then alnum/_/-). Extract
   // every token so any separator the owner pastes by hand works — commas,
@@ -792,7 +799,7 @@ function openrouterKeys(cfg: AppConfig): (string | undefined)[] {
 }
 
 interface OAProvider {
-  name: "groq" | "openai" | "openai-paid" | "openrouter";
+  name: "groq" | "openai" | "openai-gpt" | "openai-paid" | "openrouter";
   apiKeys: (string | undefined)[];
   baseURL: string;
   model: string;
@@ -823,6 +830,16 @@ const deadProviders = new Set<string>();
 let keyCursor = 0;
 
 function freeProviderChain(cfg: AppConfig): OAProvider[] {
+  // Real OpenAI gpt-4o-mini — PRIMARY paid provider (owner 2026-07-14). Cheap,
+  // reliable, high-quality copy; not Gemini (whose project Google banned). Sits
+  // FIRST so generation is dependable; the free pool below remains as fallback if
+  // the OpenAI key ever errors, so a single outage never drops us to fit=3 stubs.
+  const openai: OAProvider = {
+    name: "openai-gpt",
+    apiKeys: openaiRealKeys(cfg),
+    baseURL: cfg.OPENAI_LLM_BASE_URL,
+    model: cfg.OPENAI_LLM_MODEL,
+  };
   const gemini: OAProvider = {
     name: "openai",
     apiKeys: openaiKeys(cfg),
@@ -856,8 +873,8 @@ function freeProviderChain(cfg: AppConfig): OAProvider[] {
   // money while a free provider idled). OpenRouter is the final free fallback.
   const ordered =
     cfg.LLM_PROVIDER === "groq"
-      ? [groq, gemini, geminiPaid, openrouter]
-      : [gemini, groq, geminiPaid, openrouter];
+      ? [groq, openai, gemini, geminiPaid, openrouter]
+      : [openai, groq, gemini, geminiPaid, openrouter];
   return ordered.filter((p) => p.apiKeys.some(Boolean) && !deadProviders.has(p.name));
 }
 
@@ -953,8 +970,8 @@ export async function personalize(
             baseURL: p.baseURL,
             model: p.model,
           });
-          // label the paid-overflow provider as plain "openai" for telemetry types
-          provider = p.name === "openai-paid" ? "openai" : p.name;
+          // collapse the OpenAI-compat variants to plain "openai" for telemetry types
+          provider = p.name === "openai-paid" || p.name === "openai-gpt" ? "openai" : p.name;
           break;
         } catch (err) {
           lastErr = err;

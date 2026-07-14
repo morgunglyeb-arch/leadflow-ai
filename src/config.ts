@@ -35,6 +35,15 @@ const schema = z.object({
     .default("https://generativelanguage.googleapis.com/v1beta/openai/"),
   OPENAI_MODEL: z.string().default("gemini-2.0-flash"),
 
+  // Real OpenAI (gpt-4o-mini) — the PRIMARY paid LLM (owner 2026-07-14, replacing
+  // Gemini after Google banned the project for cold-email generation). Cheap +
+  // high quality + reliable, and OpenAI permits this use. Key is `sk-…`/`sk-proj-…`
+  // (NOT `sk-or-v1-`, that's OpenRouter). Unset → provider is skipped, chain
+  // falls back to the free pool as before.
+  OPENAI_LLM_API_KEY: z.string().optional(),
+  OPENAI_LLM_MODEL: z.string().default("gpt-4o-mini"),
+  OPENAI_LLM_BASE_URL: z.string().default("https://api.openai.com/v1"),
+
   // OpenRouter — a 3rd free fallback in the chain (one key → many free models).
   // Used automatically when Gemini hits its daily quota and Groq is down. Keys
   // look like `sk-or-v1-…`; OPENROUTER_API_KEYS rotates several. Pick any free
