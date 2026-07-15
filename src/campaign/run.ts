@@ -812,6 +812,13 @@ async function emitBankDepth(cfg: AppConfig, state: CampaignState): Promise<void
         l.is_ltd !== false &&
         matchesActive(l.snapshot?.discovery_query),
     ).length;
+    // Cold leads sitting in the CSV bank (not yet enqueued) that WILL be pulled into
+    // the queue at the next send — active-vertical + not a known sole-trader. Added so
+    // the Mini App can show the SAME "ready today" number as the evening report
+    // (queued-sendable + bank-that-enqueues), instead of only the already-queued slice.
+    const bankCold = ready.filter(
+      (r) => matchesActive(r.discovery_query) && r.is_ltd !== false,
+    ).length;
     const followupsDue = selectDueFollowups(state, cfg).length;
     await emitEvent("bank_depth", {
       queued: queuedLeads.length,
@@ -819,6 +826,7 @@ async function emitBankDepth(cfg: AppConfig, state: CampaignState): Promise<void
       total: queuedLeads.length + ready.length,
       active_ready: activeSupply,
       sendable_cold: sendableCold,
+      bank_cold: bankCold,
       followups_due: followupsDue,
       active_verticals: cfg.EXPERIMENT_VERTICALS ?? [],
       at: new Date().toISOString(),
