@@ -520,8 +520,16 @@ export function assertLLMReady(cfg: AppConfig): void {
   if (cfg.LLM_PROVIDER === "groq" && !cfg.GROQ_API_KEY && !cfg.GROQ_API_KEYS) {
     throw new Error("LLM_PROVIDER=groq but neither GROQ_API_KEYS nor GROQ_API_KEY is set.");
   }
-  if (cfg.LLM_PROVIDER === "openai" && !cfg.OPENAI_API_KEY) {
-    throw new Error("LLM_PROVIDER=openai but OPENAI_API_KEY is not set.");
+  // Real OpenAI (gpt-4o-mini via OPENAI_LLM_API_KEY) is now the ONLY LLM (owner
+  // 2026-07-15: paid & funded, the dead free Gemini pool removed). Accept EITHER the
+  // real key OR the legacy Gemini-era OPENAI_API_KEY(S) so old configs still boot.
+  if (
+    cfg.LLM_PROVIDER === "openai" &&
+    !cfg.OPENAI_LLM_API_KEY &&
+    !cfg.OPENAI_API_KEY &&
+    !cfg.OPENAI_API_KEYS
+  ) {
+    throw new Error("LLM_PROVIDER=openai but no OpenAI key (OPENAI_LLM_API_KEY) is set.");
   }
 }
 

@@ -416,8 +416,14 @@ async function runProspectingCore(
   // 132. Require a much longer dead-streak when paid is configured; keep the tight 2
   // for free-only setups (there, all-fallback really does mean the pool is spent).
   let llmDeadStreak = 0;
-  const hasPaidOverflow = (cfg.OPENAI_PAID_API_KEY ?? "").trim().length > 0;
-  const deadStreakLimit = hasPaidOverflow ? 5 : 2;
+  // Real OpenAI (OPENAI_LLM_API_KEY) is now the reliable paid primary — a stray
+  // all-fallback batch is a transient blip, not a spent quota, so require the long
+  // 5-batch dead-streak before abandoning a run (a tight 2-stop needlessly killed the
+  // nightly fill on one hiccup). Keep the tight 2 only for a genuinely free-only setup.
+  const hasReliablePaid =
+    (cfg.OPENAI_LLM_API_KEY ?? "").trim().length > 0 ||
+    (cfg.OPENAI_PAID_API_KEY ?? "").trim().length > 0;
+  const deadStreakLimit = hasReliablePaid ? 5 : 2;
 
   for (const batch of chunk(pool, chunkSize)) {
     if (qualified.length >= target) break;
@@ -480,7 +486,7 @@ async function runProspectingCore(
       if (llmDeadStreak >= deadStreakLimit) {
         console.warn(
           `[prospect] LLM pool looks exhausted (${deadStreakLimit} batches ≥75% fallback` +
-            `${hasPaidOverflow ? ", incl. paid overflow" : ""}) — stopping early ` +
+            `${hasReliablePaid ? ", incl. paid OpenAI" : ""}) — stopping early ` +
             `with ${qualified.length} clean qualified leads banked.`,
         );
         break;
