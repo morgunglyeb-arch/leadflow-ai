@@ -12,6 +12,7 @@ import {
 import { writeDrafts } from "./outreach.js";
 import { fetchReviewDigest } from "./discover/reviews.js";
 import { verifyEmail, hunterDomainSearch, guessDomainEmail, normalizeEmail } from "./verify-email.js";
+import { deriveOwnerEmail } from "./owner-email.js";
 import { isCorporateEntity, isEmailableEntity } from "./compliance.js";
 import { searchBusinessContext, searchBusinessNews } from "./web-search.js";
 import type { DiscoveredLead, Enrichment, OutputRow } from "./types.js";
@@ -106,10 +107,27 @@ export async function processLeads(
           }
         }
 
-        // FREE fallback — Hunter unavailable/empty (429/quota) shouldn't cost us the
-        // lead: if the domain accepts mail (free MX check), guess the universal UK-SMB
-        // role inbox `info@<domain>`. Keeps reach up while paid finders are throttled.
-        // PECR Ltd-gate still filters sole-traders downstream.
+        // FREE director-email derivation (owner 2026-07-15): a Ltd lead with no
+        // findable address still has a named director on the Companies House register.
+        // Derive a PERSONAL address (firstname@, f.last@ …) and Reoon-verify it — free
+        // (CH) + already-paid (Reoon), and a named inbox out-replies a role inbox.
+        // Runs BEFORE the info@ guess (personal > role) and BEFORE the skip, so it
+        // rescues leads that would otherwise drop as "no valid email". The returned
+        // address is already verified → we skip the re-verify loop below for it.
+        let preVerified = false;
+        if (!email && !opts.mock && isLtd && cfg.EMAIL_DERIVE_OWNER) {
+          const derived = await deriveOwnerEmail(cfg, lead.company, lead.domain, cfg.EMAIL_DERIVE_MAX);
+          if (derived) {
+            email = derived;
+            preVerified = true;
+            enrichment.emails = [...new Set([derived, ...enrichment.emails])];
+            console.log(`[derive-owner] ${lead.domain}: → ${derived} (Companies House director)`);
+          }
+        }
+
+        // FREE fallback — no personal address found: if the domain accepts mail (free
+        // MX check), guess the universal UK-SMB role inbox `info@<domain>`. Keeps reach
+        // up while paid finders are throttled. PECR Ltd-gate still filters sole-traders.
         if (!email && !opts.mock && cfg.EMAIL_GUESS_ROLE_FALLBACK) {
           const guessed = await guessDomainEmail(lead.domain);
           if (guessed) {
@@ -121,8 +139,9 @@ export async function processLeads(
 
         // Verify the email (Hunter SMTP-level → ZeroBounce → MX fallback) so we
         // don't waste a send / risk a bounce on a dead address. Walk the
-        // candidate emails and keep the first that verifies.
-        if (email && cfg.EMAIL_VERIFY && !opts.mock) {
+        // candidate emails and keep the first that verifies. Skip when the address
+        // came from director-derivation (deriveOwnerEmail already Reoon-verified it).
+        if (email && cfg.EMAIL_VERIFY && !opts.mock && !preVerified) {
           const candidates = [email, ...enrichment.emails.filter((e) => e !== email)];
           email = undefined;
           for (const cand of candidates) {

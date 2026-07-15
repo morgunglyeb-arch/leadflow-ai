@@ -161,6 +161,19 @@ const schema = z.object({
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
 
+  // Director-email derivation (owner 2026-07-15): a Ltd lead with NO findable
+  // address still has a named director on the Companies House register. Derive
+  // personal-address candidates (firstname@, f.last@ …) and Reoon-verify them —
+  // free (CH) + already-paid (Reoon), and a personal inbox out-replies a role
+  // inbox. Runs IN the pipeline before the "no email → skip", rescuing ~40% of
+  // otherwise-dropped leads. EMAIL_DERIVE_MAX = candidates verified per lead
+  // (each is one Reoon call — keep modest so the 500/day quota isn't blown).
+  EMAIL_DERIVE_OWNER: z
+    .string()
+    .default("true")
+    .transform((s) => s.toLowerCase() !== "false"),
+  EMAIL_DERIVE_MAX: z.coerce.number().int().min(1).max(8).default(4),
+
   // Hunter.io — email finder + deliverability verification (free: 25 req/mo)
   // Domain search finds emails we missed; verify checks if a specific address
   // is deliverable (SMTP-level, much better than MX-only).

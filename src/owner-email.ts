@@ -47,11 +47,19 @@ export async function deriveOwnerEmail(
   const l = last.toLowerCase().replace(/[^a-z]/g, "");
   if (!f || !l) return null;
 
-  // Most-likely localparts for a small UK clinic, in order.
-  const candidates = [...new Set([`${f}@${root}`, `${f}.${l}@${root}`, `${f[0]}${l}@${root}`])].slice(
-    0,
-    Math.max(1, maxVerify),
-  );
+  // Most-likely localparts for a small UK firm, ordered by prevalence. Sliced to
+  // maxVerify (each is one Reoon call) so we don't blow the daily verify quota.
+  const candidates = [
+    ...new Set([
+      `${f}@${root}`, // john@
+      `${f}.${l}@${root}`, // john.smith@
+      `${f[0]}${l}@${root}`, // jsmith@
+      `${f}${l}@${root}`, // johnsmith@
+      `${f[0]}.${l}@${root}`, // j.smith@
+      `${l}@${root}`, // smith@
+      `${f}${l[0]}@${root}`, // johns@
+    ]),
+  ].slice(0, Math.max(1, maxVerify));
   for (const cand of candidates) {
     const v = await verifyEmail(cfg, cand);
     if (v.ok && isStrongDeliverable(v.reason)) return cand;
