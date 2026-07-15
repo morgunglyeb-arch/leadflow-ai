@@ -469,7 +469,11 @@ async function runProspectingCore(
     // falls back to the no-LLM opener (fit<minFit → not qualified), so continuing
     // just burns discovery/enrichment/time for zero output. Take the max clean
     // drafts the day's quota allows, then stop. (Daily run banks the max; resets daily.)
-    const drafted = rows.filter((r) => r.ai_provider);
+    // ONLY count leads that actually reached the LLM. A lead skipped upstream (no
+    // valid email / non-corporate) carries ai_provider="fallback" in its skipped row
+    // too — counting those made an email-poor pool look like an "LLM pool exhausted"
+    // and STOPPED the run early with 0 banked (2026-07-15). Exclude status="skipped".
+    const drafted = rows.filter((r) => r.status !== "skipped" && r.ai_provider);
     const fellBackNow = drafted.filter((r) => r.ai_provider === "fallback").length;
     if (llmReady && drafted.length >= 3 && fellBackNow / drafted.length >= 0.75) {
       llmDeadStreak += 1;
@@ -497,16 +501,19 @@ async function runProspectingCore(
   // lead fell back to the no-LLM opener → the provider pool is exhausted/blocked
   // and fallback leads get disqualified, so the run silently yields ~0 quality
   // drafts. Never dead-end on a limit in silence: ping the operator's phone.
-  const fellBack = allRows.filter((r) => r.ai_provider === "fallback").length;
-  if (llmReady && allRows.length >= 3 && fellBack / allRows.length >= 0.8) {
+  // Only leads that REACHED the LLM (a skipped-no-email row also has
+  // ai_provider="fallback" — counting it faked "LLM exhausted" on an email-poor pool).
+  const realDrafts = allRows.filter((r) => r.status !== "skipped");
+  const fellBack = realDrafts.filter((r) => r.ai_provider === "fallback").length;
+  if (llmReady && realDrafts.length >= 3 && fellBack / realDrafts.length >= 0.8) {
     console.warn(
-      `[prospect] ⚠️ LLM pool exhausted — ${fellBack}/${allRows.length} leads used the fallback opener.`,
+      `[prospect] ⚠️ LLM pool exhausted — ${fellBack}/${realDrafts.length} leads used the fallback opener.`,
     );
     await emitEvent("llm_exhausted", {
-      processed: allRows.length,
+      processed: realDrafts.length,
       fell_back: fellBack,
       provider: cfg.LLM_PROVIDER,
-      note: "All LLM providers/keys exhausted or blocked — run produced low-quality fallback drafts. Rotate or replenish keys.",
+      note: "LLM drafts fell back to the no-LLM opener — the primary key (OpenAI) errored/limited and no free fallback is configured. Check the OpenAI key/limits.",
     });
   }
 
