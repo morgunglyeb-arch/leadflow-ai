@@ -115,11 +115,15 @@ export async function processLeads(
         // rescues leads that would otherwise drop as "no valid email". The returned
         // address is already verified → we skip the re-verify loop below for it.
         let preVerified = false;
+        // ISO time this address passed a strong verifier — stamped onto the row so the
+        // send step can skip re-verifying a freshly-verified lead (saves Reoon quota).
+        let verifiedAt: string | undefined;
         if (!email && !opts.mock && isLtd && cfg.EMAIL_DERIVE_OWNER) {
           const derived = await deriveOwnerEmail(cfg, lead.company, lead.domain, cfg.EMAIL_DERIVE_MAX);
           if (derived) {
             email = derived;
             preVerified = true;
+            verifiedAt = new Date().toISOString(); // deriveOwnerEmail already Reoon-verified it
             enrichment.emails = [...new Set([derived, ...enrichment.emails])];
             console.log(`[derive-owner] ${lead.domain}: → ${derived} (Companies House director)`);
           }
@@ -145,8 +149,12 @@ export async function processLeads(
           const candidates = [email, ...enrichment.emails.filter((e) => e !== email)];
           email = undefined;
           for (const cand of candidates) {
-            if ((await verifyEmail(cfg, cand)).ok) {
+            const vr = await verifyEmail(cfg, cand);
+            if (vr.ok) {
               email = normalizeEmail(cand) || cand; // store the clean form we verified
+              // Stamp the verify time for a STRONG pass only (not the weak "mx-ok"
+              // fallback) so the send step can trust it and skip a redundant re-verify.
+              if (vr.reason && vr.reason !== "mx-ok") verifiedAt = new Date().toISOString();
               break;
             }
           }
@@ -199,6 +207,7 @@ export async function processLeads(
           company: lead.company,
           domain: lead.domain,
           is_ltd: isLtd,
+          ...(verifiedAt ? { verified_at: verifiedAt } : {}),
           discovery_source: lead.discovery_source,
           ...(lead.discovery_query !== undefined ? { discovery_query: lead.discovery_query } : {}),
           ...(lead.name !== undefined ? { name: lead.name } : {}),

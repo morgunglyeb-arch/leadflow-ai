@@ -89,4 +89,9 @@ export type OutputRow = DiscoveredLead & {
   // PECR emailability: true = clearly an incorporated entity (name heuristic or
   // Companies House register). Undefined = not resolved (e.g. mock/skipped).
   is_ltd?: boolean;
+  // ISO timestamp of when this address passed a STRONG verifier (Reoon/Hunter/
+  // MyEmailVerifier — not the weak MX-only fallback) at bank time. Lets the send
+  // step skip a redundant re-verify for freshly-verified leads (saves the verifier's
+  // daily quota + stops fresh leads being held when the verifier is momentarily out).
+  verified_at?: string;
 } & Partial<Personalized>;

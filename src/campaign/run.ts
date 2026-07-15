@@ -1202,7 +1202,15 @@ export async function sendStep(
   // C1: re-verify the address right before the FIRST touch — it may have gone
   // dead since enrichment, and a hard bounce on a warming inbox is expensive.
   // Held (flagged) not suppressed: a transient DNS/MX blip shouldn't burn a lead.
-  if (which === "initial" && live && cfg.EMAIL_VERIFY) {
+  // SKIP when the address already passed a strong verifier recently (bank time): the
+  // pipeline verifies every address once, so re-verifying here just double-spends the
+  // Reoon daily quota (→ it runs out → fresh leads wrongly held on "verify degraded").
+  const reverifyMaxAgeMs = cfg.SEND_REVERIFY_MAX_AGE_H * 3_600_000;
+  const freshlyVerified =
+    reverifyMaxAgeMs > 0 &&
+    !!lead.verified_at &&
+    Date.now() - new Date(lead.verified_at).getTime() < reverifyMaxAgeMs;
+  if (which === "initial" && live && cfg.EMAIL_VERIFY && !freshlyVerified) {
     const v = await verifyEmail(cfg, lead.email);
     if (!v.ok) {
       // "verify-unavailable" (strict #3) is TRANSIENT — every verifier was down, not a

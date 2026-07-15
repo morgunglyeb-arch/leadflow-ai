@@ -106,6 +106,7 @@ export function loadBankLeads(allow: string[] = allowedSegments()): OutputRow[] 
       followup_1: g(r, "followup_1"),
       followup_2: g(r, "followup_2"),
       subject_b: g(r, "subject_b"),
+      ...(g(r, "verified_at") ? { verified_at: g(r, "verified_at") } : {}),
     } as unknown as OutputRow);
   }
   return out;

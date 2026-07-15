@@ -132,6 +132,13 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
+  // Skip the send-time re-verify when the address already passed a STRONG verifier
+  // within this many hours at bank time (owner 2026-07-15). The pipeline verifies every
+  // address once when banking; re-verifying it again at first-touch double-spends the
+  // Reoon daily quota (→ it runs out mid-day → fresh leads get held on "verify degraded").
+  // A lead verified this recently can't have gone stale, so trust it. 0 = always re-verify
+  // (old behaviour). Stale/older leads still re-verify to catch addresses gone dead.
+  SEND_REVERIFY_MAX_AGE_H: z.coerce.number().min(0).default(72),
   // Emergency stop (brain-audit #5): if a single reply-poll surfaces ≥ this many
   // FRESH hard bounces from prior sends, hold cold first-touches for that run (stop
   // digging while something is clearly wrong) and alert. Follow-ups still go. 0 = off.
