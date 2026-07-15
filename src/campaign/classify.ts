@@ -35,9 +35,13 @@ const QUOTE_MARKERS = [
   /\b(napisa[łl]\(?a?\)?|escribió|a écrit|schrieb|ha scritto|skrev)\s*:/i,
   /-{3,}\s*Original Message\s*-{3,}/i,
   /\n_{5,}/, // Outlook separator
-  /\nFrom:\s/i, // Outlook quoted header
+  // Quote header / mobile signature that a mail app puts INLINE (no newline), so a
+  // one-word decline gets buried: "No Sent from Outlook for iOS From: Lucy Hayes …"
+  // → without cutting, the 40-char opener guard fails and it reads "unclear" (real
+  // bug: The Mortgage Masters). Cut at either marker even mid-line.
+  /(^|\s)Sent from (my |Outlook|Mail|Yahoo|Gmail|Samsung|BlackBerry|iPhone|iPad)/i,
+  /(^|\s)From:\s?.{0,80}?<[^>\s]+@/i, // "From: Name <addr@…>" quoted header, inline or not
   /(^|\s)>\s/, // quoted ">" content (even mid-line, not only at line start)
-  /\nSent from my /i,
 ];
 
 /** Index where the quoted original begins (text.length if none found). */
@@ -59,7 +63,11 @@ export function topReply(text: string): string {
  * a client mail app echoing our own outbound, or a bounce quoting us. There's no human
  * answer to act on, so it must NOT be classified on OUR words nor clutter the queue. */
 export function isAllQuoted(text: string): boolean {
-  return quoteCut(text) <= 2 && text.trim().length > 2;
+  const cut = quoteCut(text);
+  // A quote marker exists AND there is NO genuine reply text above it. A short human
+  // reply like "No" before the quote ("No Sent from Outlook … From: …") is NOT
+  // all-quoted — it's a real decline, so it must fall through to classifyReply.
+  return cut < text.length && text.slice(0, cut).trim().length === 0 && text.trim().length > 2;
 }
 
 const MONTHS: Record<string, number> = {
