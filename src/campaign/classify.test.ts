@@ -83,6 +83,26 @@ describe("classifyReply — intent priority (F7)", () => {
     expect(classifyReply("This is an automated response, do not reply to this email")).toBe("auto");
   });
 
+  it("a reply that is ENTIRELY our own quoted outbound is auto, not a human answer", () => {
+    // Accountants With Energy 2026-07-14: a localised (Polish) quote header echoing our
+    // Sofia Carter mail, no reply text on top — was mis-tagged "unclear" + queued.
+    expect(
+      classifyReply(
+        "W dniu 2026-07-14 08:15, Sofia Carter napisał(a): > Hi Accountants With Energy — Your site offers a clear 'Schedule > accounting consultations' option for new clients. Clients looking for",
+      ),
+    ).toBe("auto");
+    // English "On … wrote:" leading quote with no new text → same
+    expect(
+      classifyReply("On Mon, 14 Jul 2026, Sofia wrote: > quick idea for your enquiries…"),
+    ).toBe("auto");
+  });
+
+  it("still reads the human text ABOVE a foreign quote header", () => {
+    expect(
+      classifyReply("Yes please, sounds good.\nW dniu 2026-07-14, Sofia napisał(a): > our pitch"),
+    ).toBe("interested");
+  });
+
   it("does NOT over-match a genuine human reply that happens to thank us", () => {
     // "thanks for the email" alone must not be swallowed as an autoresponder
     expect(classifyReply("Thanks, yes — tell me more about the pricing")).toBe("interested");

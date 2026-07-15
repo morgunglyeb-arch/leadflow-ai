@@ -25,22 +25,41 @@ export function isHardOptOut(snippet: string): boolean {
  * matches the positive regex on OUR words and reads as "interested" (real bug,
  * Perfect Install LTD 2026-07-04). Cut at the earliest quote / signature marker.
  */
-export function topReply(text: string): string {
-  const markers = [
-    /\n?On\b.{0,160}\bwrote:/i, // Gmail: "On Sat, 4 Jul 2026, 13:02 X wrote:"
-    /-{3,}\s*Original Message\s*-{3,}/i,
-    /\n_{5,}/, // Outlook separator
-    /\nFrom:\s/i, // Outlook quoted header
-    /\n\s*>/, // quoted ">" lines
-    /\nSent from my /i,
-  ];
+const QUOTE_MARKERS = [
+  /\n?On\b.{0,160}\bwrote:/i, // Gmail: "On Sat, 4 Jul 2026, 13:02 X wrote:"
+  // Foreign-language quote headers ("On <date> <name> wrote:") — clients reply from
+  // localised mail apps and the quoted text is OUR OWN outbound. Without cutting it,
+  // the classifier reads our pitch and mis-tags the "reply" (real bug: Accountants
+  // With Energy — "W dniu … Sofia Carter napisał(a): > Hi …" → false "unclear").
+  /\bW dniu\b.{0,200}?napisa/i, // Polish: "W dniu … napisał(a):"
+  /\b(napisa[łl]\(?a?\)?|escribió|a écrit|schrieb|ha scritto|skrev)\s*:/i,
+  /-{3,}\s*Original Message\s*-{3,}/i,
+  /\n_{5,}/, // Outlook separator
+  /\nFrom:\s/i, // Outlook quoted header
+  /(^|\s)>\s/, // quoted ">" content (even mid-line, not only at line start)
+  /\nSent from my /i,
+];
+
+/** Index where the quoted original begins (text.length if none found). */
+function quoteCut(text: string): number {
   let cut = text.length;
-  for (const m of markers) {
+  for (const m of QUOTE_MARKERS) {
     const i = text.search(m);
     if (i >= 0 && i < cut) cut = i;
   }
-  const top = text.slice(0, cut).trim();
+  return cut;
+}
+
+export function topReply(text: string): string {
+  const top = text.slice(0, quoteCut(text)).trim();
   return top || text.trim(); // never return empty
+}
+
+/** True when the snippet is ENTIRELY a quote / quote-header with NO new text on top —
+ * a client mail app echoing our own outbound, or a bounce quoting us. There's no human
+ * answer to act on, so it must NOT be classified on OUR words nor clutter the queue. */
+export function isAllQuoted(text: string): boolean {
+  return quoteCut(text) <= 2 && text.trim().length > 2;
 }
 
 const MONTHS: Record<string, number> = {
@@ -97,6 +116,9 @@ export function parseReturnDate(snippet: string, now: Date = new Date()): Date |
 }
 
 export function classifyReply(snippet: string): ReplyRecord["sentiment"] {
+  // Snippet is entirely a quote of OUR OWN outbound (no reply text above it) → not a
+  // human answer. Tag `auto` so it never pings the owner or clutters «требуют действия».
+  if (isAllQuoted(snippet)) return "auto";
   const s = topReply(snippet).toLowerCase();
   // Out-of-office / auto-responders: broad net so a holiday auto-reply is NEVER
   // treated as a human answer (no owner ping, no follow-up decision made off it).
