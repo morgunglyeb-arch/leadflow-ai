@@ -1,9 +1,31 @@
 import { resolveMx } from "node:dns/promises";
 import type { AppConfig } from "./config.js";
+import { emitEvent } from "./ops-emit.js";
 
 export interface VerifyResult {
   ok: boolean;
   reason: string;
+}
+
+// Fire a ONE-TIME (per process) Telegram alert when a paid verifier reports it's out of
+// credits. opero-ops turns `source_down` into "⚠️ Reoon недоступен: нет кредитов — пополни
+// или замени ключ". Without this the machine silently held/skipped every lead and the
+// owner had to GUESS why nothing banked or sent (owner ask 2026-07-16: always send the
+// reason when work can't run at full volume). Deduped per hour hub-side too.
+let verifierDownNotified = false;
+function alertVerifierOutOfCredits(source: string, detail: string): void {
+  if (verifierDownNotified) return;
+  verifierDownNotified = true;
+  void emitEvent(
+    "source_down",
+    {
+      source,
+      layer: "verify",
+      reason: "нет кредитов — дневная квота исчерпана (набор и отправка встали)",
+      detail: (detail || "").slice(0, 140),
+    },
+    `source_down:${source}:${new Date().toISOString().slice(0, 13)}`,
+  ).catch(() => {});
 }
 
 const EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
@@ -139,8 +161,16 @@ async function reoonCheck(cfg: AppConfig, email: string): Promise<VerifyResult |
       const url = `https://emailverifier.reoon.com/api/v1/verify?email=${encodeURIComponent(email)}&key=${keys[i]}&mode=power`;
       const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
       if (!res.ok) {
-        // out of daily credits / bad key → rotate or fall through to the next verifier
-        if ([429, 402, 401, 403].includes(res.status) && i < keys.length - 1) continue;
+        // out of daily credits / bad key → rotate or fall through to the next verifier.
+        // Detect the specific "not enough credits" body → alert the owner (else the wall
+        // is silent). Reoon returns HTTP 403 + {"reason":"Not enough credits…"} when spent.
+        if ([429, 402, 401, 403].includes(res.status)) {
+          const body = await res.text().catch(() => "");
+          if (/credit|recharge|insufficient|quota|exhaust/i.test(body)) {
+            alertVerifierOutOfCredits("Reoon", body);
+          }
+          if (i < keys.length - 1) continue;
+        }
         return null;
       }
       const json = (await res.json().catch(() => null)) as ReoonResponse | null;
@@ -200,6 +230,14 @@ async function myEmailVerifierCheck(cfg: AppConfig, email: string): Promise<Veri
         json = (await res.json()) as MevResponse;
       } catch {
         // Some error states return non-JSON text → rotate / give up.
+        if (i < keys.length - 1) continue;
+        return null;
+      }
+      // MEV signals "no credits" as HTTP 200 + {"status":false,"message":"You do not
+      // have enough credits."} → alert (once) so an exhausted free verifier isn't silent.
+      const mevMsg = String((json as { message?: unknown }).message ?? "");
+      if (/credit|not enough|insufficient/i.test(mevMsg)) {
+        alertVerifierOutOfCredits("MyEmailVerifier", mevMsg);
         if (i < keys.length - 1) continue;
         return null;
       }
