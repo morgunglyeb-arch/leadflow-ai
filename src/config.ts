@@ -179,7 +179,24 @@ const schema = z.object({
     .string()
     .default("true")
     .transform((s) => s.toLowerCase() !== "false"),
-  EMAIL_DERIVE_MAX: z.coerce.number().int().min(1).max(8).default(4),
+  // 2→ was 4 (owner 2026-07-16): 4 patterns × every Ltd lead was the #1 Reoon-credit
+  // burner — a ~110-lead run could spend 400+ credits mostly on guesses that never
+  // verify, blowing the whole 500/day and banking ~0. 2 patterns (firstname@, f.last@)
+  // catch the common cases at half the cost.
+  EMAIL_DERIVE_MAX: z.coerce.number().int().min(1).max(8).default(2),
+
+  // Role/generic inbox (info@/contact@…) verification policy (owner 2026-07-16).
+  // TRUE = don't spend the paid Reoon quota on role inboxes; accept them on a free MX
+  // check (they were already MX-validated at guess time and Reoon just tags them
+  // role/catch-all anyway). Saves the bulk of the daily quota for personal addresses
+  // AND lets role-inbox leads still send when the verifier is out of credits.
+  // TRADE-OFF: role inboxes can hard-bounce (see the 2026-07-02 spike) — the emergency
+  // bounce-stop is the safety net. FALSE = strict (hold role inboxes when verify is
+  // degraded — the safe default). Owner enables it in .env per their throughput call.
+  EMAIL_ROLE_MX_ONLY: z
+    .string()
+    .default("false")
+    .transform((s) => s.toLowerCase() === "true"),
 
   // Hunter.io — email finder + deliverability verification (free: 25 req/mo)
   // Domain search finds emails we missed; verify checks if a specific address

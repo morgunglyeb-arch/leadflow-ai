@@ -371,6 +371,22 @@ export async function verifyEmail(cfg: AppConfig, email: string): Promise<Verify
   email = normalizeEmail(email); // recover %20/whitespace artifacts before trusting
   if (!email || !EMAIL_RE.test(email)) return { ok: false, reason: "bad-syntax" };
 
+  // ROLE INBOX → MX-ONLY (owner 2026-07-16, EMAIL_ROLE_MX_ONLY): don't spend the paid
+  // Reoon quota re-checking generic role inboxes (info@/contact@…). They were already
+  // MX-validated at guess time and Reoon just tags them role/catch-all — verifying them
+  // was the #2 credit burner and it made role leads un-sendable whenever the quota was
+  // spent. Accept on a free MX check instead. Runs BEFORE any paid verifier so it costs
+  // nothing. TRADE-OFF: role inboxes can bounce — the emergency bounce-stop is the net.
+  if (cfg.EMAIL_ROLE_MX_ONLY) {
+    const roleLocal = (email.split("@")[0] ?? "").toLowerCase();
+    if (ROLE_LOCALPARTS.has(roleLocal)) {
+      const roleDomain = email.split("@")[1] ?? "";
+      return (await domainHasMx(roleDomain))
+        ? { ok: true, reason: "mx-role" }
+        : { ok: false, reason: "no-mx" };
+    }
+  }
+
   // REOON-FIRST (owner policy 2026-07-04): the paid Reoon LTD is the MOST ACCURATE
   // verifier (~99%, honest catch-all) and its 500/day quota is prepaid — so use it
   // first for the lowest bounce risk (verify degradation caused the 2026-07-02 spike).
