@@ -21,7 +21,7 @@ function alertVerifierOutOfCredits(source: string, detail: string): void {
     {
       source,
       layer: "verify",
-      reason: "нет кредитов — дневная квота исчерпана (набор и отправка встали)",
+      reason: "дневная квота верификатора исчерпана (сброс в полночь)",
       detail: (detail || "").slice(0, 140),
     },
     `source_down:${source}:${new Date().toISOString().slice(0, 13)}`,
